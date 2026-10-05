@@ -182,6 +182,12 @@ export class HarmonizerService {
     return survey;
   }
 
+  async removeSurvey(surveyId: string): Promise<void> {
+    await this.getSurvey(surveyId);
+    // Las ediciones, sus filas, los mapeos y las canónicas se borran en cascada.
+    await this.prisma.harmonizerSurvey.delete({ where: { id: surveyId } });
+  }
+
   async updateSurvey(surveyId: string, dto: UpdateSurveyDto) {
     const survey = await this.getSurvey(surveyId);
     const data: Prisma.HarmonizerSurveyUpdateInput = {};
@@ -373,6 +379,10 @@ export class HarmonizerService {
         historicalByColumn.set(m.sourceColumn, m.canonicalVariableId);
     }
 
+    // Una canónica ya asignada (o ya sugerida) a otra columna de este archivo
+    // no se vuelve a sugerir: dos columnas a la misma canónica colisionan.
+    const usedIds = new Set(savedByColumn.values());
+
     const columns = dataset.columns.map((name): MappingColumn => {
       const savedId = savedByColumn.get(name);
       if (savedId) {
@@ -384,7 +394,8 @@ export class HarmonizerService {
         };
       }
       const historicalId = historicalByColumn.get(name);
-      if (historicalId) {
+      if (historicalId && !usedIds.has(historicalId)) {
+        usedIds.add(historicalId);
         return {
           name,
           selectedCanonicalId: historicalId,
@@ -392,8 +403,12 @@ export class HarmonizerService {
           suggestionSource: 'history',
         };
       }
-      const matchedId = matchByName(name, canonicals);
+      const matchedId = matchByName(
+        name,
+        canonicals.filter((c) => !usedIds.has(c.id)),
+      );
       if (matchedId) {
+        usedIds.add(matchedId);
         return {
           name,
           selectedCanonicalId: matchedId,
@@ -424,13 +439,37 @@ export class HarmonizerService {
     const choiceByColumn = new Map(dto.columns.map((c) => [c.column, c]));
 
     await this.prisma.$transaction(async (tx) => {
+      const resolved: { column: string; canonicalId: string | null }[] = [];
+      const columnsByCanonical = new Map<string, string[]>();
       for (const column of dataset.columns) {
-        const choice = choiceByColumn.get(column);
         const canonicalId = await this.resolveCanonicalChoice(
           tx,
           dataset.surveyId,
-          choice,
+          choiceByColumn.get(column),
         );
+        resolved.push({ column, canonicalId });
+        if (canonicalId !== null) {
+          const columns = columnsByCanonical.get(canonicalId) ?? [];
+          columns.push(column);
+          columnsByCanonical.set(canonicalId, columns);
+        }
+      }
+
+      // La vista armonizada tiene una sola columna por canónica: si dos
+      // columnas del archivo apuntan a la misma, una sobrescribiría a la otra.
+      const collisions = [...columnsByCanonical.values()].filter(
+        (columns) => columns.length > 1,
+      );
+      if (collisions.length > 0) {
+        throw new ConflictException({
+          code: 'canonical_variable_collision',
+          message: `Each canonical variable can be mapped from only one column per dataset. Columns sharing a canonical variable: ${collisions
+            .map((columns) => columns.join(', '))
+            .join('; ')}.`,
+        });
+      }
+
+      for (const { column, canonicalId } of resolved) {
         const existing = await tx.harmonizerMapping.findUnique({
           where: {
             datasetId_sourceColumn: { datasetId, sourceColumn: column },

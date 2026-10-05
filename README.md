@@ -358,6 +358,7 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 | `POST` | `/harmonizer/surveys` | Create: `{ name, description? }`. |
 | `GET` | `/harmonizer/surveys/:surveyId` | One survey. |
 | `PATCH` | `/harmonizer/surveys/:surveyId` | Change `name` and/or `description`. |
+| `DELETE` | `/harmonizer/surveys/:surveyId` | Delete the survey and everything in it. Returns `204`. |
 | `POST` | `/harmonizer/upload` | Upload an edition (multipart). |
 | `GET` | `/harmonizer/datasets/:datasetId/mapping` | Columns of an edition with saved or suggested mappings. |
 | `PUT` | `/harmonizer/datasets/:datasetId/mapping` | Save the mapping of an edition. |
@@ -372,7 +373,7 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 - Names are unique. Creating or renaming to a taken name returns `409 survey_name_taken`.
 - Sending an empty `description` in `PATCH` clears it.
 - Renaming a survey does not change its editions, canonical variables or mappings.
-- Surveys and editions cannot be deleted through the API.
+- Deleting a survey also deletes its editions, their raw rows, their mappings and its canonical variables. A missing survey returns `404 survey_not_found`. Editions cannot be deleted on their own.
 
 ### Upload
 
@@ -398,6 +399,8 @@ Fields: `file`, `name` (edition name, required), `year` (1900–2100), `surveyId
 3. **Name** (`suggestionSource: "name"`): a canonical variable matches the column name. Names are compared after removing accents, lowercasing and turning any run of other characters into `_`. An exact match wins. Otherwise the canonical name must appear as a whole part of the column, optionally followed by digits: `edad` matches `edad1` and `edad_jefe`, but not `edades`. Ties go to the longer canonical name.
 4. Otherwise the column is unmapped.
 
+History and name suggestions never reuse a canonical variable that another column of the same edition already has (saved, or suggested to an earlier column in the header). The column is then left unmapped.
+
 Suggestions are preselected in the response but are not saved until the client sends `PUT`.
 
 `PUT .../mapping` takes `{ columns: [{ column, choice, newName?, newDataType? }] }`:
@@ -413,7 +416,7 @@ Suggestions are preselected in the response but are not saved until the client s
 - The save runs in one transaction.
 - Canonical names are only trimmed. Any other text is accepted.
 - Canonical variables cannot be renamed or deleted. Unmapping every column that used one does not delete it.
-- Nothing prevents two columns of the same edition from using the same canonical variable. The harmonized view then keeps only the value of the column that comes later in the header.
+- Two columns of the same edition cannot use the same canonical variable, because the harmonized view has one column per canonical. Such a request returns `409 canonical_variable_collision`, the `message` lists the columns involved, and nothing is saved (including canonicals that `__new__` would have created). Two `__new__` entries with the same `newName`, or a `newName` equal to an existing canonical that another column uses, also collide.
 
 ### Harmonized views
 

@@ -2,7 +2,10 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
@@ -59,6 +62,12 @@ export class HarmonizerController {
     @Body() dto: UpdateSurveyDto,
   ) {
     return this.harmonizerService.updateSurvey(surveyId, dto);
+  }
+
+  @Delete('surveys/:surveyId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  removeSurvey(@Param('surveyId') surveyId: string) {
+    return this.harmonizerService.removeSurvey(surveyId);
   }
 
   @Get('surveys/:surveyId/harmonized')
