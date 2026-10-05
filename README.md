@@ -395,7 +395,7 @@ Fields: `file`, `name` (edition name, required), `year` (1900–2100), `surveyId
 
 ### Mapping
 
-`GET .../mapping` returns each column with `selectedCanonicalId`, `suggested` and `suggestionSource`. For each column, the first of these that applies is used:
+`GET .../mapping` returns each column with `selectedCanonicalId`, `suggested`, `suggestionSource` and `missingCodes` (the saved missing-value codes; `[]` for unsaved columns, suggestions never fill it). For each column, the first of these that applies is used:
 
 1. **Saved**: the mapping already saved for this edition. No suggestion is shown.
 2. **History** (`suggestionSource: "history"`): a column with exactly the same name was mapped in another edition of the same survey.
@@ -406,7 +406,7 @@ History and name suggestions never reuse a canonical variable that another colum
 
 Suggestions are preselected in the response but are not saved until the client sends `PUT`.
 
-`PUT .../mapping` takes `{ columns: [{ column, choice, newName?, newDataType? }] }`:
+`PUT .../mapping` takes `{ columns: [{ column, choice, newName?, newDataType?, missingCodes? }] }`:
 
 | `choice` | Effect |
 | --- | --- |
@@ -418,6 +418,7 @@ Suggestions are preselected in the response but are not saved until the client s
 - Entries for columns that are not in the edition are ignored.
 - The save runs in one transaction.
 - Canonical names are only trimmed. Any other text is accepted.
+- `missingCodes` lists the values that mean "not specified" in that column of that edition (for example `["9", "99"]`). Codes are trimmed, and empty and repeated codes are dropped. They belong to the mapping, so each edition keeps its own codes, and unmapping the column discards them.
 - Canonical variables cannot be renamed or deleted. Unmapping every column that used one does not delete it.
 - Two columns of the same edition cannot use the same canonical variable, because the harmonized view has one column per canonical. Such a request returns `409 canonical_variable_collision`, the `message` lists the columns involved, and nothing is saved (including canonicals that `__new__` would have created). Two `__new__` entries with the same `newName`, or a `newName` equal to an existing canonical that another column uses, also collide.
 
@@ -429,6 +430,7 @@ Edition view:
 
 - Columns are the canonical names of the mapped columns, in header order.
 - An edition with no mappings has no columns and no rows.
+- **Missing values.** A value is `null` when the cell is empty, contains only spaces, or, once trimmed, equals one of the column's `missingCodes`. Every other value, `0` included, is returned exactly as stored. The stored rows are never changed, so editing the codes changes the view right away.
 
 Survey view:
 
@@ -436,6 +438,7 @@ Survey view:
 - Editions are stacked by year, then by upload time.
 - Every row gets `_dataset` (edition name) and `_year`.
 - A variable that an edition does not have is missing from that edition's rows.
+- Missing values keep the codes of their own edition: a `9` is `null` only in editions where `9` is a missing code for that column.
 - Rows that have none of the selected variables are dropped.
 
 Exports:
@@ -444,7 +447,7 @@ Exports:
 - The filename is `harmonized_<edition>_<year>` or `harmonized_<survey>`, with accents and symbols removed.
 - The survey export puts `_dataset` and `_year` first. The edition export does not include them.
 - CSV is UTF-8 with a BOM, so Excel opens it correctly. Missing values are empty.
-- Parquet columns are all text. Missing values are `""`.
+- Parquet columns are all text. Missing values are `NULL`, so they are distinct from any text value.
 - Exporting an edition with no mappings as Parquet returns `400 harmonized_view_empty`.
 
 ## File storage

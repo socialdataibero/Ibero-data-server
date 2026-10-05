@@ -12,6 +12,7 @@ function edition(
     year: partial.year ?? 2020,
     columns: partial.columns,
     columnToCanonical: partial.columnToCanonical ?? new Map(),
+    missingCodes: partial.missingCodes,
     rows: partial.rows,
   };
 }
@@ -41,7 +42,39 @@ describe('harmonizer: buildDatasetView', () => {
     expect(view.headers).toEqual(['edad', 'sexo']);
     expect(view.rows).toEqual([
       { edad: '30', sexo: 'M' },
-      { edad: '', sexo: 'F' },
+      { edad: null, sexo: 'F' },
+    ]);
+  });
+
+  it('vacío, solo espacios y códigos de no especificado salen como null; el cero se conserva', () => {
+    const view = buildDatasetView(
+      edition({
+        columns: ['EDAD', 'NIVACAD'],
+        columnToCanonical: new Map([
+          ['EDAD', 'edad'],
+          ['NIVACAD', 'nivel'],
+        ]),
+        missingCodes: new Map([
+          ['EDAD', new Set(['999'])],
+          ['NIVACAD', new Set(['99', '98'])],
+        ]),
+        rows: [
+          { EDAD: '25', NIVACAD: '03' },
+          { EDAD: '99', NIVACAD: '99' },
+          { EDAD: '999', NIVACAD: '' },
+          { EDAD: '', NIVACAD: ' ' },
+          { EDAD: '0', NIVACAD: '00' },
+          { EDAD: ' 999 ', NIVACAD: '98' },
+        ],
+      }),
+    );
+    expect(view.rows).toEqual([
+      { edad: '25', nivel: '03' },
+      { edad: '99', nivel: null },
+      { edad: null, nivel: null },
+      { edad: null, nivel: null },
+      { edad: '0', nivel: '00' },
+      { edad: null, nivel: null },
     ]);
   });
 
@@ -89,6 +122,30 @@ describe('harmonizer: buildSurveyView', () => {
       { edad: '30', sexo: 'M', _dataset: 'ENIGH 2020', _year: 2020 },
       { edad: '41', _dataset: 'ENIGH 2021', _year: 2021 },
     ]);
+  });
+
+  it('los valores faltantes de cada edición llegan como null a la vista por encuesta', () => {
+    const view = buildSurveyView(
+      [
+        edition({
+          name: 'A',
+          year: 2020,
+          columns: ['hli'],
+          columnToCanonical: new Map([['hli', 'hli']]),
+          missingCodes: new Map([['hli', new Set(['9'])]]),
+          rows: [{ hli: '1' }, { hli: '9' }],
+        }),
+        edition({
+          name: 'B',
+          year: 2021,
+          columns: ['hli'],
+          columnToCanonical: new Map([['hli', 'hli']]),
+          rows: [{ hli: '9' }, { hli: '' }],
+        }),
+      ],
+      ['hli'],
+    );
+    expect(view.rows.map((r) => r.hli)).toEqual(['1', null, '9', null]);
   });
 
   it('una fila que no aporta ninguna variable pedida se omite', () => {

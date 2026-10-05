@@ -166,9 +166,8 @@ export class AnalysisService {
       for (const row of rows) {
         for (const column of columns) {
           const value = row[column];
-          appender.appendVarchar(
-            value === undefined || value === null ? '' : String(value),
-          );
+          if (value === undefined || value === null) appender.appendNull();
+          else appender.appendVarchar(String(value));
         }
         appender.endRow();
       }

@@ -269,6 +269,9 @@ model HarmonizerMapping {
   datasetId           String
   sourceColumn        String
   canonicalVariableId String
+  /// Códigos de no especificado de esta columna en esta edición (p. ej. 9, 99).
+  /// En la vista armonizada se entregan como nulo, igual que las celdas vacías.
+  missingCodes        String[]                    @default([])
 
   dataset           HarmonizerDataset           @relation(fields: [datasetId], references: [id], onDelete: Cascade)
   canonicalVariable HarmonizerCanonicalVariable @relation(fields: [canonicalVariableId], references: [id], onDelete: Cascade)

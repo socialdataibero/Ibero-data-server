@@ -75,6 +75,7 @@ export interface MappingColumn {
   selectedCanonicalId: string | null;
   suggested: string | null;
   suggestionSource: SuggestionSource | null;
+  missingCodes: string[];
 }
 
 export type ExportFormat = 'csv' | 'parquet';
@@ -102,6 +103,14 @@ function dedupeHeaders(headers: string[]): string[] {
     seen.set(h, count + 1);
     return count === 0 ? h : `${h}.${count}`;
   });
+}
+
+// Se recortan, se descartan vacíos y repetidos: el valor de la celda también se
+// compara recortado (ver harmonized-view.ts).
+function normalizeMissingCodes(codes: string[] | undefined): string[] {
+  return [
+    ...new Set((codes ?? []).map((c) => c.trim()).filter((c) => c !== '')),
+  ];
 }
 
 // Un archivo que no es UTF-8 (p. ej. Latin-1) se decodificaría con U+FFFD en
@@ -393,6 +402,9 @@ export class HarmonizerService {
     const savedByColumn = new Map(
       saved.map((m) => [m.sourceColumn, m.canonicalVariableId]),
     );
+    const savedCodesByColumn = new Map(
+      saved.map((m) => [m.sourceColumn, m.missingCodes]),
+    );
     const historicalByColumn = new Map<string, string>();
     for (const m of historical) {
       if (!historicalByColumn.has(m.sourceColumn))
@@ -411,6 +423,7 @@ export class HarmonizerService {
           selectedCanonicalId: savedId,
           suggested: null,
           suggestionSource: null,
+          missingCodes: savedCodesByColumn.get(name) ?? [],
         };
       }
       const historicalId = historicalByColumn.get(name);
@@ -421,6 +434,7 @@ export class HarmonizerService {
           selectedCanonicalId: historicalId,
           suggested: nameById.get(historicalId) ?? null,
           suggestionSource: 'history',
+          missingCodes: [],
         };
       }
       const matchedId = matchByName(
@@ -434,6 +448,7 @@ export class HarmonizerService {
           selectedCanonicalId: matchedId,
           suggested: nameById.get(matchedId) ?? null,
           suggestionSource: 'name',
+          missingCodes: [],
         };
       }
       return {
@@ -441,6 +456,7 @@ export class HarmonizerService {
         selectedCanonicalId: null,
         suggested: null,
         suggestionSource: null,
+        missingCodes: [],
       };
     });
 
@@ -459,15 +475,24 @@ export class HarmonizerService {
     const choiceByColumn = new Map(dto.columns.map((c) => [c.column, c]));
 
     await this.prisma.$transaction(async (tx) => {
-      const resolved: { column: string; canonicalId: string | null }[] = [];
+      const resolved: {
+        column: string;
+        canonicalId: string | null;
+        missingCodes: string[];
+      }[] = [];
       const columnsByCanonical = new Map<string, string[]>();
       for (const column of dataset.columns) {
+        const choice = choiceByColumn.get(column);
         const canonicalId = await this.resolveCanonicalChoice(
           tx,
           dataset.surveyId,
-          choiceByColumn.get(column),
+          choice,
         );
-        resolved.push({ column, canonicalId });
+        resolved.push({
+          column,
+          canonicalId,
+          missingCodes: normalizeMissingCodes(choice?.missingCodes),
+        });
         if (canonicalId !== null) {
           const columns = columnsByCanonical.get(canonicalId) ?? [];
           columns.push(column);
@@ -489,7 +514,7 @@ export class HarmonizerService {
         });
       }
 
-      for (const { column, canonicalId } of resolved) {
+      for (const { column, canonicalId, missingCodes } of resolved) {
         const existing = await tx.harmonizerMapping.findUnique({
           where: {
             datasetId_sourceColumn: { datasetId, sourceColumn: column },
@@ -500,10 +525,13 @@ export class HarmonizerService {
           if (existing)
             await tx.harmonizerMapping.delete({ where: { id: existing.id } });
         } else if (existing) {
-          if (existing.canonicalVariableId !== canonicalId) {
+          if (
+            existing.canonicalVariableId !== canonicalId ||
+            existing.missingCodes.join('\u0000') !== missingCodes.join('\u0000')
+          ) {
             await tx.harmonizerMapping.update({
               where: { id: existing.id },
-              data: { canonicalVariableId: canonicalId },
+              data: { canonicalVariableId: canonicalId, missingCodes },
             });
           }
         } else {
@@ -512,6 +540,7 @@ export class HarmonizerService {
               datasetId,
               sourceColumn: column,
               canonicalVariableId: canonicalId,
+              missingCodes,
             },
           });
         }
@@ -585,6 +614,9 @@ export class HarmonizerService {
       columns: dataset.columns,
       columnToCanonical: new Map(
         mappings.map((m) => [m.sourceColumn, m.canonicalVariable.name]),
+      ),
+      missingCodes: new Map(
+        mappings.map((m) => [m.sourceColumn, new Set(m.missingCodes)]),
       ),
       rows: rawRows.map((r) => r.data as RawData),
     };
