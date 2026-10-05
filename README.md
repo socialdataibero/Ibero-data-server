@@ -386,7 +386,8 @@ Fields: `file`, `name` (edition name, required), `year` (1900–2100), `surveyId
 - The file must be valid UTF-8 (a BOM is allowed). Any other encoding, such as Latin-1, returns `400 csv_not_utf8` with the line of the first invalid byte, instead of storing accented characters as `�`.
 - The file is checked before anything is written, so a rejected upload with `__new__` does not create the survey.
 - The first row is the header. A leading BOM is removed, blank lines are skipped, and values are kept exactly as written: no trimming and no type conversion. Every value is stored as text, and empty cells are `""`.
-- Repeated headers are renamed by appending `.1`, `.2`, and so on (`edad`, `edad.1`).
+- Headers are trimmed (leading and trailing spaces removed) before anything else. Spaces inside a name are kept.
+- Repeated headers, compared after trimming, are renamed by appending `.1`, `.2`, and so on (`edad`, `edad.1`). `EDAD ` and `EDAD` become `EDAD` and `EDAD.1`.
 - The header order is stored and used for column order in the harmonized view.
 - All columns are stored, including those that are never mapped.
 - An empty file or a header with no rows is accepted and creates an edition with 0 rows.

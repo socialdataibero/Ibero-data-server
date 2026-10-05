@@ -318,7 +318,9 @@ export class HarmonizerService {
       rows = parse(text, {
         bom: true,
         columns: (header: string[]) => {
-          columns = dedupeHeaders(header);
+          // Se recortan antes de deduplicar: `EDAD␣` y `EDAD` serían columnas
+          // distintas en la base aunque en pantalla se vean iguales.
+          columns = dedupeHeaders(header.map((h) => h.trim()));
           return columns;
         },
         skip_empty_lines: true,
