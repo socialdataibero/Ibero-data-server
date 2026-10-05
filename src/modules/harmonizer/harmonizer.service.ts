@@ -104,6 +104,21 @@ function dedupeHeaders(headers: string[]): string[] {
   });
 }
 
+// Un archivo que no es UTF-8 (p. ej. Latin-1) se decodificaría con U+FFFD en
+// lugar de cada carácter acentuado, y el byte original se perdería para siempre.
+function decodeUtf8(buffer: Buffer): string {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+  } catch {
+    const lossy = new TextDecoder('utf-8').decode(buffer);
+    const line = lossy.slice(0, lossy.indexOf('\uFFFD')).split('\n').length;
+    throw new BadRequestException({
+      code: 'csv_not_utf8',
+      message: `El archivo no está codificado en UTF-8 (primer byte inválido en la línea ${line}). Vuelve a guardarlo como UTF-8 y súbelo de nuevo.`,
+    });
+  }
+}
+
 @Injectable()
 export class HarmonizerService {
   constructor(
@@ -241,8 +256,10 @@ export class HarmonizerService {
     dto: UploadDatasetDto,
     file: { originalname: string; buffer: Buffer },
   ): Promise<{ datasetId: string; dataset: DatasetInfo }> {
-    const survey = await this.resolveSurveyForUpload(dto);
+    // Se valida el archivo antes de crear la encuesta nueva (`__new__`), para
+    // que un archivo rechazado no deje una encuesta vacía.
     const { columns, rows } = this.parseCsv(file.buffer);
+    const survey = await this.resolveSurveyForUpload(dto);
 
     const dataset = await this.prisma.$transaction(async (tx) => {
       const created = await tx.harmonizerDataset.create({
@@ -294,10 +311,11 @@ export class HarmonizerService {
   }
 
   private parseCsv(buffer: Buffer): { columns: string[]; rows: RawData[] } {
+    const text = decodeUtf8(buffer);
     let columns: string[] = [];
     let rows: RawData[];
     try {
-      rows = parse(buffer, {
+      rows = parse(text, {
         bom: true,
         columns: (header: string[]) => {
           columns = dedupeHeaders(header);
