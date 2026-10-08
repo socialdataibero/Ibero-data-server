@@ -128,3 +128,32 @@ describe('AnalysisService: join / merge entre recursos (DuckDB real)', () => {
     }
   });
 });
+
+describe('AnalysisService: Parquet crudo del armonizador (DuckDB real)', () => {
+  let dir: string;
+  const service = new AnalysisService();
+
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'ibero-raw-test-'));
+  });
+
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('readParquetRows devuelve las filas tal como se escribieron, en orden y como texto', async () => {
+    const path = join(dir, 'raw.parquet');
+    const rows = Array.from({ length: 12_000 }, (_, i) => ({
+      c0: String(i).padStart(5, '0'),
+      c1: i % 2 === 0 ? 'Hñähñu' : '',
+    }));
+
+    await service.writeRowsToParquet(['c0', 'c1'], rows, path);
+    const read = await service.readParquetRows(path);
+
+    // Más filas que MAX_ROWS: la lectura cruda no se trunca.
+    expect(read).toHaveLength(12_000);
+    expect(read[0]).toEqual(['00000', 'Hñähñu']);
+    expect(read[11_999]).toEqual(['11999', '']);
+  });
+});

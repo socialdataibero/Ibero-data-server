@@ -358,7 +358,7 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 | `POST` | `/harmonizer/surveys` | Create: `{ name, description? }`. |
 | `GET` | `/harmonizer/surveys/:surveyId` | One survey. |
 | `PATCH` | `/harmonizer/surveys/:surveyId` | Change `name` and/or `description`. |
-| `DELETE` | `/harmonizer/surveys/:surveyId` | Delete the survey and everything in it. Returns `204`. |
+| `DELETE` | `/harmonizer/surveys/:surveyId` | Delete the survey and everything in it, including the stored files of its editions. Returns `204`. |
 | `POST` | `/harmonizer/upload` | Upload an edition (multipart). |
 | `GET` | `/harmonizer/datasets/:datasetId/mapping` | Columns of an edition with saved or suggested mappings. |
 | `PUT` | `/harmonizer/datasets/:datasetId/mapping` | Save the mapping of an edition. |
@@ -424,7 +424,7 @@ Suggestions are preselected in the response but are not saved until the client s
 
 ### Harmonized views
 
-Views are computed on every request from the stored rows and mappings. Nothing is materialized.
+Views are computed on every request from the edition's stored Parquet (see [File storage](#file-storage)) and its mappings. Nothing is materialized.
 
 Edition view:
 
@@ -458,10 +458,9 @@ Files are written to `storage/` under the directory the server is started from. 
 | --- | --- |
 | `storage/<datasetId>/<uuid>-<filename>` | Uploaded resources. Unsafe characters in the name become `_`. |
 | `storage/analyses/<analysisId>.parquet` | Analysis results. |
+| `storage/harmonizer/<datasetId>.parquet` | Rows of a harmonizer edition, all text, in file order. Columns are positional (`c0`, `c1`, …); their names are the edition's stored headers. An empty file (no header) writes no Parquet. |
 
-Harmonizer data is not stored on disk. Every CSV row is stored in PostgreSQL as JSON (`harmonizer_raw_rows`).
-
-Deleting through the API removes the related files. A file deleted by hand makes its resource return `404 resource_file_missing`.
+Deleting through the API removes the related files. A file deleted by hand makes its resource return `404 resource_file_missing`, and makes the views and exports of its harmonizer edition return `404 harmonizer_dataset_file_missing`.
 
 ---
 

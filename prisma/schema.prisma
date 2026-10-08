@@ -194,7 +194,8 @@ model Analysis {
 // Armonizador de encuestas (portado de sectei-intermediario / FastAPI).
 // Unifica columnas con nombres distintos entre ediciones (`age` 2020, `edad1`
 // 2021) bajo un nombre canónico por encuesta. La vista armonizada NUNCA se
-// materializa: se calcula al vuelo desde raw_rows + mappings.
+// materializa: se calcula al vuelo desde el Parquet crudo de cada edición
+// (storage/harmonizer/<datasetId>.parquet) + mappings.
 // Prefijo `Harmonizer` porque `Survey` (enum) y `Dataset` ya existen arriba.
 // ---------------------------------------------------------------------------
 
@@ -216,32 +217,17 @@ model HarmonizerDataset {
   surveyId  String
   name      String
   year      Int
-  /// Encabezados del CSV en su orden original. jsonb no conserva el orden de
-  /// claves, así que el orden de columnas de la vista armonizada sale de aquí.
+  /// Encabezados del CSV en su orden original. Las columnas del Parquet crudo
+  /// son posicionales (`c0`, `c1`, …): sus nombres reales salen de aquí.
   columns   String[] @default([])
   rowCount  Int      @default(0)
   createdAt DateTime @default(now())
 
   survey   HarmonizerSurvey    @relation(fields: [surveyId], references: [id], onDelete: Cascade)
-  rawRows  HarmonizerRawRow[]
   mappings HarmonizerMapping[]
 
   @@index([surveyId])
   @@map("harmonizer_datasets")
-}
-
-/// Fila cruda del CSV, todo-string (las celdas vacías son "" y no null).
-/// Guarda TODAS las columnas, incluidas las que nunca se mapean.
-model HarmonizerRawRow {
-  id        String @id @default(uuid())
-  datasetId String
-  rowIndex  Int
-  data      Json
-
-  dataset HarmonizerDataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
-
-  @@index([datasetId, rowIndex])
-  @@map("harmonizer_raw_rows")
 }
 
 /// Nombre canónico, único POR encuesta (no global): `edad` puede existir en

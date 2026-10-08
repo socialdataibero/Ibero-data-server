@@ -183,6 +183,21 @@ export class AnalysisService {
     }
   }
 
+  /**
+   * Lee un Parquet completo como filas posicionales, sin el tope de MAX_ROWS
+   * (lo usa el armonizador para sus archivos crudos todo-VARCHAR).
+   */
+  async readParquetRows(parquetPath: string): Promise<unknown[][]> {
+    try {
+      return await this.withDataView(parquetPath, async (connection) => {
+        const reader = await connection.runAndReadAll('SELECT * FROM data');
+        return reader.getRowsJson() as unknown[][];
+      });
+    } catch (err) {
+      throw safeDuckDbError(err, [parquetPath], 'parquet_read_failed');
+    }
+  }
+
   async writeRecipeResult(
     parquetPath: string,
     recipe: Recipe,

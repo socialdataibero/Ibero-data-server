@@ -8,11 +8,12 @@ import type { Prisma } from '@prisma/client';
 import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
 import { randomUUID } from 'node:crypto';
-import { readFile, rm } from 'node:fs/promises';
+import { access, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AnalysisService } from '../analysis/analysis.service.js';
+import { LocalStorageService } from '../storage/local-storage.service.js';
 import { asciiFold, matchByName, parseVariables } from './matching.js';
 import {
   buildDatasetView,
@@ -86,7 +87,19 @@ export interface ExportFile {
   body: Buffer;
 }
 
-const RAW_ROW_BATCH = 1_000;
+// Cada edición se guarda una sola vez como Parquet todo-VARCHAR. Guardarla como
+// un JSON por fila repetía el nombre de cada columna en cada fila (H-31).
+function rawStorageKey(datasetId: string): string {
+  return `harmonizer/${datasetId}.parquet`;
+}
+
+// Las columnas del Parquet crudo son posicionales (`c0`, `c1`, …) y los nombres
+// reales viven en `HarmonizerDataset.columns`. DuckDB no distingue mayúsculas en
+// los identificadores, así que `EDAD` y `edad` chocarían como nombres de columna.
+function rawColumnNames(count: number): string[] {
+  return Array.from({ length: count }, (_, i) => `c${i}`);
+}
+
 const EXPORT_CONTENT_TYPE: Record<ExportFormat, string> = {
   csv: 'text/csv; charset=utf-8',
   parquet: 'application/vnd.apache.parquet',
@@ -133,6 +146,7 @@ export class HarmonizerService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly analysisService: AnalysisService,
+    private readonly storage: LocalStorageService,
   ) {}
 
   async listSurveys(
@@ -208,8 +222,16 @@ export class HarmonizerService {
 
   async removeSurvey(surveyId: string): Promise<void> {
     await this.getSurvey(surveyId);
-    // Las ediciones, sus filas, los mapeos y las canónicas se borran en cascada.
+    const datasets = await this.prisma.harmonizerDataset.findMany({
+      where: { surveyId },
+      select: { id: true },
+    });
+    // Las ediciones, los mapeos y las canónicas se borran en cascada; los
+    // Parquet crudos no, porque viven en disco.
     await this.prisma.harmonizerSurvey.delete({ where: { id: surveyId } });
+    await Promise.all(
+      datasets.map((d) => this.storage.remove(rawStorageKey(d.id))),
+    );
   }
 
   async updateSurvey(surveyId: string, dto: UpdateSurveyDto) {
@@ -270,9 +292,27 @@ export class HarmonizerService {
     const { columns, rows } = this.parseCsv(file.buffer);
     const survey = await this.resolveSurveyForUpload(dto);
 
-    const dataset = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.harmonizerDataset.create({
+    // El Parquet se escribe antes que la edición: si falla, no queda una
+    // edición sin datos; si falla la edición, se borra el Parquet.
+    const datasetId = randomUUID();
+    const key = rawStorageKey(datasetId);
+    if (columns.length > 0) {
+      const positional = rawColumnNames(columns.length);
+      await this.storage.ensureDir(key);
+      await this.analysisService.writeRowsToParquet(
+        positional,
+        rows.map((row) =>
+          Object.fromEntries(columns.map((col, i) => [positional[i], row[col]])),
+        ),
+        this.storage.resolvePath(key),
+      );
+    }
+
+    let dataset;
+    try {
+      dataset = await this.prisma.harmonizerDataset.create({
         data: {
+          id: datasetId,
           surveyId: survey.id,
           name: dto.name.trim(),
           year: dto.year,
@@ -280,18 +320,10 @@ export class HarmonizerService {
           rowCount: rows.length,
         },
       });
-      for (let offset = 0; offset < rows.length; offset += RAW_ROW_BATCH) {
-        const batch = rows
-          .slice(offset, offset + RAW_ROW_BATCH)
-          .map((data, i) => ({
-            datasetId: created.id,
-            rowIndex: offset + i,
-            data: data as Prisma.InputJsonObject,
-          }));
-        await tx.harmonizerRawRow.createMany({ data: batch });
-      }
-      return created;
-    });
+    } catch (err) {
+      await this.storage.remove(key);
+      throw err;
+    }
 
     return {
       datasetId: dataset.id,
@@ -602,11 +634,7 @@ export class HarmonizerService {
         where: { datasetId: dataset.id },
         include: { canonicalVariable: { select: { name: true } } },
       }),
-      this.prisma.harmonizerRawRow.findMany({
-        where: { datasetId: dataset.id },
-        orderBy: { rowIndex: 'asc' },
-        select: { data: true },
-      }),
+      this.readRawRows(dataset),
     ]);
     return {
       name: dataset.name,
@@ -618,8 +646,31 @@ export class HarmonizerService {
       missingCodes: new Map(
         mappings.map((m) => [m.sourceColumn, new Set(m.missingCodes)]),
       ),
-      rows: rawRows.map((r) => r.data as RawData),
+      rows: rawRows,
     };
+  }
+
+  private async readRawRows(dataset: {
+    id: string;
+    columns: string[];
+  }): Promise<RawData[]> {
+    // Un archivo vacío no tiene encabezados y no se escribe Parquet.
+    if (dataset.columns.length === 0) return [];
+    const path = this.storage.resolvePath(rawStorageKey(dataset.id));
+    try {
+      await access(path);
+    } catch {
+      throw new NotFoundException({
+        code: 'harmonizer_dataset_file_missing',
+        message: 'The stored data of this edition is missing. Upload it again.',
+      });
+    }
+    const rows = await this.analysisService.readParquetRows(path);
+    return rows.map((values) =>
+      Object.fromEntries(
+        dataset.columns.map((col, i) => [col, String(values[i] ?? '')]),
+      ),
+    );
   }
 
   async getDatasetHarmonized(datasetId: string) {
