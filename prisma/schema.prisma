@@ -226,7 +226,8 @@ model HarmonizerDataset {
   survey   HarmonizerSurvey    @relation(fields: [surveyId], references: [id], onDelete: Cascade)
   mappings HarmonizerMapping[]
 
-  @@index([surveyId])
+  /// El nombre es `_dataset` en la vista por encuesta: debe ser único en ella.
+  @@unique([surveyId, name])
   @@map("harmonizer_datasets")
 }
 

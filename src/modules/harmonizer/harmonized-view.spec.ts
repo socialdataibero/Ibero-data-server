@@ -115,12 +115,35 @@ describe('harmonizer: buildSurveyView', () => {
     }),
   ];
 
-  it('une ediciones y antepone _dataset/_year', () => {
+  it('une ediciones y antepone _dataset/_year/_row', () => {
     const view = buildSurveyView(editions, ['edad', 'sexo']);
     expect(view.headers).toEqual(['edad', 'sexo']);
     expect(view.rows).toEqual([
-      { edad: '30', sexo: 'M', _dataset: 'ENIGH 2020', _year: 2020 },
-      { edad: '41', _dataset: 'ENIGH 2021', _year: 2021 },
+      { edad: '30', sexo: 'M', _dataset: 'ENIGH 2020', _year: 2020, _row: 1 },
+      { edad: '41', _dataset: 'ENIGH 2021', _year: 2021, _row: 1 },
+    ]);
+  });
+
+  it('_row numera los registros de cada archivo, así que _dataset + _row es única aunque el id se repita', () => {
+    const sameIds = (name: string) =>
+      edition({
+        name,
+        columns: ['id', 'sexo'],
+        columnToCanonical: new Map([
+          ['id', 'id'],
+          ['sexo', 'sexo'],
+        ]),
+        rows: [
+          { id: '0001', sexo: '1' },
+          { id: '0002', sexo: '2' },
+        ],
+      });
+    const view = buildSurveyView([sameIds('A'), sameIds('B')], ['id', 'sexo']);
+    expect(view.rows.map((r) => [r._dataset, r._row, r.id])).toEqual([
+      ['A', 1, '0001'],
+      ['A', 2, '0002'],
+      ['B', 1, '0001'],
+      ['B', 2, '0002'],
     ]);
   });
 
@@ -151,7 +174,7 @@ describe('harmonizer: buildSurveyView', () => {
   it('una fila que no aporta ninguna variable pedida se omite', () => {
     const view = buildSurveyView(editions, ['sexo']);
     expect(view.rows).toEqual([
-      { sexo: 'M', _dataset: 'ENIGH 2020', _year: 2020 },
+      { sexo: 'M', _dataset: 'ENIGH 2020', _year: 2020, _row: 1 },
     ]);
   });
 

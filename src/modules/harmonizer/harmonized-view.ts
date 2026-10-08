@@ -62,16 +62,20 @@ export function buildSurveyView(
   for (const edition of editions) {
     const view = buildDatasetView(edition);
     const present = new Set(view.headers);
-    for (const r of view.rows) {
+    view.rows.forEach((r, i) => {
       const row: HarmonizedRow = {};
       for (const h of wanted) {
         if (present.has(h)) row[h] = r[h] ?? null;
       }
-      if (Object.keys(row).length === 0) continue;
+      if (Object.keys(row).length === 0) return;
       row['_dataset'] = edition.name;
       row['_year'] = edition.year;
+      // Número de registro en el archivo original (1 = primera fila de datos).
+      // `_dataset` + `_row` identifica cada fila aunque el archivo no tenga
+      // columna identificadora, o la repita entre ediciones (H-05).
+      row['_row'] = i + 1;
       rows.push(row);
-    }
+    });
   }
 
   return { headers: wanted, rows };

@@ -126,6 +126,13 @@ function normalizeMissingCodes(codes: string[] | undefined): string[] {
   ];
 }
 
+function datasetNameTaken(name: string, surveyName: string) {
+  return new ConflictException({
+    code: 'dataset_name_taken',
+    message: `Survey "${surveyName}" already has an edition named "${name}".`,
+  });
+}
+
 // Un archivo que no es UTF-8 (p. ej. Latin-1) se decodificaría con U+FFFD en
 // lugar de cada carácter acentuado, y el byte original se perdería para siempre.
 function decodeUtf8(buffer: Buffer): string {
@@ -290,6 +297,10 @@ export class HarmonizerService {
     // Se valida el archivo antes de crear la encuesta nueva (`__new__`), para
     // que un archivo rechazado no deje una encuesta vacía.
     const { columns, rows } = this.parseCsv(file.buffer);
+    const name = dto.name.trim();
+    if (dto.surveyId !== NEW_SURVEY) {
+      await this.assertDatasetNameFree(dto.surveyId, name);
+    }
     const survey = await this.resolveSurveyForUpload(dto);
 
     // El Parquet se escribe antes que la edición: si falla, no queda una
@@ -314,7 +325,7 @@ export class HarmonizerService {
         data: {
           id: datasetId,
           surveyId: survey.id,
-          name: dto.name.trim(),
+          name,
           year: dto.year,
           columns,
           rowCount: rows.length,
@@ -322,6 +333,10 @@ export class HarmonizerService {
       });
     } catch (err) {
       await this.storage.remove(key);
+      // Dos subidas simultáneas con el mismo nombre: la restricción única gana.
+      if ((err as { code?: string }).code === 'P2002') {
+        throw datasetNameTaken(name, survey.name);
+      }
       throw err;
     }
 
@@ -335,6 +350,16 @@ export class HarmonizerService {
         surveyName: survey.name,
       },
     };
+  }
+
+  // `_dataset` en la vista por encuesta es el nombre de la edición: si se
+  // repitiera, sus filas serían indistinguibles (H-05).
+  private async assertDatasetNameFree(surveyId: string, name: string) {
+    const existing = await this.prisma.harmonizerDataset.findFirst({
+      where: { surveyId, name },
+      include: { survey: { select: { name: true } } },
+    });
+    if (existing) throw datasetNameTaken(name, existing.survey.name);
   }
 
   private async resolveSurveyForUpload(dto: UploadDatasetDto) {
@@ -759,7 +784,7 @@ export class HarmonizerService {
     const { survey, view } = await this.surveyView(surveyId, variables);
     return this.exportView(
       `harmonized_${survey.name}`,
-      ['_dataset', '_year', ...view.headers],
+      ['_dataset', '_year', '_row', ...view.headers],
       view,
       format,
     );

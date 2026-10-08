@@ -391,7 +391,8 @@ Fields: `file`, `name` (edition name, required), `year` (1900–2100), `surveyId
 - The header order is stored and used for column order in the harmonized view.
 - All columns are stored, including those that are never mapped.
 - An empty file or a header with no rows is accepted and creates an edition with 0 rows.
-- Uploading never changes other editions. Uploading the same file twice creates two editions.
+- The edition name, after trimming, must be unique within its survey, because it is the `_dataset` of the survey view. A repeated name returns `409 dataset_name_taken` and nothing is written. Names are compared exactly (case and accents matter).
+- Uploading never changes other editions. Uploading the same file twice under two names creates two editions.
 
 ### Mapping
 
@@ -436,7 +437,8 @@ Survey view:
 
 - `variables` picks the canonical variables to include. It can be repeated or comma-separated. Without it, the view includes every canonical variable that has at least one mapping, in alphabetical order.
 - Editions are stacked by year, then by upload time.
-- Every row gets `_dataset` (edition name) and `_year`.
+- Every row gets `_dataset` (edition name), `_year` and `_row`. `_row` is the record number in the uploaded file, starting at 1 with the first row after the header. It counts records, not lines, so a value with a line break does not shift it.
+- `_dataset` + `_row` identifies every row, even when the file has no ID column or repeats IDs across editions. Columns from the file, such as a person ID, are usually repeated across editions, so joining on them alone duplicates rows.
 - A variable that an edition does not have is missing from that edition's rows.
 - Missing values keep the codes of their own edition: a `9` is `null` only in editions where `9` is a missing code for that column.
 - Rows that have none of the selected variables are dropped.
@@ -445,7 +447,7 @@ Exports:
 
 - Formats: `csv` and `parquet`. Any other extension returns `404 export_format_not_supported`.
 - The filename is `harmonized_<edition>_<year>` or `harmonized_<survey>`, with accents and symbols removed.
-- The survey export puts `_dataset` and `_year` first. The edition export does not include them.
+- The survey export puts `_dataset`, `_year` and `_row` first. The edition export does not include them.
 - CSV is UTF-8 with a BOM, so Excel opens it correctly. Missing values are empty.
 - Parquet columns are all text. Missing values are `NULL`, so they are distinct from any text value.
 - Exporting an edition with no mappings as Parquet returns `400 harmonized_view_empty`.
