@@ -69,6 +69,8 @@ export interface DatasetInfo {
   surveyName: string;
   // Filas de datos leídas del CSV, sin contar el encabezado (H-09).
   rowCount: number;
+  // Columnas del archivo, mapeadas o no (H-18).
+  columnCount: number;
 }
 
 export type SuggestionSource = 'history' | 'name';
@@ -378,6 +380,7 @@ export class HarmonizerService {
         surveyId: survey.id,
         surveyName: survey.name,
         rowCount: dataset.rowCount,
+        columnCount: dataset.columns.length,
       },
       renamedColumns: renamed,
     };
@@ -475,6 +478,7 @@ export class HarmonizerService {
     year: number;
     surveyId: string;
     rowCount: number;
+    columns: string[];
     survey: { name: string };
   }): DatasetInfo {
     return {
@@ -484,6 +488,7 @@ export class HarmonizerService {
       surveyId: dataset.surveyId,
       surveyName: dataset.survey.name,
       rowCount: dataset.rowCount,
+      columnCount: dataset.columns.length,
     };
   }
 
