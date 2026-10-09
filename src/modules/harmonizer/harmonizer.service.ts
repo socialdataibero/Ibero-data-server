@@ -18,6 +18,7 @@ import { asciiFold, matchByName, parseVariables } from './matching.js';
 import {
   buildDatasetView,
   buildSurveyView,
+  neutralizeCsvFormula,
   type DatasetEdition,
   type HarmonizedView,
   type RawData,
@@ -877,8 +878,8 @@ export class HarmonizerService {
     if (format === 'csv') {
       const csv = stringify(view.rows, {
         header: true,
-        columns,
-        cast: { number: (n) => String(n) },
+        columns: columns.map((key) => ({ key, header: neutralizeCsvFormula(key) })),
+        cast: { number: (n) => String(n), string: neutralizeCsvFormula },
       });
       return {
         filename,

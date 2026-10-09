@@ -17,6 +17,19 @@ export interface DatasetEdition {
   rows: RawData[];
 }
 
+const FORMULA_START = /^[=+\-@\t\r]/;
+const PLAIN_NUMBER = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/;
+
+/**
+ * Evita que Excel u hojas similares evalúen un texto como fórmula al abrir el CSV (H-12):
+ * antepone un apóstrofo a lo que empieza con `=`, `+`, `-`, `@`, tabulador o retorno de carro.
+ * Los números simples (`-5`, `+3.2`, `1e-3`) se dejan intactos porque no son fórmulas.
+ */
+export function neutralizeCsvFormula(value: string): string {
+  if (!FORMULA_START.test(value) || PLAIN_NUMBER.test(value)) return value;
+  return `'${value}`;
+}
+
 function cellValue(
   value: string | undefined,
   codes: Set<string> | undefined,

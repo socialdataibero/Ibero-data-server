@@ -451,6 +451,7 @@ Exports:
 - The filename is `harmonized_<edition>_<year>` or `harmonized_<survey>`, with accents and symbols removed.
 - The survey export puts `_dataset`, `_year` and `_row` first. The edition export does not include them.
 - CSV is UTF-8 with a BOM, so Excel opens it correctly. Missing values are empty.
+- In CSV, values and headers that start with `=`, `+`, `-`, `@`, a tab or a carriage return get a leading `'`, so spreadsheets do not run them as formulas (report H-12). Plain numbers such as `-5` or `+3.2` are left as they are. Parquet is not changed.
 - Parquet columns are all text. Missing values are `NULL`, so they are distinct from any text value.
 - Exporting an edition with no mappings as Parquet returns `400 harmonized_view_empty`.
 

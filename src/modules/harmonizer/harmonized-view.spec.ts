@@ -1,6 +1,7 @@
 import {
   buildDatasetView,
   buildSurveyView,
+  neutralizeCsvFormula,
   type DatasetEdition,
 } from './harmonized-view.js';
 
@@ -186,5 +187,22 @@ describe('harmonizer: buildSurveyView', () => {
 
   it('wanted vacío -> vista vacía', () => {
     expect(buildSurveyView(editions, [])).toEqual({ headers: [], rows: [] });
+  });
+});
+
+describe('harmonizer: neutralizeCsvFormula (H-12)', () => {
+  it('antepone apóstrofo a lo que Excel evaluaría como fórmula', () => {
+    expect(neutralizeCsvFormula('=1+1')).toBe("'=1+1");
+    expect(neutralizeCsvFormula('+1+1')).toBe("'+1+1");
+    expect(neutralizeCsvFormula('-1+1')).toBe("'-1+1");
+    expect(neutralizeCsvFormula('@SUM(A1)')).toBe("'@SUM(A1)");
+    expect(neutralizeCsvFormula('\t=1')).toBe("'\t=1");
+    expect(neutralizeCsvFormula('-')).toBe("'-");
+  });
+
+  it('deja intactos números simples y texto normal', () => {
+    for (const v of ['-5', '+3.2', '-0.5', '-.5', '1e-3', '-2E+4', '12', 'Mérida', '', 'a=b', ' =1']) {
+      expect(neutralizeCsvFormula(v)).toBe(v);
+    }
   });
 });
