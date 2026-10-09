@@ -399,6 +399,23 @@ export class HarmonizerService {
         message: `Invalid CSV: ${err instanceof Error ? err.message : 'could not parse the file.'}`,
       });
     }
+    // Una edición sin filas no aporta datos, pero sí permitiría crear
+    // variables canónicas permanentes en la encuesta (H-08). Una línea con
+    // solo espacios se lee como un encabezado de nombres vacíos.
+    if (rows.length === 0 && columns.every((c) => c === '')) {
+      throw new BadRequestException({
+        code: 'csv_empty',
+        message:
+          'El archivo está vacío: no tiene encabezado ni datos. Revisa que sea el archivo correcto.',
+      });
+    }
+    if (rows.length === 0) {
+      throw new BadRequestException({
+        code: 'csv_no_rows',
+        message:
+          'El archivo solo tiene encabezado y ninguna fila de datos. Sube un archivo con al menos una fila.',
+      });
+    }
     return { columns, rows };
   }
 

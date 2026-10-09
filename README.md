@@ -373,7 +373,7 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 - Names are unique. Creating or renaming to a taken name returns `409 survey_name_taken`.
 - Sending an empty `description` in `PATCH` clears it.
 - Renaming a survey does not change its editions, canonical variables or mappings.
-- Deleting a survey also deletes its editions, their raw rows, their mappings and its canonical variables. A missing survey returns `404 survey_not_found`. Editions cannot be deleted on their own.
+- Deleting a survey also deletes its editions, their stored Parquet files, their mappings and its canonical variables. A missing survey returns `404 survey_not_found`. Editions cannot be deleted on their own.
 
 ### Upload
 
@@ -384,6 +384,7 @@ Fields: `file`, `name` (edition name, required), `year` (1900–2100), `surveyId
   - An unknown ID returns `404 survey_not_found`.
 - Maximum size: 200 MB. The file extension is not checked; the content must parse as CSV (`400 csv_invalid`).
 - The file must be valid UTF-8 (a BOM is allowed). Any other encoding, such as Latin-1, returns `400 csv_not_utf8` with the line of the first invalid byte, instead of storing accented characters as `�`.
+- The file must have a header and at least one data row. A file with no header (for example 0 bytes or only blank lines) returns `400 csv_empty`; a file with a header but no data rows returns `400 csv_no_rows` (report H-08).
 - The file is checked before anything is written, so a rejected upload with `__new__` does not create the survey.
 - The first row is the header. A leading BOM is removed, blank lines are skipped, and values are kept exactly as written: no trimming and no type conversion. Every value is stored as text, and empty cells are `""`.
 - Headers are trimmed (leading and trailing spaces removed) before anything else. Spaces inside a name are kept.
@@ -473,9 +474,7 @@ The code currently behaves as described below. It is not yet decided whether eac
 - **Analysis visibility.** The public catalog ignores `Analysis.visibility` and uses only the dataset's visibility. A `PRIVATE` analysis in a `PUBLIC` dataset is public.
 - **Private datasets.** `PRIVATE` only hides a dataset from the public catalog. Any logged-in user can still list and read it.
 - **Harmonizer access.** Surveys are not tied to organizations, so every logged-in user can read and change all of them.
-- **Empty CSV uploads.** Files with no rows are accepted (report H-08).
 - **Canonical variable names.** They are not validated and cannot be renamed or deleted (report H-20).
-- **Column collisions.** Two columns mapped to one canonical variable keep only the later one, without a warning (report H-01).
 - **Login errors.** Different codes for an unknown email and a wrong password reveal which emails are registered.
 - **Email format.** Registration only requires a non-empty email; the format is not checked.
 - **Unused pieces.** `SysadminGuard` and the `PENDING` analysis status exist but are not used.
