@@ -111,13 +111,36 @@ function isExportFormat(fmt: string): fmt is ExportFormat {
   return fmt === 'csv' || fmt === 'parquet';
 }
 
-function dedupeHeaders(headers: string[]): string[] {
-  const seen = new Map<string, number>();
-  return headers.map((h) => {
-    const count = seen.get(h) ?? 0;
-    seen.set(h, count + 1);
-    return count === 0 ? h : `${h}.${count}`;
+export interface RenamedColumn {
+  // Posición de la columna en el archivo, empezando en 1.
+  position: number;
+  original: string;
+  renamed: string;
+}
+
+// Los encabezados repetidos se renombran con `.1`, `.2`, … y se informa al
+// usuario (H-10). El sufijo salta los nombres que ya existen en el archivo:
+// con `EDAD, EDAD, EDAD.1` la segunda pasa a `EDAD.2`, no a otro `EDAD.1`.
+function dedupeHeaders(headers: string[]): {
+  columns: string[];
+  renamed: RenamedColumn[];
+} {
+  const taken = new Set(headers);
+  const seen = new Set<string>();
+  const renamed: RenamedColumn[] = [];
+  const columns = headers.map((h, i) => {
+    if (!seen.has(h)) {
+      seen.add(h);
+      return h;
+    }
+    let n = 1;
+    while (taken.has(`${h}.${n}`)) n++;
+    const name = `${h}.${n}`;
+    taken.add(name);
+    renamed.push({ position: i + 1, original: h, renamed: name });
+    return name;
   });
+  return { columns, renamed };
 }
 
 // Se recortan, se descartan vacíos y repetidos: el valor de la celda también se
@@ -295,10 +318,14 @@ export class HarmonizerService {
   async uploadDataset(
     dto: UploadDatasetDto,
     file: { originalname: string; buffer: Buffer },
-  ): Promise<{ datasetId: string; dataset: DatasetInfo }> {
+  ): Promise<{
+    datasetId: string;
+    dataset: DatasetInfo;
+    renamedColumns: RenamedColumn[];
+  }> {
     // Se valida el archivo antes de crear la encuesta nueva (`__new__`), para
     // que un archivo rechazado no deje una encuesta vacía.
-    const { columns, rows } = this.parseCsv(file.buffer);
+    const { columns, rows, renamed } = this.parseCsv(file.buffer);
     const name = dto.name.trim();
     if (dto.surveyId !== NEW_SURVEY) {
       await this.assertDatasetNameFree(dto.surveyId, name);
@@ -352,6 +379,7 @@ export class HarmonizerService {
         surveyName: survey.name,
         rowCount: dataset.rowCount,
       },
+      renamedColumns: renamed,
     };
   }
 
@@ -379,9 +407,14 @@ export class HarmonizerService {
     return this.createSurvey({ name });
   }
 
-  private parseCsv(buffer: Buffer): { columns: string[]; rows: RawData[] } {
+  private parseCsv(buffer: Buffer): {
+    columns: string[];
+    rows: RawData[];
+    renamed: RenamedColumn[];
+  } {
     const text = decodeUtf8(buffer);
     let columns: string[] = [];
+    let renamed: RenamedColumn[] = [];
     let rows: RawData[];
     try {
       rows = parse(text, {
@@ -389,7 +422,7 @@ export class HarmonizerService {
         columns: (header: string[]) => {
           // Se recortan antes de deduplicar: `EDAD␣` y `EDAD` serían columnas
           // distintas en la base aunque en pantalla se vean iguales.
-          columns = dedupeHeaders(header.map((h) => h.trim()));
+          ({ columns, renamed } = dedupeHeaders(header.map((h) => h.trim())));
           return columns;
         },
         skip_empty_lines: true,
@@ -419,7 +452,7 @@ export class HarmonizerService {
           'El archivo solo tiene encabezado y ninguna fila de datos. Sube un archivo con al menos una fila.',
       });
     }
-    return { columns, rows };
+    return { columns, rows, renamed };
   }
 
   async getDataset(datasetId: string) {

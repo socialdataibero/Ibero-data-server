@@ -389,7 +389,7 @@ Fields: `file`, `name` (edition name, required), `year` (1900–2100), `surveyId
 - The file is checked before anything is written, so a rejected upload with `__new__` does not create the survey.
 - The first row is the header. A leading BOM is removed, blank lines are skipped, and values are kept exactly as written: no trimming and no type conversion. Every value is stored as text, and empty cells are `""`.
 - Headers are trimmed (leading and trailing spaces removed) before anything else. Spaces inside a name are kept.
-- Repeated headers, compared after trimming, are renamed by appending `.1`, `.2`, and so on (`edad`, `edad.1`). `EDAD ` and `EDAD` become `EDAD` and `EDAD.1`.
+- Repeated headers, compared after trimming, are renamed by appending `.1`, `.2`, and so on (`edad`, `edad.1`). `EDAD ` and `EDAD` become `EDAD` and `EDAD.1`. A suffix that would clash with another header in the file is skipped: `EDAD, EDAD, EDAD.1` becomes `EDAD, EDAD.2, EDAD.1`. The upload response lists each rename in `renamedColumns` as `{ position, original, renamed }` (`position` starts at 1; `[]` when nothing was renamed), so the client can warn the user (report H-10).
 - The header order is stored and used for column order in the harmonized view.
 - All columns are stored, including those that are never mapped.
 - An empty file or a header with no rows is accepted and creates an edition with 0 rows.
