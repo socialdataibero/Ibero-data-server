@@ -437,7 +437,8 @@ Edition view:
 
 Survey view:
 
-- `variables` picks the canonical variables to include. It can be repeated or comma-separated. Without it, the view includes every canonical variable that has at least one mapping, in alphabetical order.
+- `variables` picks the canonical variables to include. Repeat it for several (`?variables=edad&variables=sexo`). Commas are not separators, because a canonical name can contain one (report H-13). Without it, the view includes every canonical variable that has at least one mapping.
+- Columns always come in alphabetical order, whatever order `variables` uses, so their positions do not change between downloads (report H-14). Names that are not mapped canonical variables of the survey are ignored; if none is valid, the view is empty.
 - Editions are stacked by year, then by upload time.
 - Every row gets `_dataset` (edition name), `_year` and `_row`. `_row` is the record number in the uploaded file, starting at 1 with the first row after the header. It counts records, not lines, so a value with a line break does not shift it.
 - `_dataset` + `_row` identifies every row, even when the file has no ID column or repeats IDs across editions. Columns from the file, such as a person ID, are usually repeated across editions, so joining on them alone duplicates rows.

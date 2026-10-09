@@ -786,8 +786,12 @@ export class HarmonizerService {
   ) {
     const survey = await this.getSurvey(surveyId);
     const available = await this.availableVariables(surveyId);
-    const selected = parseVariables(variables);
-    const wanted = selected.length > 0 ? selected : available;
+    // Orden fijo (el alfabético de `available`), sin importar cómo vengan en la URL, para que
+    // las columnas no cambien de posición entre descargas (H-14). Se descartan nombres que no
+    // son variables mapeadas de la encuesta.
+    const requested = new Set(parseVariables(variables));
+    const selected = available.filter((v) => requested.has(v));
+    const wanted = requested.size > 0 ? selected : available;
 
     const datasets = await this.prisma.harmonizerDataset.findMany({
       where: { surveyId },

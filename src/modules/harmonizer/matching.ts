@@ -63,17 +63,19 @@ function isBetter(
   return a.id > b.id;
 }
 
+/**
+ * Variables pedidas en `?variables=`. Solo se aceptan repetidas (`?variables=a&variables=b`):
+ * no se parte por comas porque un nombre canónico puede contener comas (H-13).
+ */
 export function parseVariables(raw: string | string[] | undefined): string[] {
   const items = raw === undefined ? [] : Array.isArray(raw) ? raw : [raw];
   const seen = new Set<string>();
   const out: string[] = [];
   for (const item of items) {
-    for (const part of String(item).split(',')) {
-      const v = part.trim();
-      if (v !== '' && !seen.has(v)) {
-        seen.add(v);
-        out.push(v);
-      }
+    const v = String(item).trim();
+    if (v !== '' && !seen.has(v)) {
+      seen.add(v);
+      out.push(v);
     }
   }
   return out;

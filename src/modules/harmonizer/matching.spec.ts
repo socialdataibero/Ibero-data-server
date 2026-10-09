@@ -71,14 +71,15 @@ describe('harmonizer: matchByName', () => {
 });
 
 describe('harmonizer: parseVariables', () => {
-  it('acepta lista separada por comas y valores repetidos, deduplicando en orden', () => {
-    expect(parseVariables('edad,sexo')).toEqual(['edad', 'sexo']);
+  it('acepta valores repetidos, recortando y deduplicando en orden', () => {
+    expect(parseVariables('edad')).toEqual(['edad']);
     expect(parseVariables(['edad', 'sexo'])).toEqual(['edad', 'sexo']);
-    expect(parseVariables(['edad, sexo', 'edad', ' ', 'ingreso'])).toEqual([
-      'edad',
-      'sexo',
-      'ingreso',
-    ]);
+    expect(parseVariables([' edad ', 'edad', ' ', 'ingreso'])).toEqual(['edad', 'ingreso']);
+  });
+
+  it('no parte por comas: un nombre canónico puede contenerlas (H-13)', () => {
+    expect(parseVariables('municipio, clave')).toEqual(['municipio, clave']);
+    expect(parseVariables(['municipio, clave', 'edad'])).toEqual(['municipio, clave', 'edad']);
   });
 
   it('undefined o vacío -> []', () => {
