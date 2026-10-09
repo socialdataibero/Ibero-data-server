@@ -385,6 +385,7 @@ Fields: `file`, `name` (edition name, required), `year` (1900–2100), `surveyId
 - Maximum size: 200 MB. The file extension is not checked; the content must parse as CSV (`400 csv_invalid`).
 - The file must be valid UTF-8 (a BOM is allowed). Any other encoding, such as Latin-1, returns `400 csv_not_utf8` with the line of the first invalid byte, instead of storing accented characters as `�`.
 - The file must have a header and at least one data row. A file with no header (for example 0 bytes or only blank lines) returns `400 csv_empty`; a file with a header but no data rows returns `400 csv_no_rows` (report H-08).
+- The response is `{ datasetId, dataset }`. `dataset` includes `rowCount`, the number of data rows read (the header and skipped blank lines are not counted), so the client can check that nothing was dropped (report H-09). The same `dataset` object, with `rowCount`, is returned by `GET .../mapping` and the edition's harmonized view.
 - The file is checked before anything is written, so a rejected upload with `__new__` does not create the survey.
 - The first row is the header. A leading BOM is removed, blank lines are skipped, and values are kept exactly as written: no trimming and no type conversion. Every value is stored as text, and empty cells are `""`.
 - Headers are trimmed (leading and trailing spaces removed) before anything else. Spaces inside a name are kept.

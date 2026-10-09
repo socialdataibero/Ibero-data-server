@@ -67,6 +67,8 @@ export interface DatasetInfo {
   year: number;
   surveyId: string;
   surveyName: string;
+  // Filas de datos leídas del CSV, sin contar el encabezado (H-09).
+  rowCount: number;
 }
 
 export type SuggestionSource = 'history' | 'name';
@@ -348,6 +350,7 @@ export class HarmonizerService {
         year: dataset.year,
         surveyId: survey.id,
         surveyName: survey.name,
+        rowCount: dataset.rowCount,
       },
     };
   }
@@ -438,6 +441,7 @@ export class HarmonizerService {
     name: string;
     year: number;
     surveyId: string;
+    rowCount: number;
     survey: { name: string };
   }): DatasetInfo {
     return {
@@ -446,6 +450,7 @@ export class HarmonizerService {
       year: dataset.year,
       surveyId: dataset.surveyId,
       surveyName: dataset.survey.name,
+      rowCount: dataset.rowCount,
     };
   }
 
