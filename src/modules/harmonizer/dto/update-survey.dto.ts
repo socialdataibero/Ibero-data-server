@@ -2,11 +2,11 @@ import { IsOptional, IsString, MinLength } from 'class-validator';
 
 export class UpdateSurveyDto {
   @IsOptional()
-  @IsString()
-  @MinLength(1, { message: 'name cannot be empty' })
+  @IsString({ message: 'name debe ser texto.' })
+  @MinLength(1, { message: 'name no puede quedar vacío.' })
   name?: string;
 
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'description debe ser texto.' })
   description?: string;
 }

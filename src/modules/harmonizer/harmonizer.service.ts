@@ -197,7 +197,7 @@ function normalizeMissingCodes(codes: string[] | undefined): string[] {
 function datasetNameTaken(name: string, surveyName: string) {
   return new ConflictException({
     code: 'dataset_name_taken',
-    message: `Survey "${surveyName}" already has an edition named "${name}".`,
+    message: `La encuesta «${surveyName}» ya tiene una edición llamada «${name}». Usa otro nombre.`,
   });
 }
 
@@ -211,7 +211,7 @@ function decodeUtf8(buffer: Buffer): string {
     const line = lossy.slice(0, lossy.indexOf('\uFFFD')).split('\n').length;
     throw new BadRequestException({
       code: 'csv_not_utf8',
-      message: `El archivo no está codificado en UTF-8 (primer byte inválido en la línea ${line}). Vuelve a guardarlo como UTF-8 y súbelo de nuevo.`,
+      message: `El archivo no está en UTF-8 y sus acentos se perderían (el primer carácter que no se puede leer está en la línea ${line}). Vuelve a guardarlo como «CSV UTF-8» y súbelo de nuevo.`,
     });
   }
 }
@@ -289,7 +289,7 @@ export class HarmonizerService {
     if (!name) {
       throw new BadRequestException({
         code: 'survey_name_required',
-        message: 'Survey name cannot be empty.',
+        message: 'El nombre de la encuesta no puede quedar vacío.',
       });
     }
     const existing = await this.prisma.harmonizerSurvey.findUnique({
@@ -298,7 +298,7 @@ export class HarmonizerService {
     if (existing) {
       throw new ConflictException({
         code: 'survey_name_taken',
-        message: 'A survey with that name already exists.',
+        message: `Ya existe una encuesta llamada «${name}».`,
       });
     }
     const created = await this.prisma.harmonizerSurvey.create({
@@ -314,7 +314,7 @@ export class HarmonizerService {
     if (!survey) {
       throw new NotFoundException({
         code: 'survey_not_found',
-        message: 'Survey not found.',
+        message: 'La encuesta no existe.',
       });
     }
     return survey;
@@ -455,7 +455,7 @@ export class HarmonizerService {
       if (!name) {
         throw new BadRequestException({
           code: 'survey_name_required',
-          message: 'Survey name cannot be empty.',
+          message: 'El nombre de la encuesta no puede quedar vacío.',
         });
       }
       if (name !== survey.name) {
@@ -465,7 +465,7 @@ export class HarmonizerService {
         if (existing) {
           throw new ConflictException({
             code: 'survey_name_taken',
-            message: 'A survey with that name already exists.',
+            message: `Ya existe una encuesta llamada «${name}».`,
           });
         }
         data.name = name;
@@ -582,7 +582,7 @@ export class HarmonizerService {
     if (!name) {
       throw new BadRequestException({
         code: 'new_survey_name_required',
-        message: 'Provide the name of the new survey in "newSurvey".',
+        message: 'Escribe el nombre de la encuesta nueva (campo «newSurvey»).',
       });
     }
     return this.createSurvey({ name });
@@ -652,7 +652,7 @@ export class HarmonizerService {
     if (!dataset) {
       throw new NotFoundException({
         code: 'harmonizer_dataset_not_found',
-        message: 'Dataset not found.',
+        message: 'La edición no existe.',
       });
     }
     return dataset;
@@ -842,9 +842,9 @@ export class HarmonizerService {
       if (collisions.length > 0) {
         throw new ConflictException({
           code: 'canonical_variable_collision',
-          message: `Each canonical variable can be mapped from only one column per dataset. Columns sharing a canonical variable: ${collisions
+          message: `Cada variable canónica solo puede venir de una columna por edición. Estas columnas comparten variable: ${collisions
             .map((columns) => columns.join(', '))
-            .join('; ')}.`,
+            .join('; ')}. Asigna una variable distinta a cada una o deja alguna sin mapear.`,
         });
       }
 
@@ -1060,7 +1060,7 @@ export class HarmonizerService {
       if (!canonical) {
         throw new BadRequestException({
           code: 'canonical_variable_not_found',
-          message: `Canonical variable "${id}" does not belong to this survey.`,
+          message: `La variable con id «${id}» no pertenece a esta encuesta.`,
         });
       }
       return canonical.id;
@@ -1108,7 +1108,7 @@ export class HarmonizerService {
     } catch {
       throw new NotFoundException({
         code: 'harmonizer_dataset_file_missing',
-        message: 'The stored data of this edition is missing. Upload it again.',
+        message: 'No se encontraron los datos guardados de esta edición. Vuelve a subir el archivo.',
       });
     }
     const rows = await this.analysisService.readParquetRows(path);
@@ -1222,7 +1222,7 @@ export class HarmonizerService {
     if (!isExportFormat(format)) {
       throw new NotFoundException({
         code: 'export_format_not_supported',
-        message: `Export format not supported: ${fmt}. Use "csv" or "parquet".`,
+        message: `Formato de exportación no admitido: «${fmt}». Usa «csv» o «parquet».`,
       });
     }
     return format;
@@ -1258,7 +1258,7 @@ export class HarmonizerService {
     if (columns.length === 0) {
       throw new BadRequestException({
         code: 'harmonized_view_empty',
-        message: 'There are no mapped variables to export as Parquet.',
+        message: 'No hay variables mapeadas para exportar como Parquet. Mapea al menos una columna.',
       });
     }
     const types = await this.parquetTypes(surveyId, view);

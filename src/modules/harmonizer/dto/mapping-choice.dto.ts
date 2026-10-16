@@ -5,12 +5,12 @@ export const NEW_CANONICAL = '__new__';
 export const CANONICAL_PREFIX = 'cv:';
 
 export class MappingChoiceDto {
-  @IsString()
+  @IsString({ message: 'column debe ser texto.' })
   column!: string;
-  @IsString()
+  @IsString({ message: 'choice debe ser texto.' })
   choice!: string;
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'newName debe ser texto.' })
   newName?: string;
 
   /** Tipo de la variable canónica. Si viene, se valida contra los valores y queda confirmado. */
@@ -21,7 +21,7 @@ export class MappingChoiceDto {
   dataType?: ValueType;
 
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
+  @IsArray({ message: 'missingCodes debe ser una lista.' })
+  @IsString({ each: true, message: 'missingCodes solo puede contener texto.' })
   missingCodes?: string[];
 }

@@ -98,11 +98,11 @@ CORS is open to every origin. The `Content-Disposition` header is exposed so the
 **Errors.** Every error response has the same shape:
 
 ```json
-{ "statusCode": 409, "code": "survey_name_taken", "message": "A survey with that name already exists." }
+{ "statusCode": 409, "code": "survey_name_taken", "message": "Ya existe una encuesta llamada «ENIGH»." }
 ```
 
 - `code` is stable and meant for clients. Use it to decide what to show; do not parse `message`.
-- `message` is in English and is meant for developers. The web app shows its own Spanish text.
+- `message` is human-readable. Every harmonizer error, including its validation `details`, is in Spanish (the field name at the start stays as is, for example `"year debe ser un número entero."`). The other modules still answer in English, and the web app shows its own Spanish text for them.
 - Validation failures use `code: "validation_error"` and add a `details` array with one string per violation, each starting with the field name (`"slug can only contain ..."`).
 - Unexpected errors return `500` with `code: "internal_error"` and are logged.
 
@@ -404,7 +404,6 @@ Fields: `file`, `name` (edition name, required), `year` (1900–2100), `surveyId
 - Repeated headers, compared after trimming, are renamed by appending `.1`, `.2`, and so on (`edad`, `edad.1`). `EDAD ` and `EDAD` become `EDAD` and `EDAD.1`. A suffix that would clash with another header in the file is skipped: `EDAD, EDAD, EDAD.1` becomes `EDAD, EDAD.2, EDAD.1`. The upload response lists each rename in `renamedColumns` as `{ position, original, renamed }` (`position` starts at 1; `[]` when nothing was renamed), so the client can warn the user (report H-10).
 - The header order is stored and used for column order in the harmonized view.
 - All columns are stored, including those that are never mapped.
-- An empty file or a header with no rows is accepted and creates an edition with 0 rows.
 - The edition name, after trimming, must be unique within its survey, because it is the `_dataset` of the survey view. A repeated name returns `409 dataset_name_taken` and nothing is written. Names are compared exactly (case and accents matter).
 - Uploading never changes other editions. Uploading the same file twice under two names creates two editions.
 
@@ -510,7 +509,7 @@ Files are written to `storage/` under the directory the server is started from. 
 | --- | --- |
 | `storage/<datasetId>/<uuid>-<filename>` | Uploaded resources. Unsafe characters in the name become `_`. |
 | `storage/analyses/<analysisId>.parquet` | Analysis results. |
-| `storage/harmonizer/<datasetId>.parquet` | Rows of a harmonizer edition, all text, in file order. Columns are positional (`c0`, `c1`, …); their names are the edition's stored headers. An empty file (no header) writes no Parquet. |
+| `storage/harmonizer/<datasetId>.parquet` | Rows of a harmonizer edition, all text, in file order. Columns are positional (`c0`, `c1`, …); their names are the edition's stored headers. Uploads are never empty now (see [Upload](#upload)), but an edition uploaded from an empty file before that rule (report H-08) has no headers and no Parquet, and reads as 0 rows. |
 
 Deleting through the API removes the related files. A file deleted by hand makes its resource return `404 resource_file_missing`, and makes the views and exports of its harmonizer edition return `404 harmonizer_dataset_file_missing`.
 
