@@ -216,6 +216,31 @@ function decodeUtf8(buffer: Buffer): string {
   }
 }
 
+/**
+ * Mensaje en español para un CSV que no se pudo leer (H-07). Dice la línea y qué revisar, en
+ * lugar de la regla interna del lector («Invalid Opening Quote»). `lastRecordLine` es la línea
+ * donde terminó la última fila leída bien.
+ */
+function csvErrorMessage(err: unknown, lastRecordLine: number): string {
+  const info = (err ?? {}) as {
+    code?: string;
+    lines?: number;
+    record?: unknown[];
+    columns?: unknown[];
+  };
+  switch (info.code) {
+    case 'CSV_QUOTE_NOT_CLOSED':
+      return `Hay un dato que abre comillas (") y nunca las cierra, a partir de la línea ${lastRecordLine + 1}. Un dato que empieza con comillas debe terminar con comillas; las comillas dentro de él se escriben dobles ("").`;
+    case 'CSV_RECORD_INCONSISTENT_COLUMNS':
+      if (info.record && info.columns) {
+        return `La fila de la línea ${info.lines} tiene ${info.record.length} columnas y el encabezado tiene ${info.columns.length}. Revisa esa fila: puede faltar o sobrar una coma, un dato con comas debe ir entre comillas, o puede haber una comilla sin cerrar en la fila.`;
+      }
+      break;
+  }
+  const where = info.lines ? ` cerca de la línea ${info.lines}` : '';
+  return `No se pudo leer el archivo como CSV${where}. Revisa que esté separado por comas y que cada dato entre comillas abra y cierre sus comillas.`;
+}
+
 @Injectable()
 export class HarmonizerService {
   constructor(
@@ -572,6 +597,7 @@ export class HarmonizerService {
     let columns: string[] = [];
     let renamed: RenamedColumn[] = [];
     let rows: RawData[];
+    let lastRecordLine = 1;
     try {
       rows = parse(text, {
         bom: true,
@@ -584,11 +610,18 @@ export class HarmonizerService {
         skip_empty_lines: true,
         trim: false,
         cast: false,
+        // Una comilla dentro de un dato sin entrecomillar (`{"clave":1}`, `5" pantalla`) se
+        // conserva tal cual, como en pandas o Polars, en vez de rechazar el archivo (H-07).
+        relax_quotes: true,
+        on_record: (record: RawData, context: { lines: number }) => {
+          lastRecordLine = context.lines;
+          return record;
+        },
       }) as RawData[];
     } catch (err) {
       throw new BadRequestException({
         code: 'csv_invalid',
-        message: `Invalid CSV: ${err instanceof Error ? err.message : 'could not parse the file.'}`,
+        message: csvErrorMessage(err, lastRecordLine),
       });
     }
     // Una edición sin filas no aporta datos, pero sí permitiría crear
