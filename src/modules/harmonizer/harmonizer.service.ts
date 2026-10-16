@@ -39,6 +39,8 @@ import {
 import type { CreateSurveyDto } from './dto/create-survey.dto.js';
 import type { UpdateSurveyDto } from './dto/update-survey.dto.js';
 import type { SaveMappingDto } from './dto/save-mapping.dto.js';
+import type { RenameCanonicalVariableDto } from './dto/rename-canonical-variable.dto.js';
+import { canonicalNameProblem, sameCanonicalName } from './canonical-name.js';
 
 export interface SurveyDatasetSummary {
   id: string;
@@ -305,6 +307,118 @@ export class HarmonizerService {
     await Promise.all(
       datasets.map((d) => this.storage.remove(rawStorageKey(d.id))),
     );
+  }
+
+  async listCanonicalVariables(surveyId: string) {
+    const survey = await this.getSurvey(surveyId);
+    const variables = await this.prisma.harmonizerCanonicalVariable.findMany({
+      where: { surveyId },
+      orderBy: { name: 'asc' },
+      include: {
+        mappings: {
+          select: {
+            sourceColumn: true,
+            dataset: { select: { id: true, name: true, year: true } },
+          },
+        },
+      },
+    });
+    return {
+      survey: { id: survey.id, name: survey.name },
+      items: variables.map((v) => ({
+        id: v.id,
+        name: v.name,
+        dataType: v.dataType,
+        // Nombres creados antes de las reglas: se pueden seguir usando, pero conviene renombrarlos.
+        nameValid: canonicalNameProblem(v.name) === null,
+        usages: v.mappings
+          .map((m) => ({
+            datasetId: m.dataset.id,
+            datasetName: m.dataset.name,
+            year: m.dataset.year,
+            column: m.sourceColumn,
+          }))
+          .sort(
+            (a, b) =>
+              a.year - b.year || a.datasetName.localeCompare(b.datasetName),
+          ),
+      })),
+    };
+  }
+
+  private async getCanonicalVariable(surveyId: string, variableId: string) {
+    await this.getSurvey(surveyId);
+    const variable = await this.prisma.harmonizerCanonicalVariable.findFirst({
+      where: { id: variableId, surveyId },
+      include: {
+        mappings: {
+          select: { sourceColumn: true, dataset: { select: { name: true } } },
+        },
+      },
+    });
+    if (!variable) {
+      throw new NotFoundException({
+        code: 'canonical_variable_not_found',
+        message: 'La variable no existe en esta encuesta.',
+      });
+    }
+    return variable;
+  }
+
+  /** Renombrar no toca los mapeos: apuntan al id, así que todas las ediciones ven el nombre nuevo. */
+  async renameCanonicalVariable(
+    surveyId: string,
+    variableId: string,
+    dto: RenameCanonicalVariableDto,
+  ) {
+    const variable = await this.getCanonicalVariable(surveyId, variableId);
+    const name = dto.name.trim();
+    const problem = canonicalNameProblem(name);
+    if (problem) {
+      throw new BadRequestException({
+        code: 'canonical_variable_name_invalid',
+        message: `El nombre «${name}» no es válido, ${problem}.`,
+      });
+    }
+    const clash = await this.prisma.harmonizerCanonicalVariable.findFirst({
+      where: {
+        surveyId,
+        id: { not: variableId },
+        name: { equals: name, mode: 'insensitive' },
+      },
+      select: { name: true },
+    });
+    if (clash) {
+      throw new ConflictException({
+        code: 'canonical_variable_name_taken',
+        message: `Ya existe la variable «${clash.name}» en esta encuesta (los nombres no distinguen mayúsculas).`,
+      });
+    }
+    const updated = await this.prisma.harmonizerCanonicalVariable.update({
+      where: { id: variable.id },
+      data: { name },
+    });
+    return { id: updated.id, name: updated.name, dataType: updated.dataType };
+  }
+
+  /** Solo se borran canónicas que ninguna edición mapea, para no deshacer mapeos sin querer. */
+  async removeCanonicalVariable(
+    surveyId: string,
+    variableId: string,
+  ): Promise<void> {
+    const variable = await this.getCanonicalVariable(surveyId, variableId);
+    if (variable.mappings.length > 0) {
+      const usages = variable.mappings
+        .map((m) => `«${m.dataset.name}» (columna «${m.sourceColumn}»)`)
+        .join(', ');
+      throw new ConflictException({
+        code: 'canonical_variable_in_use',
+        message: `La variable «${variable.name}» está mapeada en ${usages}. Quita esos mapeos antes de borrarla.`,
+      });
+    }
+    await this.prisma.harmonizerCanonicalVariable.delete({
+      where: { id: variable.id },
+    });
   }
 
   async updateSurvey(surveyId: string, dto: UpdateSurveyDto) {
@@ -655,6 +769,7 @@ export class HarmonizerService {
     const dataset = await this.getDataset(datasetId);
     const choiceByColumn = new Map(dto.columns.map((c) => [c.column, c]));
 
+    await this.assertNewCanonicalNames(dataset, choiceByColumn);
     // Fuera de la transacción: leer los Parquet puede tardar más que su timeout.
     await this.assertValueTypes(dataset, choiceByColumn);
 
@@ -743,6 +858,54 @@ export class HarmonizerService {
     });
 
     return { ok: true, datasetId };
+  }
+
+  /**
+   * Los nombres de canónicas nuevas (`__new__`) deben cumplir las reglas y no pueden repetir,
+   * aunque sea con otras mayúsculas, una canónica de la encuesta ni otro nombre nuevo del mismo
+   * envío. Un nombre idéntico a una canónica existente la reutiliza, como antes, aunque sea un
+   * nombre anterior a las reglas.
+   */
+  private async assertNewCanonicalNames(
+    dataset: { surveyId: string; columns: string[] },
+    choiceByColumn: Map<string, MappingChoiceDto>,
+  ): Promise<void> {
+    const existing = await this.prisma.harmonizerCanonicalVariable.findMany({
+      where: { surveyId: dataset.surveyId },
+      select: { name: true },
+    });
+    const known = existing.map((c) => c.name);
+    const created = new Map<string, string>(); // nombre nuevo → columna que lo crea
+    for (const column of dataset.columns) {
+      const choice = choiceByColumn.get(column);
+      if (choice?.choice !== NEW_CANONICAL) continue;
+      const name = choice.newName?.trim() ?? '';
+      if (!name || known.includes(name) || created.has(name)) continue;
+      const problem = canonicalNameProblem(name);
+      if (problem) {
+        throw new BadRequestException({
+          code: 'canonical_variable_name_invalid',
+          message: `Columna «${column}»: el nombre «${name}» no es válido, ${problem}.`,
+        });
+      }
+      const clash = known.find((other) => sameCanonicalName(other, name));
+      if (clash) {
+        throw new ConflictException({
+          code: 'canonical_variable_name_taken',
+          message: `Columna «${column}»: ya existe la variable «${clash}» y los nombres no distinguen mayúsculas. Elígela en la lista en lugar de crear «${name}».`,
+        });
+      }
+      const sibling = [...created.entries()].find(([other]) =>
+        sameCanonicalName(other, name),
+      );
+      if (sibling) {
+        throw new ConflictException({
+          code: 'canonical_variable_name_taken',
+          message: `Columna «${column}»: la columna «${sibling[1]}» ya crea la variable «${sibling[0]}» y los nombres no distinguen mayúsculas. Usa el mismo nombre o uno distinto.`,
+        });
+      }
+      created.set(name, column);
+    }
   }
 
   /**

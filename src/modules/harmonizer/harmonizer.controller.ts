@@ -25,6 +25,7 @@ import { CreateSurveyDto } from './dto/create-survey.dto.js';
 import { UpdateSurveyDto } from './dto/update-survey.dto.js';
 import { UploadDatasetDto } from './dto/upload-dataset.dto.js';
 import { SaveMappingDto } from './dto/save-mapping.dto.js';
+import { RenameCanonicalVariableDto } from './dto/rename-canonical-variable.dto.js';
 
 const MAX_CSV_BYTES = 200 * 1024 * 1024;
 
@@ -68,6 +69,33 @@ export class HarmonizerController {
   @HttpCode(HttpStatus.NO_CONTENT)
   removeSurvey(@Param('surveyId') surveyId: string) {
     return this.harmonizerService.removeSurvey(surveyId);
+  }
+
+  @Get('surveys/:surveyId/variables')
+  canonicalVariables(@Param('surveyId') surveyId: string) {
+    return this.harmonizerService.listCanonicalVariables(surveyId);
+  }
+
+  @Patch('surveys/:surveyId/variables/:variableId')
+  renameCanonicalVariable(
+    @Param('surveyId') surveyId: string,
+    @Param('variableId') variableId: string,
+    @Body() dto: RenameCanonicalVariableDto,
+  ) {
+    return this.harmonizerService.renameCanonicalVariable(
+      surveyId,
+      variableId,
+      dto,
+    );
+  }
+
+  @Delete('surveys/:surveyId/variables/:variableId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  removeCanonicalVariable(
+    @Param('surveyId') surveyId: string,
+    @Param('variableId') variableId: string,
+  ) {
+    return this.harmonizerService.removeCanonicalVariable(surveyId, variableId);
   }
 
   @Get('surveys/:surveyId/harmonized')

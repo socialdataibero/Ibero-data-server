@@ -365,6 +365,9 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 | `PUT` | `/harmonizer/datasets/:datasetId/mapping` | Save the mapping of an edition. |
 | `GET` | `/harmonizer/datasets/:datasetId/harmonized` | Harmonized view of one edition. |
 | `GET` | `/harmonizer/datasets/:datasetId/harmonized.csv` | Same, as CSV. Also `.parquet`. |
+| `GET` | `/harmonizer/surveys/:surveyId/variables` | Canonical variables of the survey and where each one is mapped. |
+| `PATCH` | `/harmonizer/surveys/:surveyId/variables/:variableId` | Rename a canonical variable: `{ name }`. |
+| `DELETE` | `/harmonizer/surveys/:surveyId/variables/:variableId` | Delete a canonical variable that no edition maps. Returns `204`. |
 | `GET` | `/harmonizer/surveys/:surveyId/harmonized` | Harmonized view of all editions. Optional `variables`. |
 | `GET` | `/harmonizer/surveys/:surveyId/harmonized.csv` | Same, as CSV. Also `.parquet`. |
 
@@ -421,16 +424,41 @@ Suggestions are preselected in the response but are not saved until the client s
 | `choice` | Effect |
 | --- | --- |
 | `cv:<canonicalId>` | Map to that canonical variable. It must belong to the same survey (`400 canonical_variable_not_found`). |
-| `__new__` | Map to the canonical named `newName`. It is created if it does not exist in the survey. An empty `newName` leaves the column unmapped. |
+| `__new__` | Map to the canonical named `newName`. It is created if it does not exist in the survey; the new name must follow the [naming rules](#canonical-variables). A `newName` identical to an existing canonical reuses it. An empty `newName` leaves the column unmapped. |
 | anything else | Leave the column unmapped. |
 
 - `PUT` replaces the whole mapping of the edition. Columns that are left out of the request become unmapped.
 - Entries for columns that are not in the edition are ignored.
 - The save runs in one transaction.
-- Canonical names are only trimmed. Any other text is accepted.
+- Canonical names are trimmed. A new name that breaks the [naming rules](#canonical-variables) returns `400 canonical_variable_name_invalid`; one that differs only in case from an existing canonical, or from another new name in the same request, returns `409 canonical_variable_name_taken`. The `message` names the column. Both checks run before anything is saved.
 - `missingCodes` lists the values that mean "not specified" in that column of that edition (for example `["9", "99"]`). Codes are trimmed, and empty and repeated codes are dropped. They belong to the mapping, so each edition keeps its own codes, and unmapping the column discards them.
-- Canonical variables cannot be renamed or deleted. Unmapping every column that used one does not delete it.
+- Unmapping every column that used a canonical variable does not delete it. See [Canonical variables](#canonical-variables) to rename or delete one.
 - Two columns of the same edition cannot use the same canonical variable, because the harmonized view has one column per canonical. Such a request returns `409 canonical_variable_collision`, the `message` lists the columns involved, and nothing is saved (including canonicals that `__new__` would have created). Two `__new__` entries with the same `newName`, or a `newName` equal to an existing canonical that another column uses, also collide.
+
+### Canonical variables
+
+A canonical name is a column of the harmonized view and of the exported Parquet, so it must work as a plain SQL identifier in DuckDB (report H-20, ticket SDI-67):
+
+- 2 to 64 characters.
+- Starts with a letter without accent (`A`–`Z`, `a`–`z`).
+- Then only letters without accent, digits and `_`. No spaces, commas, hyphens or other symbols.
+- Names are unique per survey ignoring case, because DuckDB treats `edad` and `EDAD` as the same column. The stored name keeps its case.
+- Since names start with a letter, they can never be `_dataset`, `_year` or `_row`, the origin columns of the survey view.
+
+The rules apply when a canonical is created (`__new__` in `PUT .../mapping`) and when it is renamed. Names created before the rules are kept and still work; `GET .../variables` marks them with `nameValid: false` so they can be renamed.
+
+`GET /harmonizer/surveys/:surveyId/variables` returns `{ survey: { id, name }, items }`. Each item is `{ id, name, dataType, nameValid, usages }`, ordered by name, and `usages` lists `{ datasetId, datasetName, year, column }` for each edition that maps it (`[]` when none does).
+
+`PATCH .../variables/:variableId` takes `{ name }`:
+
+- The name is trimmed and checked against the rules (`400 canonical_variable_name_invalid`).
+- Another canonical of the survey with the same name ignoring case returns `409 canonical_variable_name_taken`. Changing only the case of the variable's own name is allowed.
+- Mappings point to the canonical's ID, so every edition shows the new name right away. Files already exported or saved as datasets keep the old name.
+- Returns `{ id, name, dataType }`.
+
+`DELETE .../variables/:variableId` deletes a canonical that no edition maps and returns `204`. If any edition maps it, it returns `409 canonical_variable_in_use`, the `message` lists the editions and columns, and nothing is deleted.
+
+For these three endpoints, an unknown survey returns `404 survey_not_found` and a variable that does not belong to the survey returns `404 canonical_variable_not_found`.
 
 ### Variable types
 
@@ -493,7 +521,6 @@ The code currently behaves as described below. It is not yet decided whether eac
 - **Analysis visibility.** The public catalog ignores `Analysis.visibility` and uses only the dataset's visibility. A `PRIVATE` analysis in a `PUBLIC` dataset is public.
 - **Private datasets.** `PRIVATE` only hides a dataset from the public catalog. Any logged-in user can still list and read it.
 - **Harmonizer access.** Surveys are not tied to organizations, so every logged-in user can read and change all of them.
-- **Canonical variable names.** They are not validated and cannot be renamed or deleted (report H-20).
 - **Login errors.** Different codes for an unknown email and a wrong password reveal which emails are registered.
 - **Email format.** Registration only requires a non-empty email; the format is not checked.
 - **Unused pieces.** `SysadminGuard` and the `PENDING` analysis status exist but are not used.
