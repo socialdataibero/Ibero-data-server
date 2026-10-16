@@ -124,6 +124,12 @@ export class HarmonizerController {
     return this.harmonizerService.saveMapping(datasetId, dto);
   }
 
+  @Delete('datasets/:datasetId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  removeDataset(@Param('datasetId') datasetId: string) {
+    return this.harmonizerService.removeDataset(datasetId);
+  }
+
   @Get('datasets/:datasetId/harmonized')
   datasetHarmonized(@Param('datasetId') datasetId: string) {
     return this.harmonizerService.getDatasetHarmonized(datasetId);

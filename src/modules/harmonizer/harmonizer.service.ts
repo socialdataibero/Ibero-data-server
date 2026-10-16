@@ -511,6 +511,15 @@ export class HarmonizerService {
     return dataset;
   }
 
+  async removeDataset(datasetId: string): Promise<void> {
+    await this.getDataset(datasetId);
+    // Los mapeos se borran en cascada. Las canónicas se conservan (con su tipo
+    // confirmado) para reutilizarlas al volver a subir la edición; las que ya no
+    // mapea ninguna edición dejan de salir en la vista por encuesta.
+    await this.prisma.harmonizerDataset.delete({ where: { id: datasetId } });
+    await this.storage.remove(rawStorageKey(datasetId));
+  }
+
   private toDatasetInfo(dataset: {
     id: string;
     name: string;

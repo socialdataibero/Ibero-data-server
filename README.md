@@ -360,6 +360,7 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 | `PATCH` | `/harmonizer/surveys/:surveyId` | Change `name` and/or `description`. |
 | `DELETE` | `/harmonizer/surveys/:surveyId` | Delete the survey and everything in it, including the stored files of its editions. Returns `204`. |
 | `POST` | `/harmonizer/upload` | Upload an edition (multipart). |
+| `DELETE` | `/harmonizer/datasets/:datasetId` | Delete one edition, its mapping and its stored file. Returns `204`. |
 | `GET` | `/harmonizer/datasets/:datasetId/mapping` | Columns of an edition with saved or suggested mappings. |
 | `PUT` | `/harmonizer/datasets/:datasetId/mapping` | Save the mapping of an edition. |
 | `GET` | `/harmonizer/datasets/:datasetId/harmonized` | Harmonized view of one edition. |
@@ -373,7 +374,13 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 - Names are unique. Creating or renaming to a taken name returns `409 survey_name_taken`.
 - Sending an empty `description` in `PATCH` clears it.
 - Renaming a survey does not change its editions, canonical variables or mappings.
-- Deleting a survey also deletes its editions, their stored Parquet files, their mappings and its canonical variables. A missing survey returns `404 survey_not_found`. Editions cannot be deleted on their own.
+- Deleting a survey also deletes its editions, their stored Parquet files, their mappings and its canonical variables. A missing survey returns `404 survey_not_found`.
+
+### Deleting an edition
+
+- `DELETE /harmonizer/datasets/:datasetId` deletes the edition, its mappings and its stored Parquet file. The survey and its other editions are not changed. A missing edition returns `404 harmonizer_dataset_not_found`.
+- The survey's canonical variables are kept, including their confirmed `dataType`, so a corrected file can be uploaded again and mapped to the same names. A canonical that no edition maps any more stops appearing in the survey view (`available` only lists mapped canonicals).
+- Once deleted, the edition's name is free again, so the corrected file can be uploaded with the same name (report SDI-92).
 
 ### Upload
 
