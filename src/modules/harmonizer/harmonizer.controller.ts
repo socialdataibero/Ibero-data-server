@@ -175,6 +175,14 @@ export class HarmonizerController {
     );
   }
 
+  @Get('datasets/:datasetId/original.csv')
+  async datasetOriginal(
+    @Param('datasetId') datasetId: string,
+    @Res() res: Response,
+  ) {
+    this.sendFile(res, await this.harmonizerService.exportOriginal(datasetId));
+  }
+
   private sendFile(res: Response, file: ExportFile): void {
     res.setHeader('Content-Type', file.contentType);
     res.setHeader(

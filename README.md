@@ -365,6 +365,7 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 | `PUT` | `/harmonizer/datasets/:datasetId/mapping` | Save the mapping of an edition. |
 | `GET` | `/harmonizer/datasets/:datasetId/harmonized` | Harmonized view of one edition. |
 | `GET` | `/harmonizer/datasets/:datasetId/harmonized.csv` | Same, as CSV. Also `.parquet`. |
+| `GET` | `/harmonizer/datasets/:datasetId/original.csv` | The uploaded file, rebuilt from storage with every column. See [Original file](#original-file). |
 | `GET` | `/harmonizer/surveys/:surveyId/variables` | Canonical variables of the survey and where each one is mapped. |
 | `PATCH` | `/harmonizer/surveys/:surveyId/variables/:variableId` | Rename a canonical variable: `{ name }`. |
 | `DELETE` | `/harmonizer/surveys/:surveyId/variables/:variableId` | Delete a canonical variable that no edition maps. Returns `204`. |
@@ -500,6 +501,17 @@ Exports:
 - Parquet columns take the canonical variable's confirmed type, or the type inferred from the exported values when it is not confirmed (the same rules as `inferredType`, applied to all exported editions together): `text` → `VARCHAR`, `integer` → `BIGINT`, `decimal` → `DOUBLE`. Numbers are converted from the trimmed text. `_dataset` is `VARCHAR`, and `_year` and `_row` are `BIGINT`. Missing values are `NULL`, so they are distinct from any value. This lets analyses sum, average, multiply and compare these columns (before, every column was text and `SUM` failed).
 - If a confirmed numeric variable has a value that does not fit (possible only for an edition saved without `dataType`), the Parquet export returns `409 value_type_mismatch` with the variable and the offending values.
 - Exporting an edition with no mappings as Parquet returns `400 harmonized_view_empty`.
+
+### Original file
+
+`GET /harmonizer/datasets/:datasetId/original.csv` returns the uploaded file rebuilt from the edition's stored Parquet (report H-21, ticket SDI-68). The bytes of the upload are not kept, so this is the same data, not the same file:
+
+- Every column of the file, mapped or not, in header order, with every data row in file order.
+- Values exactly as read: no mapping, no `missingCodes` (codes such as `9` stay `9`), no type conversion, and no formula neutralization (a value `=1+1` is downloaded as `=1+1`, as it was uploaded).
+- Headers are the stored ones, so they carry the changes made at upload: trimmed, and repeated names renamed (`EDAD.1`). An empty header stays empty.
+- Differences from the uploaded bytes: UTF-8 with a BOM, comma separator, `\n` line endings, values quoted only when needed, and blank lines dropped.
+- The filename is `original_<edition>_<year>.csv`, with accents and symbols removed. The name of the uploaded file is not stored.
+- An unknown edition returns `404 harmonizer_dataset_not_found`.
 
 ## File storage
 

@@ -110,6 +110,14 @@ export interface ExportFile {
   body: Buffer;
 }
 
+function safeFileBase(name: string, fallback: string): string {
+  return (
+    asciiFold(name)
+      .replace(/\s+/g, '_')
+      .replace(/[^A-Za-z0-9_.-]/g, '') || fallback
+  );
+}
+
 // Cada edición se guarda una sola vez como Parquet todo-VARCHAR. Guardarla como
 // un JSON por fila repetía el nombre de cada columna en cada fila (H-31).
 function rawStorageKey(datasetId: string): string {
@@ -1217,6 +1225,26 @@ export class HarmonizerService {
     );
   }
 
+  /**
+   * El CSV subido, regenerado desde lo guardado (SDI-68): todas las columnas, mapeadas
+   * o no, con los valores tal como se leyeron. No aplica mapeo, códigos de "No
+   * especificado" ni la neutralización de fórmulas de la vista armonizada.
+   */
+  async exportOriginal(datasetId: string): Promise<ExportFile> {
+    const dataset = await this.getDataset(datasetId);
+    const rows = await this.readRawRows(dataset);
+    // Filas como arreglos: con objetos, csv-stringify leería `EDAD.1` como ruta anidada.
+    const csv = stringify([
+      dataset.columns,
+      ...rows.map((row) => dataset.columns.map((column) => row[column])),
+    ]);
+    return {
+      filename: `${safeFileBase(`original_${dataset.name}_${dataset.year}`, 'original')}.csv`,
+      contentType: EXPORT_CONTENT_TYPE.csv,
+      body: Buffer.from(`\ufeff${csv}`, 'utf8'),
+    };
+  }
+
   private assertExportFormat(fmt: string): ExportFormat {
     const format = fmt.toLowerCase();
     if (!isExportFormat(format)) {
@@ -1235,11 +1263,7 @@ export class HarmonizerService {
     format: ExportFormat,
     surveyId: string,
   ): Promise<ExportFile> {
-    const safeBase =
-      asciiFold(baseName)
-        .replace(/\s+/g, '_')
-        .replace(/[^A-Za-z0-9_.-]/g, '') || 'harmonized';
-    const filename = `${safeBase}.${format}`;
+    const filename = `${safeFileBase(baseName, 'harmonized')}.${format}`;
     const contentType = EXPORT_CONTENT_TYPE[format];
 
     if (format === 'csv') {
