@@ -156,4 +156,34 @@ describe('AnalysisService: Parquet crudo del armonizador (DuckDB real)', () => {
     expect(read[0]).toEqual(['00000', 'Hñähñu']);
     expect(read[11_999]).toEqual(['11999', '']);
   });
+
+  it('writeRowsToParquet escribe como número las columnas declaradas (sumables en un análisis)', async () => {
+    const path = join(dir, 'typed.parquet');
+    const rows = [
+      { g: 'A', n: ' 2 ', f: '1.5', t: '01' },
+      { g: 'A', n: '3', f: '1e1', t: null },
+      { g: 'B', n: null, f: '-0.5', t: '02' },
+    ];
+
+    await service.writeRowsToParquet(['g', 'n', 'f', 't'], rows, path, {
+      n: 'BIGINT',
+      f: 'DOUBLE',
+    });
+
+    const schema = await service.describeSchema(path);
+    expect(schema).toEqual([
+      { name: 'g', type: 'VARCHAR' },
+      { name: 'n', type: 'BIGINT' },
+      { name: 'f', type: 'DOUBLE' },
+      { name: 't', type: 'VARCHAR' },
+    ]);
+    const result = await service.runQuery(
+      path,
+      'SELECT g, SUM(n) AS n, SUM(n * f) AS nf FROM data GROUP BY g ORDER BY g',
+    );
+    expect(result.rows).toEqual([
+      { g: 'A', n: '5', nf: 33 },
+      { g: 'B', n: null, nf: null },
+    ]);
+  });
 });

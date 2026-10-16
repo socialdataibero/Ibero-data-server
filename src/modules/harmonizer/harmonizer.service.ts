@@ -12,16 +12,23 @@ import { access, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { AnalysisService } from '../analysis/analysis.service.js';
+import {
+  AnalysisService,
+  type ParquetColumnType,
+} from '../analysis/analysis.service.js';
 import { LocalStorageService } from '../storage/local-storage.service.js';
 import { asciiFold, matchByName, parseVariables } from './matching.js';
 import {
   buildDatasetView,
   buildSurveyView,
+  inferValueType,
   neutralizeCsvFormula,
+  sourceColumnValues,
+  valuesNotFitting,
   type DatasetEdition,
   type HarmonizedView,
   type RawData,
+  type ValueType,
 } from './harmonized-view.js';
 import { NEW_SURVEY, type UploadDatasetDto } from './dto/upload-dataset.dto.js';
 import {
@@ -82,6 +89,15 @@ export interface MappingColumn {
   suggested: string | null;
   suggestionSource: SuggestionSource | null;
   missingCodes: string[];
+  // Tipo que sugieren los valores de esta edición, con sus códigos guardados.
+  inferredType: ValueType;
+}
+
+export interface CanonicalVariableInfo {
+  id: string;
+  name: string;
+  // `null` = nadie lo ha confirmado todavía.
+  dataType: ValueType | null;
 }
 
 export type ExportFormat = 'csv' | 'parquet';
@@ -103,6 +119,22 @@ function rawStorageKey(datasetId: string): string {
 // los identificadores, así que `EDAD` y `edad` chocarían como nombres de columna.
 function rawColumnNames(count: number): string[] {
   return Array.from({ length: count }, (_, i) => `c${i}`);
+}
+
+const PARQUET_TYPE: Record<ValueType, ParquetColumnType> = {
+  text: 'VARCHAR',
+  integer: 'BIGINT',
+  decimal: 'DOUBLE',
+};
+
+const VALUE_TYPE_LABEL: Record<ValueType, string> = {
+  text: 'texto',
+  integer: 'números enteros',
+  decimal: 'números',
+};
+
+function quoteList(values: string[]): string {
+  return values.map((v) => `"${v}"`).join(', ');
 }
 
 const EXPORT_CONTENT_TYPE: Record<ExportFormat, string> = {
@@ -144,6 +176,12 @@ function dedupeHeaders(headers: string[]): {
     return name;
   });
   return { columns, renamed };
+}
+
+// Si la elección asigna una canónica (existente o nueva con nombre).
+function isMappedChoice(choice: MappingChoiceDto): boolean {
+  if (choice.choice.startsWith(CANONICAL_PREFIX)) return true;
+  return choice.choice === NEW_CANONICAL && (choice.newName?.trim() ?? '') !== '';
 }
 
 // Se recortan, se descartan vacíos y repetidos: el valor de la celda también se
@@ -496,15 +534,15 @@ export class HarmonizerService {
   async getMapping(datasetId: string): Promise<{
     dataset: DatasetInfo;
     columns: MappingColumn[];
-    canonicalVariables: { id: string; name: string }[];
+    canonicalVariables: CanonicalVariableInfo[];
   }> {
     const dataset = await this.getDataset(datasetId);
 
-    const [canonicals, saved, historical] = await Promise.all([
+    const [canonicals, saved, historical, rawRows] = await Promise.all([
       this.prisma.harmonizerCanonicalVariable.findMany({
         where: { surveyId: dataset.surveyId },
         orderBy: { name: 'asc' },
-        select: { id: true, name: true },
+        select: { id: true, name: true, dataType: true },
       }),
       this.prisma.harmonizerMapping.findMany({ where: { datasetId } }),
       this.prisma.harmonizerMapping.findMany({
@@ -514,6 +552,7 @@ export class HarmonizerService {
           dataset: { surveyId: dataset.surveyId },
         },
       }),
+      this.readRawRows(dataset),
     ]);
 
     const nameById = new Map(canonicals.map((c) => [c.id, c.name]));
@@ -534,6 +573,13 @@ export class HarmonizerService {
     const usedIds = new Set(savedByColumn.values());
 
     const columns = dataset.columns.map((name): MappingColumn => {
+      const inferredType = inferValueType(
+        sourceColumnValues(
+          rawRows,
+          name,
+          new Set(savedCodesByColumn.get(name) ?? []),
+        ),
+      );
       const savedId = savedByColumn.get(name);
       if (savedId) {
         return {
@@ -542,6 +588,7 @@ export class HarmonizerService {
           suggested: null,
           suggestionSource: null,
           missingCodes: savedCodesByColumn.get(name) ?? [],
+          inferredType,
         };
       }
       const historicalId = historicalByColumn.get(name);
@@ -553,6 +600,7 @@ export class HarmonizerService {
           suggested: nameById.get(historicalId) ?? null,
           suggestionSource: 'history',
           missingCodes: [],
+          inferredType,
         };
       }
       const matchedId = matchByName(
@@ -567,6 +615,7 @@ export class HarmonizerService {
           suggested: nameById.get(matchedId) ?? null,
           suggestionSource: 'name',
           missingCodes: [],
+          inferredType,
         };
       }
       return {
@@ -575,13 +624,18 @@ export class HarmonizerService {
         suggested: null,
         suggestionSource: null,
         missingCodes: [],
+        inferredType,
       };
     });
 
     return {
       dataset: this.toDatasetInfo(dataset),
       columns,
-      canonicalVariables: canonicals,
+      canonicalVariables: canonicals.map((c) => ({
+        id: c.id,
+        name: c.name,
+        dataType: c.dataType as ValueType | null,
+      })),
     };
   }
 
@@ -592,11 +646,15 @@ export class HarmonizerService {
     const dataset = await this.getDataset(datasetId);
     const choiceByColumn = new Map(dto.columns.map((c) => [c.column, c]));
 
+    // Fuera de la transacción: leer los Parquet puede tardar más que su timeout.
+    await this.assertValueTypes(dataset, choiceByColumn);
+
     await this.prisma.$transaction(async (tx) => {
       const resolved: {
         column: string;
         canonicalId: string | null;
         missingCodes: string[];
+        dataType: ValueType | undefined;
       }[] = [];
       const columnsByCanonical = new Map<string, string[]>();
       for (const column of dataset.columns) {
@@ -610,6 +668,7 @@ export class HarmonizerService {
           column,
           canonicalId,
           missingCodes: normalizeMissingCodes(choice?.missingCodes),
+          dataType: choice?.dataType,
         });
         if (canonicalId !== null) {
           const columns = columnsByCanonical.get(canonicalId) ?? [];
@@ -663,9 +722,109 @@ export class HarmonizerService {
           });
         }
       }
+
+      // Guardar el tipo lo confirma para la variable canónica en todas las ediciones.
+      for (const { canonicalId, dataType } of resolved) {
+        if (canonicalId === null || dataType === undefined) continue;
+        await tx.harmonizerCanonicalVariable.update({
+          where: { id: canonicalId },
+          data: { dataType },
+        });
+      }
     });
 
     return { ok: true, datasetId };
+  }
+
+  /**
+   * Un tipo numérico solo se acepta si todos los valores no faltantes de la columna lo
+   * cumplen, con los códigos de no especificado de este mismo envío. Si el tipo de una
+   * canónica existente cambia, también se revisan las otras ediciones que la usan,
+   * porque el tipo es uno solo para la variable.
+   */
+  private async assertValueTypes(
+    dataset: { id: string; name: string; surveyId: string; columns: string[] },
+    choiceByColumn: Map<string, MappingChoiceDto>,
+  ): Promise<void> {
+    const numeric = dataset.columns
+      .map((column) => choiceByColumn.get(column))
+      .filter(
+        (c): c is MappingChoiceDto & { dataType: ValueType } =>
+          c !== undefined &&
+          c.dataType !== undefined &&
+          c.dataType !== 'text' &&
+          isMappedChoice(c),
+      );
+    if (numeric.length === 0) return;
+
+    const rows = await this.readRawRows(dataset);
+    for (const choice of numeric) {
+      const codes = new Set(normalizeMissingCodes(choice.missingCodes));
+      const bad = valuesNotFitting(
+        sourceColumnValues(rows, choice.column, codes),
+        choice.dataType,
+      );
+      if (bad.length > 0) {
+        throw new BadRequestException({
+          code: 'value_type_mismatch',
+          message: `La columna "${choice.column}" tiene valores que no son ${VALUE_TYPE_LABEL[choice.dataType]}: ${quoteList(bad)}. Márcalos como No especificado o elige el tipo Texto.`,
+        });
+      }
+    }
+
+    const canonicals = await this.prisma.harmonizerCanonicalVariable.findMany({
+      where: {
+        surveyId: dataset.surveyId,
+        OR: numeric.map((c) =>
+          c.choice === NEW_CANONICAL
+            ? { name: c.newName?.trim() ?? '' }
+            : { id: c.choice.slice(CANONICAL_PREFIX.length) },
+        ),
+      },
+      select: { id: true, name: true, dataType: true },
+    });
+    const wanted = new Map<string, ValueType>();
+    for (const c of numeric) {
+      const canonical = canonicals.find((cv) =>
+        c.choice === NEW_CANONICAL
+          ? cv.name === c.newName?.trim()
+          : cv.id === c.choice.slice(CANONICAL_PREFIX.length),
+      );
+      if (canonical && canonical.dataType !== c.dataType)
+        wanted.set(canonical.id, c.dataType);
+    }
+    if (wanted.size === 0) return;
+
+    const others = await this.prisma.harmonizerMapping.findMany({
+      where: {
+        canonicalVariableId: { in: [...wanted.keys()] },
+        datasetId: { not: dataset.id },
+      },
+      include: {
+        dataset: { select: { id: true, name: true, columns: true } },
+        canonicalVariable: { select: { name: true } },
+      },
+      orderBy: { dataset: { year: 'asc' } },
+    });
+    const rowsByDataset = new Map<string, RawData[]>();
+    for (const m of others) {
+      let otherRows = rowsByDataset.get(m.datasetId);
+      if (!otherRows) {
+        otherRows = await this.readRawRows(m.dataset);
+        rowsByDataset.set(m.datasetId, otherRows);
+      }
+      const type = wanted.get(m.canonicalVariableId)!;
+      const bad = valuesNotFitting(
+        sourceColumnValues(otherRows, m.sourceColumn, new Set(m.missingCodes)),
+        type,
+      );
+      if (bad.length > 0) {
+        throw new BadRequestException({
+          code: 'value_type_mismatch',
+          message: `La variable "${m.canonicalVariable.name}" también se usa en la edición "${m.dataset.name}" (columna "${m.sourceColumn}"), que tiene valores que no son ${VALUE_TYPE_LABEL[type]}: ${quoteList(bad)}. Márcalos como No especificado en esa edición o elige el tipo Texto.`,
+        });
+      }
+    }
   }
 
   private async resolveCanonicalChoice(
@@ -683,11 +842,7 @@ export class HarmonizerService {
       });
       if (existing) return existing.id;
       const created = await tx.harmonizerCanonicalVariable.create({
-        data: {
-          surveyId,
-          name,
-          dataType: choice.newDataType?.trim() || 'text',
-        },
+        data: { surveyId, name },
       });
       return created.id;
     }
@@ -837,6 +992,7 @@ export class HarmonizerService {
       view.headers,
       view,
       format,
+      dataset.surveyId,
     );
   }
 
@@ -852,6 +1008,7 @@ export class HarmonizerService {
       ['_dataset', '_year', '_row', ...view.headers],
       view,
       format,
+      survey.id,
     );
   }
 
@@ -871,6 +1028,7 @@ export class HarmonizerService {
     columns: string[],
     view: HarmonizedView,
     format: ExportFormat,
+    surveyId: string,
   ): Promise<ExportFile> {
     const safeBase =
       asciiFold(baseName)
@@ -898,16 +1056,55 @@ export class HarmonizerService {
         message: 'There are no mapped variables to export as Parquet.',
       });
     }
+    const types = await this.parquetTypes(surveyId, view);
     const tmpPath = join(tmpdir(), `ibero-harmonized-${randomUUID()}.parquet`);
     try {
       await this.analysisService.writeRowsToParquet(
         columns,
         view.rows,
         tmpPath,
+        types,
       );
       return { filename, contentType, body: await readFile(tmpPath) };
     } finally {
       await rm(tmpPath, { force: true });
     }
+  }
+
+  /**
+   * Tipo de cada columna en el Parquet: el confirmado en la variable canónica o, si
+   * no hay, el que infieren los valores exportados. Las de origen son fijas.
+   */
+  private async parquetTypes(
+    surveyId: string,
+    view: HarmonizedView,
+  ): Promise<Record<string, ParquetColumnType>> {
+    const confirmed = await this.prisma.harmonizerCanonicalVariable.findMany({
+      where: { surveyId, name: { in: view.headers } },
+      select: { name: true, dataType: true },
+    });
+    const confirmedByName = new Map(
+      confirmed.map((c) => [c.name, c.dataType as ValueType | null]),
+    );
+
+    const types: Record<string, ParquetColumnType> = {
+      _dataset: 'VARCHAR',
+      _year: 'BIGINT',
+      _row: 'BIGINT',
+    };
+    for (const header of view.headers) {
+      const values = view.rows.map((r) => r[header] ?? null);
+      const type = confirmedByName.get(header) ?? inferValueType(values);
+      // El mapeo ya valida al guardar; esto cubre ediciones mapeadas sin enviar tipo.
+      const bad = valuesNotFitting(values, type);
+      if (bad.length > 0) {
+        throw new ConflictException({
+          code: 'value_type_mismatch',
+          message: `El tipo confirmado de la variable "${header}" pide ${VALUE_TYPE_LABEL[type]}, pero tiene valores que no lo son: ${quoteList(bad)}. Revisa su mapeo o cambia su tipo a Texto.`,
+        });
+      }
+      types[header] = PARQUET_TYPE[type];
+    }
+    return types;
   }
 }

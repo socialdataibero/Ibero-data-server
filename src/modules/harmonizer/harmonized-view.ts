@@ -30,6 +30,82 @@ export function neutralizeCsvFormula(value: string): string {
   return `'${value}`;
 }
 
+/** Tipo de una variable canónica en el Parquet exportado. El CSV siempre es texto. */
+export type ValueType = 'text' | 'integer' | 'decimal';
+export const VALUE_TYPES: readonly ValueType[] = ['text', 'integer', 'decimal'];
+
+const INTEGER = /^[+-]?\d+$/;
+const LEADING_ZERO = /^[+-]?0\d/;
+// Más de 15 dígitos suele ser un identificador (folio, CURP numérica), no una cantidad.
+const MAX_INFERRED_INTEGER_DIGITS = 15;
+const INT64_MIN = -(2n ** 63n);
+const INT64_MAX = 2n ** 63n - 1n;
+
+// `1e309` tiene forma de número pero desborda DOUBLE: DuckDB lo convertiría en Infinity.
+function isFiniteNumber(value: string): boolean {
+  return PLAIN_NUMBER.test(value) && Number.isFinite(Number(value));
+}
+
+function fitsType(value: string, type: ValueType): boolean {
+  if (type === 'text') return true;
+  if (type === 'decimal') return isFiniteNumber(value);
+  if (!INTEGER.test(value)) return false;
+  const n = BigInt(value);
+  return n >= INT64_MIN && n <= INT64_MAX;
+}
+
+/**
+ * Tipo sugerido para una columna a partir de sus valores no faltantes. Es número solo
+ * si todos los valores lo son. Un cero inicial (`01`, clave de entidad) la deja como
+ * texto para no perderlo. Una columna sin valores también queda como texto.
+ */
+export function inferValueType(values: Iterable<string | number | null>): ValueType {
+  let type: ValueType | null = null;
+  for (const raw of values) {
+    if (raw === null) continue;
+    const value = String(raw).trim();
+    if (value === '') continue;
+    if (LEADING_ZERO.test(value)) return 'text';
+    if (INTEGER.test(value)) {
+      if (value.replace(/^[+-]/, '').length > MAX_INFERRED_INTEGER_DIGITS)
+        return 'text';
+      type ??= 'integer';
+    } else if (isFiniteNumber(value)) {
+      type = 'decimal';
+    } else {
+      return 'text';
+    }
+  }
+  return type ?? 'text';
+}
+
+/** Valores distintos (recortados, en orden de aparición) que no caben en `type`. */
+export function valuesNotFitting(
+  values: Iterable<string | number | null>,
+  type: ValueType,
+  limit = 5,
+): string[] {
+  const bad = new Set<string>();
+  if (type === 'text') return [];
+  for (const raw of values) {
+    if (raw === null) continue;
+    const value = String(raw).trim();
+    if (value === '' || fitsType(value, type)) continue;
+    bad.add(value);
+    if (bad.size >= limit) break;
+  }
+  return [...bad];
+}
+
+/** Valores de una columna de origen ya con los faltantes como `null`. */
+export function sourceColumnValues(
+  rows: RawData[],
+  column: string,
+  codes: Set<string> | undefined,
+): (string | null)[] {
+  return rows.map((raw) => cellValue(raw[column], codes));
+}
+
 function cellValue(
   value: string | undefined,
   codes: Set<string> | undefined,

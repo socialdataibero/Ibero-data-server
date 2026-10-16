@@ -1,7 +1,10 @@
 import {
   buildDatasetView,
   buildSurveyView,
+  inferValueType,
   neutralizeCsvFormula,
+  sourceColumnValues,
+  valuesNotFitting,
   type DatasetEdition,
 } from './harmonized-view.js';
 
@@ -204,5 +207,76 @@ describe('harmonizer: neutralizeCsvFormula (H-12)', () => {
     for (const v of ['-5', '+3.2', '-0.5', '-.5', '1e-3', '-2E+4', '12', 'Mérida', '', 'a=b', ' =1']) {
       expect(neutralizeCsvFormula(v)).toBe(v);
     }
+  });
+});
+
+describe('harmonizer: inferValueType', () => {
+  it('enteros, con signo y espacios, ignorando nulos y vacíos', () => {
+    expect(inferValueType(['23', ' -4 ', '+7', null, '', '0'])).toBe('integer');
+  });
+
+  it('un decimal en la columna la vuelve decimal', () => {
+    expect(inferValueType(['1', '2.5', '1e3', '.5'])).toBe('decimal');
+  });
+
+  it('un cero inicial la deja como texto (clave "01")', () => {
+    expect(inferValueType(['10', '01'])).toBe('text');
+    expect(inferValueType(['01.5'])).toBe('text');
+  });
+
+  it('cualquier valor no numérico la deja como texto', () => {
+    expect(inferValueType(['1', 'NS'])).toBe('text');
+    expect(inferValueType(['NaN'])).toBe('text');
+  });
+
+  it('identificadores de más de 15 dígitos quedan como texto', () => {
+    expect(inferValueType(['1234567890123456'])).toBe('text');
+  });
+
+  it('un número que desborda DOUBLE (1e309) la deja como texto', () => {
+    expect(inferValueType(['1', '1e309'])).toBe('text');
+  });
+
+  it('sin valores queda como texto', () => {
+    expect(inferValueType([null, '  '])).toBe('text');
+  });
+});
+
+describe('harmonizer: valuesNotFitting', () => {
+  it('texto acepta todo', () => {
+    expect(valuesNotFitting(['x', '1'], 'text')).toEqual([]);
+  });
+
+  it('entero rechaza decimales y texto, sin repetir y con límite', () => {
+    expect(
+      valuesNotFitting(['1', '2.5', 'NS', 'NS', null, ''], 'integer'),
+    ).toEqual(['2.5', 'NS']);
+    expect(valuesNotFitting(['a', 'b', 'c'], 'decimal', 2)).toEqual(['a', 'b']);
+  });
+
+  it('decimal rechaza lo que desborda DOUBLE', () => {
+    expect(valuesNotFitting(['1.5', '1e309'], 'decimal')).toEqual(['1e309']);
+  });
+
+  it('entero acepta ceros iniciales cuando el usuario lo confirma', () => {
+    expect(valuesNotFitting(['01', '007'], 'integer')).toEqual([]);
+  });
+
+  it('entero rechaza lo que no cabe en 64 bits', () => {
+    expect(valuesNotFitting(['9223372036854775808'], 'integer')).toEqual([
+      '9223372036854775808',
+    ]);
+  });
+});
+
+describe('harmonizer: sourceColumnValues', () => {
+  it('aplica vacíos y códigos de no especificado', () => {
+    expect(
+      sourceColumnValues(
+        [{ a: '1' }, { a: ' ' }, { a: '99' }, {}],
+        'a',
+        new Set(['99']),
+      ),
+    ).toEqual(['1', null, null, null]);
   });
 });

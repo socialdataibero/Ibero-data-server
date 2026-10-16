@@ -238,7 +238,9 @@ model HarmonizerCanonicalVariable {
   surveyId    String
   name        String
   description String?
-  dataType    String  @default("text")
+  /// Tipo en el Parquet exportado: "text", "integer" o "decimal". `null` = sin
+  /// confirmar: el export usa el tipo inferido de los valores.
+  dataType    String?
 
   survey   HarmonizerSurvey    @relation(fields: [surveyId], references: [id], onDelete: Cascade)
   mappings HarmonizerMapping[]

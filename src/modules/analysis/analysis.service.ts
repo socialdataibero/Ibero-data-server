@@ -13,6 +13,9 @@ export interface ColumnInfo {
   type: string;
 }
 
+/** Tipos que `writeRowsToParquet` sabe escribir. */
+export type ParquetColumnType = 'VARCHAR' | 'BIGINT' | 'DOUBLE';
+
 export interface NamedSource {
   alias: string;
   path: string;
@@ -139,14 +142,16 @@ export class AnalysisService {
   }
 
   /**
-   * Vuelca filas en memoria a un Parquet todo-VARCHAR (lo usa el armonizador:
-   * su pipeline es todo-string y no infiere tipos). Las celdas ausentes salen
-   * como "" y no como NULL, igual que el `fillna("")` del original.
+   * Vuelca filas en memoria a un Parquet (lo usa el armonizador). Las columnas son
+   * VARCHAR salvo las que `types` declara numéricas: esas se convierten con CAST
+   * sobre el texto recortado, así que el llamador debe validar antes los valores.
+   * `null`/`undefined` se escriben como NULL.
    */
   async writeRowsToParquet(
     columns: string[],
     rows: Record<string, unknown>[],
     destPath: string,
+    types: Record<string, ParquetColumnType> = {},
   ): Promise<void> {
     if (columns.length === 0) {
       throw new BadRequestException({
@@ -173,8 +178,17 @@ export class AnalysisService {
       }
       appender.closeSync();
 
+      const selectList = columns
+        .map((c) => {
+          const type = types[c] ?? 'VARCHAR';
+          const col = quoteIdent(c);
+          return type === 'VARCHAR'
+            ? col
+            : `CAST(TRIM(${col}) AS ${type}) AS ${col}`;
+        })
+        .join(', ');
       await connection.run(
-        `COPY _ibero_rows TO '${escapeSqlLiteral(destPath)}' (FORMAT PARQUET)`,
+        `COPY (SELECT ${selectList} FROM _ibero_rows) TO '${escapeSqlLiteral(destPath)}' (FORMAT PARQUET)`,
       );
     } catch (err) {
       throw safeDuckDbError(err, [destPath], 'parquet_write_failed');

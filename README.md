@@ -398,7 +398,7 @@ Fields: `file`, `name` (edition name, required), `year` (1900–2100), `surveyId
 
 ### Mapping
 
-`GET .../mapping` returns each column with `selectedCanonicalId`, `suggested`, `suggestionSource` and `missingCodes` (the saved missing-value codes; `[]` for unsaved columns, suggestions never fill it). For each column, the first of these that applies is used:
+`GET .../mapping` returns each column with `selectedCanonicalId`, `suggested`, `suggestionSource`, `missingCodes` (the saved missing-value codes; `[]` for unsaved columns, suggestions never fill it) and `inferredType` (see [Variable types](#variable-types)). `canonicalVariables` lists the survey's canonicals as `{ id, name, dataType }`, where `dataType` is the confirmed type or `null`. For each column, the first of these that applies is used:
 
 1. **Saved**: the mapping already saved for this edition. No suggestion is shown.
 2. **History** (`suggestionSource: "history"`): a column with exactly the same name was mapped in another edition of the same survey.
@@ -409,12 +409,12 @@ History and name suggestions never reuse a canonical variable that another colum
 
 Suggestions are preselected in the response but are not saved until the client sends `PUT`.
 
-`PUT .../mapping` takes `{ columns: [{ column, choice, newName?, newDataType?, missingCodes? }] }`:
+`PUT .../mapping` takes `{ columns: [{ column, choice, newName?, dataType?, missingCodes? }] }`:
 
 | `choice` | Effect |
 | --- | --- |
 | `cv:<canonicalId>` | Map to that canonical variable. It must belong to the same survey (`400 canonical_variable_not_found`). |
-| `__new__` | Map to the canonical named `newName`. It is created if it does not exist in the survey, with `newDataType` (default `text`). An empty `newName` leaves the column unmapped. |
+| `__new__` | Map to the canonical named `newName`. It is created if it does not exist in the survey. An empty `newName` leaves the column unmapped. |
 | anything else | Leave the column unmapped. |
 
 - `PUT` replaces the whole mapping of the edition. Columns that are left out of the request become unmapped.
@@ -424,6 +424,14 @@ Suggestions are preselected in the response but are not saved until the client s
 - `missingCodes` lists the values that mean "not specified" in that column of that edition (for example `["9", "99"]`). Codes are trimmed, and empty and repeated codes are dropped. They belong to the mapping, so each edition keeps its own codes, and unmapping the column discards them.
 - Canonical variables cannot be renamed or deleted. Unmapping every column that used one does not delete it.
 - Two columns of the same edition cannot use the same canonical variable, because the harmonized view has one column per canonical. Such a request returns `409 canonical_variable_collision`, the `message` lists the columns involved, and nothing is saved (including canonicals that `__new__` would have created). Two `__new__` entries with the same `newName`, or a `newName` equal to an existing canonical that another column uses, also collide.
+
+### Variable types
+
+Each canonical variable has one type, used for its column in the Parquet export: `text`, `integer` or `decimal`. CSV is always text.
+
+- **Inferred.** `inferredType` comes from the column's values in this edition, after the saved missing codes turn into `null`. It is `integer` when every value is a whole number (sign and surrounding spaces allowed), `decimal` when every value is a number and at least one is not whole (`2.5`, `.5`, `1e3`), and `text` otherwise. A value with a leading zero (`01`, a state code) makes the column `text` so the zero is kept, and so does a number too large for a double (`1e309`). So does a whole number of more than 15 digits, which is usually an identifier. A column with no values is `text`.
+- **Confirmed.** `dataType` on a `PUT` entry sets the type of the column's canonical variable, which confirms it. Leaving it out keeps the current type. The type belongs to the variable, so it applies to every edition that maps it. A canonical created before this change, or never sent a `dataType`, has `dataType: null` (not confirmed).
+- **Validation.** For `integer` (a whole number that fits in 64 bits; leading zeros allowed) or `decimal` (a finite number), every non-missing value of the column must fit, using the `missingCodes` of the same request. Otherwise the request returns `400 value_type_mismatch`, its `message` (in Spanish) quotes up to 5 offending values, and nothing is saved. When the request changes the type of an existing canonical, the other editions that map it are checked too, with their own saved codes. Validation reads the stored files before the save transaction starts.
 
 ### Harmonized views
 
@@ -453,7 +461,8 @@ Exports:
 - The survey export puts `_dataset`, `_year` and `_row` first. The edition export does not include them.
 - CSV is UTF-8 with a BOM, so Excel opens it correctly. Missing values are empty.
 - In CSV, values and headers that start with `=`, `+`, `-`, `@`, a tab or a carriage return get a leading `'`, so spreadsheets do not run them as formulas (report H-12). Plain numbers such as `-5` or `+3.2` are left as they are. Parquet is not changed.
-- Parquet columns are all text. Missing values are `NULL`, so they are distinct from any text value.
+- Parquet columns take the canonical variable's confirmed type, or the type inferred from the exported values when it is not confirmed (the same rules as `inferredType`, applied to all exported editions together): `text` → `VARCHAR`, `integer` → `BIGINT`, `decimal` → `DOUBLE`. Numbers are converted from the trimmed text. `_dataset` is `VARCHAR`, and `_year` and `_row` are `BIGINT`. Missing values are `NULL`, so they are distinct from any value. This lets analyses sum, average, multiply and compare these columns (before, every column was text and `SUM` failed).
+- If a confirmed numeric variable has a value that does not fit (possible only for an edition saved without `dataType`), the Parquet export returns `409 value_type_mismatch` with the variable and the offending values.
 - Exporting an edition with no mappings as Parquet returns `400 harmonized_view_empty`.
 
 ## File storage
