@@ -15,6 +15,8 @@ export interface DatasetEdition {
   /** Códigos de no especificado por columna de origen. */
   missingCodes?: Map<string, Set<string>>;
   rows: RawData[];
+  /** Filas del archivo antes de `rows[0]`, cuando `rows` es una página. */
+  rowOffset?: number;
 }
 
 const FORMULA_START = /^[=+\-@\t\r]/;
@@ -162,7 +164,7 @@ export function buildSurveyView(
       // Número de registro en el archivo original (1 = primera fila de datos).
       // `_dataset` + `_row` identifica cada fila aunque el archivo no tenga
       // columna identificadora, o la repita entre ediciones (H-05).
-      row['_row'] = i + 1;
+      row['_row'] = (edition.rowOffset ?? 0) + i + 1;
       rows.push(row);
     });
   }

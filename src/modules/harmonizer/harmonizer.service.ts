@@ -83,6 +83,64 @@ export interface DatasetInfo {
   columnCount: number;
 }
 
+export interface ViewPageParams {
+  limit?: number;
+  offset?: number;
+}
+
+export interface ViewPage {
+  limit: number;
+  offset: number;
+}
+
+// Filas por página de las vistas en pantalla. La web ofrece 50, 100 y 500.
+const DEFAULT_VIEW_LIMIT = 100;
+const MAX_VIEW_LIMIT = 500;
+
+function viewPage(params: ViewPageParams): ViewPage {
+  const limit =
+    params.limit === undefined || !Number.isFinite(params.limit)
+      ? DEFAULT_VIEW_LIMIT
+      : Math.min(Math.max(Math.trunc(params.limit), 1), MAX_VIEW_LIMIT);
+  const offset =
+    params.offset === undefined || !Number.isFinite(params.offset)
+      ? 0
+      : Math.max(Math.trunc(params.offset), 0);
+  return { limit, offset };
+}
+
+interface EditionRecord {
+  id: string;
+  name: string;
+  year: number;
+  columns: string[];
+}
+
+interface EditionMapping {
+  sourceColumn: string;
+  missingCodes: string[];
+  canonicalVariable: { name: string };
+}
+
+function toEdition(
+  dataset: EditionRecord,
+  mappings: EditionMapping[],
+  rows: RawData[],
+): DatasetEdition {
+  return {
+    name: dataset.name,
+    year: dataset.year,
+    columns: dataset.columns,
+    columnToCanonical: new Map(
+      mappings.map((m) => [m.sourceColumn, m.canonicalVariable.name]),
+    ),
+    missingCodes: new Map(
+      mappings.map((m) => [m.sourceColumn, new Set(m.missingCodes)]),
+    ),
+    rows,
+  };
+}
+
 export type SuggestionSource = 'history' | 'name';
 
 export interface MappingColumn {
@@ -1077,39 +1135,52 @@ export class HarmonizerService {
     return null;
   }
 
-  private async loadEdition(dataset: {
-    id: string;
-    name: string;
-    year: number;
-    columns: string[];
-  }): Promise<DatasetEdition> {
+  /** Edición con todas sus filas (descargas y validación de tipos). */
+  private async loadEdition(dataset: EditionRecord): Promise<DatasetEdition> {
     const [mappings, rawRows] = await Promise.all([
-      this.prisma.harmonizerMapping.findMany({
-        where: { datasetId: dataset.id },
-        include: { canonicalVariable: { select: { name: true } } },
-      }),
+      this.editionMappings(dataset.id),
       this.readRawRows(dataset),
     ]);
-    return {
-      name: dataset.name,
-      year: dataset.year,
-      columns: dataset.columns,
-      columnToCanonical: new Map(
-        mappings.map((m) => [m.sourceColumn, m.canonicalVariable.name]),
-      ),
-      missingCodes: new Map(
-        mappings.map((m) => [m.sourceColumn, new Set(m.missingCodes)]),
-      ),
-      rows: rawRows,
-    };
+    return toEdition(dataset, mappings, rawRows);
   }
 
-  private async readRawRows(dataset: {
-    id: string;
-    columns: string[];
-  }): Promise<RawData[]> {
-    // Un archivo vacío no tiene encabezados y no se escribe Parquet.
-    if (dataset.columns.length === 0) return [];
+  /**
+   * Edición con solo una página de filas y solo las columnas de `mappings` (vistas
+   * en pantalla). DuckDB lee ese tramo del Parquet; el resto no se carga.
+   */
+  private async loadEditionPage(
+    dataset: EditionRecord,
+    mappings: EditionMapping[],
+    page: ViewPage,
+  ): Promise<DatasetEdition> {
+    const columns = mappings
+      .map((m) => m.sourceColumn)
+      .filter((column) => dataset.columns.includes(column));
+    let rows: RawData[] = [];
+    if (columns.length > 0 && page.limit > 0) {
+      const sliced = await this.analysisService.readParquetSlice(
+        await this.rawPath(dataset),
+        columns.map((column) => `c${dataset.columns.indexOf(column)}`),
+        page.offset,
+        page.limit,
+      );
+      rows = sliced.map((values) =>
+        Object.fromEntries(
+          columns.map((column, i) => [column, String(values[i] ?? '')]),
+        ),
+      );
+    }
+    return { ...toEdition(dataset, mappings, rows), rowOffset: page.offset };
+  }
+
+  private editionMappings(datasetId: string): Promise<EditionMapping[]> {
+    return this.prisma.harmonizerMapping.findMany({
+      where: { datasetId },
+      include: { canonicalVariable: { select: { name: true } } },
+    });
+  }
+
+  private async rawPath(dataset: { id: string }): Promise<string> {
     const path = this.storage.resolvePath(rawStorageKey(dataset.id));
     try {
       await access(path);
@@ -1119,7 +1190,18 @@ export class HarmonizerService {
         message: 'No se encontraron los datos guardados de esta edición. Vuelve a subir el archivo.',
       });
     }
-    const rows = await this.analysisService.readParquetRows(path);
+    return path;
+  }
+
+  private async readRawRows(dataset: {
+    id: string;
+    columns: string[];
+  }): Promise<RawData[]> {
+    // Un archivo vacío no tiene encabezados y no se escribe Parquet.
+    if (dataset.columns.length === 0) return [];
+    const rows = await this.analysisService.readParquetRows(
+      await this.rawPath(dataset),
+    );
     return rows.map((values) =>
       Object.fromEntries(
         dataset.columns.map((col, i) => [col, String(values[i] ?? '')]),
@@ -1127,13 +1209,21 @@ export class HarmonizerService {
     );
   }
 
-  async getDatasetHarmonized(datasetId: string) {
+  async getDatasetHarmonized(datasetId: string, params: ViewPageParams = {}) {
     const dataset = await this.getDataset(datasetId);
-    const view = buildDatasetView(await this.loadEdition(dataset));
+    const page = viewPage(params);
+    const mappings = await this.editionMappings(dataset.id);
+    const view = buildDatasetView(
+      await this.loadEditionPage(dataset, mappings, page),
+    );
     return {
       dataset: this.toDatasetInfo(dataset),
       headers: view.headers,
       rows: view.rows,
+      // Una edición sin mapeos no tiene columnas ni filas.
+      total: view.headers.length > 0 ? dataset.rowCount : 0,
+      limit: page.limit,
+      offset: page.offset,
       availableVariables: view.headers,
       selectedCount: view.headers.length,
     };
@@ -1148,11 +1238,10 @@ export class HarmonizerService {
     return canonicals.map((c) => c.name);
   }
 
-  private async surveyView(
+  private async surveySelection(
     surveyId: string,
     variables: string | string[] | undefined,
   ) {
-    const survey = await this.getSurvey(surveyId);
     const available = await this.availableVariables(surveyId);
     // Orden fijo (el alfabético de `available`), sin importar cómo vengan en la URL, para que
     // las columnas no cambien de posición entre descargas (H-14). Se descartan nombres que no
@@ -1160,6 +1249,18 @@ export class HarmonizerService {
     const requested = new Set(parseVariables(variables));
     const selected = available.filter((v) => requested.has(v));
     const wanted = requested.size > 0 ? selected : available;
+    return { available, selected, wanted };
+  }
+
+  private async surveyView(
+    surveyId: string,
+    variables: string | string[] | undefined,
+  ) {
+    const survey = await this.getSurvey(surveyId);
+    const { available, selected, wanted } = await this.surveySelection(
+      surveyId,
+      variables,
+    );
 
     const datasets = await this.prisma.harmonizerDataset.findMany({
       where: { surveyId },
@@ -1178,18 +1279,64 @@ export class HarmonizerService {
     };
   }
 
+  /**
+   * Una página de la vista por encuesta. Las ediciones van apiladas en el
+   * mismo orden que la descarga y se conoce el `rowCount` de cada una, así que solo
+   * se leen las filas de las ediciones que caen en la página.
+   */
   async getSurveyHarmonized(
     surveyId: string,
     variables: string | string[] | undefined,
+    params: ViewPageParams = {},
   ) {
-    const { survey, available, selected, view } = await this.surveyView(
+    const survey = await this.getSurvey(surveyId);
+    const page = viewPage(params);
+    const { available, selected, wanted } = await this.surveySelection(
       surveyId,
       variables,
     );
+    const wantedSet = new Set(wanted);
+
+    const datasets = await this.prisma.harmonizerDataset.findMany({
+      where: { surveyId },
+      orderBy: [{ year: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+      include: {
+        mappings: {
+          include: { canonicalVariable: { select: { name: true } } },
+        },
+      },
+    });
+
+    let total = 0;
+    const editions: DatasetEdition[] = [];
+    for (const { mappings, ...dataset } of datasets) {
+      const used = mappings.filter((m) =>
+        wantedSet.has(m.canonicalVariable.name),
+      );
+      // Una edición sin ninguna de las variables elegidas no aporta filas (igual que
+      // en la descarga).
+      if (used.length === 0) continue;
+      const start = Math.max(page.offset - total, 0);
+      const end = Math.min(page.offset + page.limit - total, dataset.rowCount);
+      if (start < end) {
+        editions.push(
+          await this.loadEditionPage(dataset, used, {
+            offset: start,
+            limit: end - start,
+          }),
+        );
+      }
+      total += dataset.rowCount;
+    }
+    const view = buildSurveyView(editions, wanted);
+
     return {
       survey: { id: survey.id, name: survey.name },
       headers: view.headers,
       rows: view.rows,
+      total: view.headers.length > 0 ? total : 0,
+      limit: page.limit,
+      offset: page.offset,
       availableVariables: available,
       selected,
       selectedCount: view.headers.length,
@@ -1226,7 +1373,7 @@ export class HarmonizerService {
   }
 
   /**
-   * El CSV subido, regenerado desde lo guardado (SDI-68): todas las columnas, mapeadas
+   * El CSV subido, regenerado desde lo guardado: todas las columnas, mapeadas
    * o no, con los valores tal como se leyeron. No aplica mapeo, códigos de "No
    * especificado" ni la neutralización de fórmulas de la vista armonizada.
    */

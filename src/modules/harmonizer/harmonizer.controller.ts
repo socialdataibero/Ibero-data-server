@@ -29,6 +29,13 @@ import { RenameCanonicalVariableDto } from './dto/rename-canonical-variable.dto.
 
 const MAX_CSV_BYTES = 200 * 1024 * 1024;
 
+function pageParams(limit?: string, offset?: string) {
+  return {
+    limit: limit !== undefined ? Number(limit) : undefined,
+    offset: offset !== undefined ? Number(offset) : undefined,
+  };
+}
+
 @Controller('harmonizer')
 @UseGuards(JwtAuthGuard)
 export class HarmonizerController {
@@ -102,8 +109,14 @@ export class HarmonizerController {
   surveyHarmonized(
     @Param('surveyId') surveyId: string,
     @Query('variables') variables?: string | string[],
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
   ) {
-    return this.harmonizerService.getSurveyHarmonized(surveyId, variables);
+    return this.harmonizerService.getSurveyHarmonized(
+      surveyId,
+      variables,
+      pageParams(limit, offset),
+    );
   }
 
   @Get('surveys/:surveyId/harmonized.:fmt')
@@ -159,8 +172,15 @@ export class HarmonizerController {
   }
 
   @Get('datasets/:datasetId/harmonized')
-  datasetHarmonized(@Param('datasetId') datasetId: string) {
-    return this.harmonizerService.getDatasetHarmonized(datasetId);
+  datasetHarmonized(
+    @Param('datasetId') datasetId: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    return this.harmonizerService.getDatasetHarmonized(
+      datasetId,
+      pageParams(limit, offset),
+    );
   }
 
   @Get('datasets/:datasetId/harmonized.:fmt')

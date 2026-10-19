@@ -18,6 +18,7 @@ function edition(
     columnToCanonical: partial.columnToCanonical ?? new Map(),
     missingCodes: partial.missingCodes,
     rows: partial.rows,
+    rowOffset: partial.rowOffset,
   };
 }
 
@@ -148,6 +149,21 @@ describe('harmonizer: buildSurveyView', () => {
       ['A', 2, '0002'],
       ['B', 1, '0001'],
       ['B', 2, '0002'],
+    ]);
+  });
+
+  it('con rowOffset (una página de la edición), _row sigue contando desde el inicio del archivo', () => {
+    const page = edition({
+      name: 'A',
+      columns: ['id'],
+      columnToCanonical: new Map([['id', 'id']]),
+      rows: [{ id: '0101' }, { id: '0102' }],
+      rowOffset: 100,
+    });
+    const view = buildSurveyView([page], ['id']);
+    expect(view.rows.map((r) => [r._row, r.id])).toEqual([
+      [101, '0101'],
+      [102, '0102'],
     ]);
   });
 

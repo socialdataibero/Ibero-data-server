@@ -363,13 +363,13 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 | `DELETE` | `/harmonizer/datasets/:datasetId` | Delete one edition, its mapping and its stored file. Returns `204`. |
 | `GET` | `/harmonizer/datasets/:datasetId/mapping` | Columns of an edition with saved or suggested mappings. |
 | `PUT` | `/harmonizer/datasets/:datasetId/mapping` | Save the mapping of an edition. |
-| `GET` | `/harmonizer/datasets/:datasetId/harmonized` | Harmonized view of one edition. |
+| `GET` | `/harmonizer/datasets/:datasetId/harmonized` | Harmonized view of one edition, one page at a time (`limit`, `offset`). |
 | `GET` | `/harmonizer/datasets/:datasetId/harmonized.csv` | Same, as CSV. Also `.parquet`. |
 | `GET` | `/harmonizer/datasets/:datasetId/original.csv` | The uploaded file, rebuilt from storage with every column. See [Original file](#original-file). |
 | `GET` | `/harmonizer/surveys/:surveyId/variables` | Canonical variables of the survey and where each one is mapped. |
 | `PATCH` | `/harmonizer/surveys/:surveyId/variables/:variableId` | Rename a canonical variable: `{ name }`. |
 | `DELETE` | `/harmonizer/surveys/:surveyId/variables/:variableId` | Delete a canonical variable that no edition maps. Returns `204`. |
-| `GET` | `/harmonizer/surveys/:surveyId/harmonized` | Harmonized view of all editions. Optional `variables`. |
+| `GET` | `/harmonizer/surveys/:surveyId/harmonized` | Harmonized view of all editions, one page at a time (`limit`, `offset`). Optional `variables`. |
 | `GET` | `/harmonizer/surveys/:surveyId/harmonized.csv` | Same, as CSV. Also `.parquet`. |
 
 ### Surveys
@@ -384,7 +384,7 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 
 - `DELETE /harmonizer/datasets/:datasetId` deletes the edition, its mappings and its stored Parquet file. The survey and its other editions are not changed. A missing edition returns `404 harmonizer_dataset_not_found`.
 - The survey's canonical variables are kept, including their confirmed `dataType`, so a corrected file can be uploaded again and mapped to the same names. A canonical that no edition maps any more stops appearing in the survey view (`available` only lists mapped canonicals).
-- Once deleted, the edition's name is free again, so the corrected file can be uploaded with the same name (report SDI-92).
+- Once deleted, the edition's name is free again, so the corrected file can be uploaded with the same name.
 
 ### Upload
 
@@ -439,7 +439,7 @@ Suggestions are preselected in the response but are not saved until the client s
 
 ### Canonical variables
 
-A canonical name is a column of the harmonized view and of the exported Parquet, so it must work as a plain SQL identifier in DuckDB (report H-20, ticket SDI-67):
+A canonical name is a column of the harmonized view and of the exported Parquet, so it must work as a plain SQL identifier in DuckDB:
 
 - 2 to 64 characters.
 - Starts with a letter without accent (`A`–`Z`, `a`–`z`).
@@ -474,6 +474,14 @@ Each canonical variable has one type, used for its column in the Parquet export:
 
 Views are computed on every request from the edition's stored Parquet (see [File storage](#file-storage)) and its mappings. Nothing is materialized.
 
+Paging:
+
+- The two JSON views return one page of rows. `limit` is the page size: 100 by default, at most 500 (the web app offers 50, 100 and 500). `offset` is the number of rows to skip, 0 by default. Like the survey list, invalid values are not rejected: `limit` is clamped to 1–500 and a negative or non-numeric `offset` becomes 0.
+- The response adds `total` (rows of the whole view), `limit` and `offset`. An `offset` past the end returns no rows and the same `total`.
+- Only the rows of the page and the mapped columns are read from the stored Parquet (DuckDB `LIMIT`/`OFFSET`, which keeps file order). `total` comes from the stored `rowCount` of each edition, so nothing is counted.
+- In the survey view, editions are stacked in the same order as the export, so a page can end in one edition and continue in the next. Row `n` of the view is the same row in every page size and in the CSV export.
+- Exports (`.csv`, `.parquet`) are not paged: they still build the whole view in memory.
+
 Edition view:
 
 - Columns are the canonical names of the mapped columns, in header order.
@@ -504,7 +512,7 @@ Exports:
 
 ### Original file
 
-`GET /harmonizer/datasets/:datasetId/original.csv` returns the uploaded file rebuilt from the edition's stored Parquet (report H-21, ticket SDI-68). The bytes of the upload are not kept, so this is the same data, not the same file:
+`GET /harmonizer/datasets/:datasetId/original.csv` returns the uploaded file rebuilt from the edition's stored Parquet. The bytes of the upload are not kept, so this is the same data, not the same file:
 
 - Every column of the file, mapped or not, in header order, with every data row in file order.
 - Values exactly as read: no mapping, no `missingCodes` (codes such as `9` stay `9`), no type conversion, and no formula neutralization (a value `=1+1` is downloaded as `=1+1`, as it was uploaded).
