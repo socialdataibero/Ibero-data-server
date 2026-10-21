@@ -1,5 +1,6 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { DuckDBConnection, DuckDBInstance } from '@duckdb/node-api';
+import { describeDuckDbError } from './duckdb-error.js';
 import { assertReadOnlySelect } from './sql-sanitizer.js';
 import { buildRecipeSql, quoteIdent, type Recipe } from './recipe.js';
 
@@ -32,6 +33,8 @@ function stripTrailingSemicolon(sql: string): string {
   return trimmed.endsWith(';') ? trimmed.slice(0, -1) : trimmed;
 }
 
+const logger = new Logger('AnalysisService');
+
 function safeDuckDbError(
   err: unknown,
   paths: string[],
@@ -41,7 +44,8 @@ function safeDuckDbError(
   for (const path of paths) {
     message = message.split(path).join('<file>');
   }
-  return new BadRequestException({ code, message });
+  logger.warn(`${code}: ${message}`);
+  return new BadRequestException({ code, ...describeDuckDbError(message) });
 }
 
 @Injectable()

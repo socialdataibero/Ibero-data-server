@@ -44,7 +44,7 @@ import type { CreateSurveyDto } from './dto/create-survey.dto.js';
 import type { UpdateSurveyDto } from './dto/update-survey.dto.js';
 import type { SaveMappingDto } from './dto/save-mapping.dto.js';
 import type { RenameCanonicalVariableDto } from './dto/rename-canonical-variable.dto.js';
-import { canonicalNameProblem, sameCanonicalName } from './canonical-name.js';
+import { CANONICAL_NAME_PROBLEM_TEXT, canonicalNameProblem, sameCanonicalName } from './canonical-name.js';
 import {
   DbfError,
   readDbf,
@@ -207,9 +207,9 @@ const PARQUET_TYPE: Record<ValueType, ParquetColumnType> = {
 };
 
 const VALUE_TYPE_LABEL: Record<ValueType, string> = {
-  text: 'texto',
-  integer: 'números enteros',
-  decimal: 'números',
+  text: 'text',
+  integer: 'whole numbers',
+  decimal: 'numbers',
 };
 
 function quoteList(values: string[]): string {
@@ -291,7 +291,8 @@ function normalizeMissingCodes(codes: string[] | undefined): string[] {
 function datasetNameTaken(name: string, surveyName: string) {
   return new ConflictException({
     code: 'dataset_name_taken',
-    message: `La encuesta «${surveyName}» ya tiene una edición llamada «${name}». Usa otro nombre.`,
+    message: `Survey "${surveyName}" already has an edition named "${name}".`,
+    params: { survey: surveyName, name },
   });
 }
 
@@ -305,17 +306,18 @@ function decodeUtf8(buffer: Buffer): string {
     const line = lossy.slice(0, lossy.indexOf('\uFFFD')).split('\n').length;
     throw new BadRequestException({
       code: 'csv_not_utf8',
-      message: `El archivo no está en UTF-8 y sus acentos se perderían (el primer carácter que no se puede leer está en la línea ${line}). Vuelve a guardarlo como «CSV UTF-8» y súbelo de nuevo.`,
+      message: `The file is not UTF-8 and its accents would be lost (the first unreadable character is on line ${line}). Save it as "CSV UTF-8" and upload it again.`,
+      params: { line },
     });
   }
 }
 
 /**
- * Mensaje en español para un CSV que no se pudo leer (H-07). Dice la línea y qué revisar, en
- * lugar de la regla interna del lector («Invalid Opening Quote»). `lastRecordLine` es la línea
- * donde terminó la última fila leída bien.
+ * Explains a CSV that could not be parsed (H-07): the line and what to check, instead of the
+ * parser's internal rule ("Invalid Opening Quote"). `lastRecordLine` is the line where the
+ * last good row ended.
  */
-function csvErrorMessage(err: unknown, lastRecordLine: number): string {
+function csvError(err: unknown, lastRecordLine: number): { message: string; params: Record<string, unknown> } {
   const info = (err ?? {}) as {
     code?: string;
     lines?: number;
@@ -323,16 +325,32 @@ function csvErrorMessage(err: unknown, lastRecordLine: number): string {
     columns?: unknown[];
   };
   switch (info.code) {
-    case 'CSV_QUOTE_NOT_CLOSED':
-      return `Hay un dato que abre comillas (") y nunca las cierra, a partir de la línea ${lastRecordLine + 1}. Un dato que empieza con comillas debe terminar con comillas; las comillas dentro de él se escriben dobles ("").`;
+    case 'CSV_QUOTE_NOT_CLOSED': {
+      const line = lastRecordLine + 1;
+      return {
+        message: `A value opens a quote (") and never closes it, starting at line ${line}.`,
+        params: { problem: 'quote_not_closed', line },
+      };
+    }
     case 'CSV_RECORD_INCONSISTENT_COLUMNS':
       if (info.record && info.columns) {
-        return `La fila de la línea ${info.lines} tiene ${info.record.length} columnas y el encabezado tiene ${info.columns.length}. Revisa esa fila: puede faltar o sobrar una coma, un dato con comas debe ir entre comillas, o puede haber una comilla sin cerrar en la fila.`;
+        return {
+          message: `The row on line ${info.lines} has ${info.record.length} columns and the header has ${info.columns.length}.`,
+          params: {
+            problem: 'inconsistent_columns',
+            line: info.lines,
+            rowColumns: info.record.length,
+            headerColumns: info.columns.length,
+          },
+        };
       }
       break;
   }
-  const where = info.lines ? ` cerca de la línea ${info.lines}` : '';
-  return `No se pudo leer el archivo como CSV${where}. Revisa que esté separado por comas y que cada dato entre comillas abra y cierre sus comillas.`;
+  const where = info.lines ? ` near line ${info.lines}` : '';
+  return {
+    message: `The file could not be read as CSV${where}.`,
+    params: { problem: 'unreadable', ...(info.lines ? { line: info.lines } : {}) },
+  };
 }
 
 @Injectable()
@@ -383,7 +401,7 @@ export class HarmonizerService {
     if (!name) {
       throw new BadRequestException({
         code: 'survey_name_required',
-        message: 'El nombre de la encuesta no puede quedar vacío.',
+        message: 'The survey name cannot be empty.',
       });
     }
     const existing = await this.prisma.harmonizerSurvey.findUnique({
@@ -392,7 +410,8 @@ export class HarmonizerService {
     if (existing) {
       throw new ConflictException({
         code: 'survey_name_taken',
-        message: `Ya existe una encuesta llamada «${name}».`,
+        message: `A survey named "${name}" already exists.`,
+        params: { name },
       });
     }
     const created = await this.prisma.harmonizerSurvey.create({
@@ -408,7 +427,7 @@ export class HarmonizerService {
     if (!survey) {
       throw new NotFoundException({
         code: 'survey_not_found',
-        message: 'La encuesta no existe.',
+        message: 'Survey not found.',
       });
     }
     return survey;
@@ -478,7 +497,7 @@ export class HarmonizerService {
     if (!variable) {
       throw new NotFoundException({
         code: 'canonical_variable_not_found',
-        message: 'La variable no existe en esta encuesta.',
+        message: 'Variable not found in this survey.',
       });
     }
     return variable;
@@ -496,7 +515,8 @@ export class HarmonizerService {
     if (problem) {
       throw new BadRequestException({
         code: 'canonical_variable_name_invalid',
-        message: `El nombre «${name}» no es válido, ${problem}.`,
+        message: `The name "${name}" is not valid: ${CANONICAL_NAME_PROBLEM_TEXT[problem]}.`,
+        params: { name, problem },
       });
     }
     const clash = await this.prisma.harmonizerCanonicalVariable.findFirst({
@@ -510,7 +530,8 @@ export class HarmonizerService {
     if (clash) {
       throw new ConflictException({
         code: 'canonical_variable_name_taken',
-        message: `Ya existe la variable «${clash.name}» en esta encuesta (los nombres no distinguen mayúsculas).`,
+        message: `A variable named "${clash.name}" already exists in this survey (names are case-insensitive).`,
+        params: { existing: clash.name },
       });
     }
     const updated = await this.prisma.harmonizerCanonicalVariable.update({
@@ -527,12 +548,13 @@ export class HarmonizerService {
   ): Promise<void> {
     const variable = await this.getCanonicalVariable(surveyId, variableId);
     if (variable.mappings.length > 0) {
-      const usages = variable.mappings
-        .map((m) => `«${m.dataset.name}» (columna «${m.sourceColumn}»)`)
-        .join(', ');
+      const usages = variable.mappings.map((m) => ({ edition: m.dataset.name, column: m.sourceColumn }));
       throw new ConflictException({
         code: 'canonical_variable_in_use',
-        message: `La variable «${variable.name}» está mapeada en ${usages}. Quita esos mapeos antes de borrarla.`,
+        message: `Variable "${variable.name}" is mapped in ${usages
+          .map((u) => `"${u.edition}" (column "${u.column}")`)
+          .join(', ')}. Remove those mappings before deleting it.`,
+        params: { name: variable.name, usages },
       });
     }
     await this.prisma.harmonizerCanonicalVariable.delete({
@@ -549,7 +571,7 @@ export class HarmonizerService {
       if (!name) {
         throw new BadRequestException({
           code: 'survey_name_required',
-          message: 'El nombre de la encuesta no puede quedar vacío.',
+          message: 'The survey name cannot be empty.',
         });
       }
       if (name !== survey.name) {
@@ -559,7 +581,8 @@ export class HarmonizerService {
         if (existing) {
           throw new ConflictException({
             code: 'survey_name_taken',
-            message: `Ya existe una encuesta llamada «${name}».`,
+            message: `A survey named "${name}" already exists.`,
+            params: { name },
           });
         }
         data.name = name;
@@ -680,7 +703,7 @@ export class HarmonizerService {
     if (!name) {
       throw new BadRequestException({
         code: 'new_survey_name_required',
-        message: 'Escribe el nombre de la encuesta nueva (campo «newSurvey»).',
+        message: 'Enter the name of the new survey (field "newSurvey").',
       });
     }
     return this.createSurvey({ name });
@@ -695,15 +718,14 @@ export class HarmonizerService {
       table = readDbf(buffer, encoding === 'auto' ? undefined : encoding);
     } catch (err) {
       if (err instanceof DbfError) {
-        throw new BadRequestException({ code: err.code, message: err.message });
+        throw new BadRequestException({ code: err.code, message: err.message, params: err.params });
       }
       throw err;
     }
     if (table.rows.length === 0) {
       throw new BadRequestException({
         code: 'dbf_no_rows',
-        message:
-          'El archivo DBF no tiene registros, o todos están marcados como borrados. Sube un archivo con al menos un registro.',
+        message: 'The DBF file has no records, or all of them are marked as deleted.',
       });
     }
     const { columns, renamed } = dedupeHeaders(table.headers);
@@ -755,7 +777,7 @@ export class HarmonizerService {
     } catch (err) {
       throw new BadRequestException({
         code: 'csv_invalid',
-        message: csvErrorMessage(err, lastRecordLine),
+        ...csvError(err, lastRecordLine),
       });
     }
     // Una edición sin filas no aporta datos, pero sí permitiría crear
@@ -764,15 +786,13 @@ export class HarmonizerService {
     if (rows.length === 0 && columns.every((c) => c === '')) {
       throw new BadRequestException({
         code: 'csv_empty',
-        message:
-          'El archivo está vacío: no tiene encabezado ni datos. Revisa que sea el archivo correcto.',
+        message: 'The file is empty: it has no header and no data.',
       });
     }
     if (rows.length === 0) {
       throw new BadRequestException({
         code: 'csv_no_rows',
-        message:
-          'El archivo solo tiene encabezado y ninguna fila de datos. Sube un archivo con al menos una fila.',
+        message: 'The file only has a header and no data rows.',
       });
     }
     return { columns, rows, renamed };
@@ -786,7 +806,7 @@ export class HarmonizerService {
     if (!dataset) {
       throw new NotFoundException({
         code: 'harmonizer_dataset_not_found',
-        message: 'La edición no existe.',
+        message: 'Edition not found.',
       });
     }
     return dataset;
@@ -976,9 +996,10 @@ export class HarmonizerService {
       if (collisions.length > 0) {
         throw new ConflictException({
           code: 'canonical_variable_collision',
-          message: `Cada variable canónica solo puede venir de una columna por edición. Estas columnas comparten variable: ${collisions
+          message: `Each canonical variable can come from only one column per edition. These columns share a variable: ${collisions
             .map((columns) => columns.join(', '))
-            .join('; ')}. Asigna una variable distinta a cada una o deja alguna sin mapear.`,
+            .join('; ')}.`,
+          params: { groups: collisions },
         });
       }
 
@@ -1052,14 +1073,16 @@ export class HarmonizerService {
       if (problem) {
         throw new BadRequestException({
           code: 'canonical_variable_name_invalid',
-          message: `Columna «${column}»: el nombre «${name}» no es válido, ${problem}.`,
+          message: `Column "${column}": the name "${name}" is not valid: ${CANONICAL_NAME_PROBLEM_TEXT[problem]}.`,
+          params: { column, name, problem },
         });
       }
       const clash = known.find((other) => sameCanonicalName(other, name));
       if (clash) {
         throw new ConflictException({
           code: 'canonical_variable_name_taken',
-          message: `Columna «${column}»: ya existe la variable «${clash}» y los nombres no distinguen mayúsculas. Elígela en la lista en lugar de crear «${name}».`,
+          message: `Column "${column}": variable "${clash}" already exists and names are case-insensitive. Pick it from the list instead of creating "${name}".`,
+          params: { column, name, existing: clash },
         });
       }
       const sibling = [...created.entries()].find(([other]) =>
@@ -1068,7 +1091,8 @@ export class HarmonizerService {
       if (sibling) {
         throw new ConflictException({
           code: 'canonical_variable_name_taken',
-          message: `Columna «${column}»: la columna «${sibling[1]}» ya crea la variable «${sibling[0]}» y los nombres no distinguen mayúsculas. Usa el mismo nombre o uno distinto.`,
+          message: `Column "${column}": column "${sibling[1]}" already creates variable "${sibling[0]}" and names are case-insensitive. Use the same name or a different one.`,
+          params: { column, name, existing: sibling[0], otherColumn: sibling[1] },
         });
       }
       created.set(name, column);
@@ -1106,7 +1130,8 @@ export class HarmonizerService {
       if (bad.length > 0) {
         throw new BadRequestException({
           code: 'value_type_mismatch',
-          message: `La columna "${choice.column}" tiene valores que no son ${VALUE_TYPE_LABEL[choice.dataType]}: ${quoteList(bad)}. Márcalos como No especificado o elige el tipo Texto.`,
+          message: `Column "${choice.column}" has values that are not ${VALUE_TYPE_LABEL[choice.dataType]}: ${quoteList(bad)}.`,
+          params: { source: 'column', column: choice.column, expectedType: choice.dataType, values: bad },
         });
       }
     }
@@ -1160,7 +1185,15 @@ export class HarmonizerService {
       if (bad.length > 0) {
         throw new BadRequestException({
           code: 'value_type_mismatch',
-          message: `La variable "${m.canonicalVariable.name}" también se usa en la edición "${m.dataset.name}" (columna "${m.sourceColumn}"), que tiene valores que no son ${VALUE_TYPE_LABEL[type]}: ${quoteList(bad)}. Márcalos como No especificado en esa edición o elige el tipo Texto.`,
+          message: `Variable "${m.canonicalVariable.name}" is also used in edition "${m.dataset.name}" (column "${m.sourceColumn}"), which has values that are not ${VALUE_TYPE_LABEL[type]}: ${quoteList(bad)}.`,
+          params: {
+            source: 'other_edition',
+            variable: m.canonicalVariable.name,
+            edition: m.dataset.name,
+            column: m.sourceColumn,
+            expectedType: type,
+            values: bad,
+          },
         });
       }
     }
@@ -1194,7 +1227,8 @@ export class HarmonizerService {
       if (!canonical) {
         throw new BadRequestException({
           code: 'canonical_variable_not_found',
-          message: `La variable con id «${id}» no pertenece a esta encuesta.`,
+          message: `Variable with id "${id}" does not belong to this survey.`,
+          params: { id },
         });
       }
       return canonical.id;
@@ -1255,7 +1289,7 @@ export class HarmonizerService {
     } catch {
       throw new NotFoundException({
         code: 'harmonizer_dataset_file_missing',
-        message: 'No se encontraron los datos guardados de esta edición. Vuelve a subir el archivo.',
+        message: 'The stored data for this edition was not found. Upload the file again.',
       });
     }
     return path;
@@ -1465,7 +1499,8 @@ export class HarmonizerService {
     if (!isExportFormat(format)) {
       throw new NotFoundException({
         code: 'export_format_not_supported',
-        message: `Formato de exportación no admitido: «${fmt}». Usa «csv» o «parquet».`,
+        message: `Unsupported export format: "${fmt}". Use "csv" or "parquet".`,
+        params: { format: fmt },
       });
     }
     return format;
@@ -1497,7 +1532,7 @@ export class HarmonizerService {
     if (columns.length === 0) {
       throw new BadRequestException({
         code: 'harmonized_view_empty',
-        message: 'No hay variables mapeadas para exportar como Parquet. Mapea al menos una columna.',
+        message: 'There are no mapped variables to export as Parquet. Map at least one column.',
       });
     }
     const types = await this.parquetTypes(surveyId, view);
@@ -1544,7 +1579,8 @@ export class HarmonizerService {
       if (bad.length > 0) {
         throw new ConflictException({
           code: 'value_type_mismatch',
-          message: `El tipo confirmado de la variable "${header}" pide ${VALUE_TYPE_LABEL[type]}, pero tiene valores que no lo son: ${quoteList(bad)}. Revisa su mapeo o cambia su tipo a Texto.`,
+          message: `The confirmed type of variable "${header}" requires ${VALUE_TYPE_LABEL[type]}, but it has values that are not: ${quoteList(bad)}.`,
+          params: { source: 'confirmed_type', variable: header, expectedType: type, values: bad },
         });
       }
       types[header] = PARQUET_TYPE[type];

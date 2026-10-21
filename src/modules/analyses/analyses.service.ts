@@ -117,6 +117,7 @@ export class AnalysesService {
       throw new BadRequestException({
         code: 'unknown_columns',
         message: `Unknown column(s) in resources: ${missing.join(', ')}`,
+        params: { columns: missing.join(', ') },
       });
     }
   }

@@ -127,6 +127,53 @@ describe('AnalysisService: join / merge entre recursos (DuckDB real)', () => {
       expect(err.message).not.toContain(dir);
     }
   });
+
+  it('filtering a numeric column with text returns invalid_value without internal details (SDI-97)', async () => {
+    const recipe = recipeFrom([{ op: 'filter', params: { column: 'folio', operator: '>', value: 'abc' } }]);
+
+    await expect(service.runRecipe(peoplePath, recipe, null)).rejects.toMatchObject({
+      response: {
+        code: 'recipe_execution_failed',
+        reason: 'invalid_value',
+        message: 'The value "abc" is not a valid integer for this column.',
+        params: { value: 'abc', expectedType: 'integer' },
+      },
+    });
+  });
+
+  it('a join on a missing column returns unknown_column with the column name (SDI-97)', async () => {
+    const recipe = recipeFrom([
+      { op: 'join', params: { resourceId: 'expansion', alias: 'expansion', type: 'inner', onLeft: 'no_such_column', onRight: 'folio' } },
+    ]);
+
+    await expect(
+      service.runRecipe(peoplePath, recipe, null, [{ alias: 'expansion', path: expansionPath }]),
+    ).rejects.toMatchObject({ response: { reason: 'unknown_column', params: { column: 'no_such_column' } } });
+  });
+
+  it.each<[string, string, Step[]]>([
+    ['filter with a date on a number column', 'invalid_value', [{ op: 'filter', params: { column: 'ingreso', operator: '<', value: '2020-01-01' } }]],
+    ['compute multiplying a text column', 'incompatible_types', [{ op: 'compute', params: { left: 'municipio', right: 2, as: 'x' } }]],
+    ['aggregate summing a text column', 'incompatible_types', [
+      { op: 'group_by', params: { columns: ['folio'] } },
+      { op: 'aggregate', params: { func: 'SUM', column: 'municipio', as: 'total' } },
+    ]],
+    ['sort by a missing column', 'unknown_column', [{ op: 'sort', params: { column: 'no_such_column', dir: 'asc' } }]],
+  ])('%s returns reason %s with an English message and no SQL (SDI-97)', async (_name, reason, steps) => {
+    try {
+      await service.runRecipe(peoplePath, recipeFrom(steps), null);
+      throw new Error('should have failed');
+    } catch (err: any) {
+      expect(err.response.reason).toBe(reason);
+      expect(err.response.message).not.toMatch(/SELECT|LINE \d|Error:|parquet/i);
+    }
+  });
+
+  it('a SQL syntax error returns syntax_error without echoing the query (SDI-97)', async () => {
+    await expect(service.runQuery(peoplePath, 'SELECT FROM WHERE data')).rejects.toMatchObject({
+      response: { code: 'query_execution_failed', reason: 'syntax_error', message: 'The SQL query has a syntax error.' },
+    });
+  });
 });
 
 describe('AnalysisService: Parquet crudo del armonizador (DuckDB real)', () => {

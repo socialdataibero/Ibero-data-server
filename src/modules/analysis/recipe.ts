@@ -7,43 +7,43 @@ export const OP_CATALOG = {
   join: {
     kind: 'join',
     description:
-      'Cruza este dataset con otro resource por una columna en común (ej: hogares + personas por folio). El otro resource debe ser del mismo dataset.',
+      'Joins this dataset with another resource on a shared column (e.g. households + people by folio). The other resource must belong to the same dataset.',
     params: ['resourceId', 'alias', 'type', 'onLeft', 'onRight'],
   },
   group_by: {
     kind: 'group',
-    description: 'Agrupa las filas por una o más columnas. Úsalo con cálculos para resumir por grupo.',
+    description: 'Groups rows by one or more columns. Use it with aggregates to summarize per group.',
     params: ['columns'],
   },
   aggregate: {
     kind: 'agg',
-    description: 'Calcula un valor por grupo: suma, promedio, conteo, mínimo, máximo o mediana.',
+    description: 'Computes one value per group: sum, average, count, minimum, maximum or median.',
     params: ['func', 'column', 'as', 'distinct'],
   },
   compute: {
     kind: 'compute',
     description:
-      'Crea una columna nueva multiplicando dos columnas (o una columna por un número). Útil para aplicar el factor de expansión de una encuesta.',
+      'Creates a new column by multiplying two columns (or a column by a number). Useful to apply a survey expansion factor.',
     params: ['left', 'right', 'as'],
   },
   percentage: {
     kind: 'post',
-    description: 'Convierte un cálculo en su porcentaje del total.',
+    description: 'Turns an aggregate into its percentage of the total.',
     params: ['of', 'as'],
   },
   filter: {
     kind: 'row',
-    description: 'Conserva solo las filas que cumplen una condición (antes de agrupar).',
+    description: 'Keeps only the rows that match a condition (before grouping).',
     params: ['column', 'operator', 'value'],
   },
   sort: {
     kind: 'post',
-    description: 'Ordena el resultado por una columna, ascendente o descendente.',
+    description: 'Sorts the result by a column, ascending or descending.',
     params: ['column', 'dir'],
   },
   limit: {
     kind: 'post',
-    description: 'Devuelve solo las primeras N filas (top N).',
+    description: 'Returns only the first N rows (top N).',
     params: ['n'],
   },
 } as const;

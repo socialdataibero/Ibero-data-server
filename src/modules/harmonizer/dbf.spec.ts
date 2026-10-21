@@ -150,7 +150,7 @@ describe('readDbf', () => {
       [{ name: 'MUN', type: 'C', length: 10 }],
       [{ values: ['ok'] }, { values: [Buffer.from('Peñón', 'latin1')] }],
     );
-    expect(() => readDbf(buf, 'utf-8')).toThrow(/registro 2, columna «MUN»/);
+    expect(() => readDbf(buf, 'utf-8')).toThrow(expect.objectContaining({ code: 'dbf_not_utf8', params: { record: 2, column: 'MUN' } }));
   });
 
   it('rechaza una columna memo y dice cuál es', () => {
@@ -170,7 +170,7 @@ describe('readDbf', () => {
     })();
     expect(err).toBeInstanceOf(DbfError);
     expect(err?.code).toBe('dbf_field_unsupported');
-    expect(err?.message).toMatch(/«NOTAS» es de tipo memo/);
+    expect(err?.params).toEqual({ column: 'NOTAS', type: 'M', memo: true });
   });
 
   it('rechaza un archivo truncado', () => {
@@ -180,7 +180,7 @@ describe('readDbf', () => {
       { recordCount: 5 },
     );
     expect(() => readDbf(buf)).toThrow(
-      /anuncia 5 registros y el archivo solo trae 2/,
+      expect.objectContaining({ params: { problem: 'truncated', expectedRecords: 5, actualRecords: 2 } }),
     );
   });
 

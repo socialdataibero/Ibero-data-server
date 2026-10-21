@@ -31,6 +31,7 @@ export class DbfError extends Error {
   constructor(
     readonly code: 'dbf_invalid' | 'dbf_field_unsupported' | 'dbf_not_utf8',
     message: string,
+    readonly params: Record<string, unknown> = {},
   ) {
     super(message);
   }
@@ -167,10 +168,22 @@ function nonAsciiTexts(buf: Buffer, fields: Field[], live: number[]): Buffer[] {
   return texts;
 }
 
-function invalid(detail: string): DbfError {
+type DbfProblem = 'too_short' | 'bad_header_size' | 'bad_field_list' | 'no_columns' | 'fields_exceed_record' | 'truncated';
+
+const DBF_PROBLEM_TEXT: Record<DbfProblem, string> = {
+  too_short: 'it is too short to have a header',
+  bad_header_size: 'the header size is not valid',
+  bad_field_list: 'the header column list does not end where it should',
+  no_columns: 'it has no columns',
+  fields_exceed_record: 'the column widths do not fit in the record length',
+  truncated: 'it is incomplete',
+};
+
+function invalid(problem: DbfProblem, extra: Record<string, unknown> = {}): DbfError {
   return new DbfError(
     'dbf_invalid',
-    `No se pudo leer el archivo como DBF: ${detail}. Revisa que sea una tabla dBase o FoxPro (.dbf) completa.`,
+    `The file could not be read as DBF: ${DBF_PROBLEM_TEXT[problem]}. Check that it is a complete dBase or FoxPro (.dbf) table.`,
+    { problem, ...extra },
   );
 }
 
@@ -195,53 +208,45 @@ function readFields(buf: Buffer, headerLength: number): Field[] {
     offset += length;
   }
   if (buf[pos] !== 0x0d) {
-    throw invalid(
-      'la lista de columnas del encabezado no termina donde debería',
-    );
+    throw invalid('bad_field_list');
   }
   return fields;
 }
 
 function unsupportedField(name: string, type: string): DbfError {
-  if (MEMO_TYPES.has(type)) {
-    return new DbfError(
-      'dbf_field_unsupported',
-      `La columna «${name}» es de tipo memo (${type}): su contenido está en un archivo aparte (.dbt o .fpt) que no se sube junto con el .dbf. Exporta la tabla a CSV desde el programa que la creó y súbela de nuevo.`,
-    );
-  }
+  const memo = MEMO_TYPES.has(type);
   return new DbfError(
     'dbf_field_unsupported',
-    `La columna «${name}» es de tipo «${type}», que el armonizador no sabe leer. Solo se leen columnas de texto (C), número (N, F), fecha (D) y lógico (L). Exporta la tabla a CSV desde el programa que la creó y súbela de nuevo.`,
+    memo
+      ? `Column "${name}" is a memo field (${type}); its content lives in a separate .dbt or .fpt file that is not uploaded with the .dbf.`
+      : `Column "${name}" has type "${type}", which the harmonizer cannot read. Only text (C), number (N, F), date (D) and logical (L) columns are supported.`,
+    { column: name, type, memo },
   );
 }
 
 export function readDbf(buf: Buffer, requested?: DbfEncoding): DbfTable {
   if (buf.length < 33)
-    throw invalid('es demasiado corto para tener encabezado');
+    throw invalid('too_short');
   const recordCount = buf.readUInt32LE(4);
   const headerLength = buf.readUInt16LE(8);
   const recordLength = buf.readUInt16LE(10);
   if (headerLength < 33 || headerLength > buf.length || recordLength < 1) {
-    throw invalid('el encabezado no tiene un tamaño válido');
+    throw invalid('bad_header_size');
   }
 
   // `_NullFlags` es una columna interna de Visual FoxPro, no un dato.
   const fields = readFields(buf, headerLength).filter((f) => f.type !== '0');
-  if (fields.length === 0) throw invalid('no tiene columnas');
+  if (fields.length === 0) throw invalid('no_columns');
   const widths = fields.reduce(
     (sum, f) => Math.max(sum, f.offset + f.length),
     1,
   );
   if (widths > recordLength) {
-    throw invalid(
-      'los anchos de las columnas no caben en el largo del registro',
-    );
+    throw invalid('fields_exceed_record');
   }
   const complete = Math.floor((buf.length - headerLength) / recordLength);
   if (complete < recordCount) {
-    throw invalid(
-      `está incompleto: el encabezado anuncia ${recordCount} registros y el archivo solo trae ${complete}`,
-    );
+    throw invalid('truncated', { expectedRecords: recordCount, actualRecords: complete });
   }
   for (const f of fields) {
     if (!TEXT_TYPES.has(f.type) && !ASCII_TYPES.has(f.type)) {
@@ -265,20 +270,25 @@ export function readDbf(buf: Buffer, requested?: DbfEncoding): DbfTable {
     : detectEncoding(buf, nonAsciiTexts(buf, fields, live));
   const decode = decoderFor(chosen.encoding);
 
-  const decodeOrFail = (bytes: Buffer, where: string): string => {
+  // `where` is { columnIndex } for a header name or { record, column } for a value.
+  const decodeOrFail = (bytes: Buffer, where: Record<string, unknown>): string => {
     if (!hasHighByte(bytes)) return bytes.toString('latin1');
     try {
       return decode(bytes);
     } catch {
+      const at = 'record' in where
+        ? `record ${where.record}, column "${where.column}"`
+        : `name of column ${where.columnIndex}`;
       throw new DbfError(
         'dbf_not_utf8',
-        `El archivo no está en UTF-8 (${where}). Elige otra codificación al subirlo, por ejemplo «Detectar automáticamente».`,
+        `The file is not UTF-8 (${at}). Choose another encoding when uploading it, for example "auto".`,
+        where,
       );
     }
   };
 
   const headers = fields.map((f, i) =>
-    decodeOrFail(f.nameBytes, `nombre de la columna ${i + 1}`).trim(),
+    decodeOrFail(f.nameBytes, { columnIndex: i + 1 }).trim(),
   );
   const rows = live.map((start) =>
     fields.map((f, i) => {
@@ -286,10 +296,7 @@ export function readDbf(buf: Buffer, requested?: DbfEncoding): DbfTable {
       if (TEXT_TYPES.has(f.type)) {
         const record = (start - headerLength) / recordLength + 1;
         // El texto se rellena con espacios a la derecha: se quitan solo esos.
-        return decodeOrFail(
-          bytes,
-          `registro ${record}, columna «${headers[i]}»`,
-        ).replace(/[ \0]+$/, '');
+        return decodeOrFail(bytes, { record, column: headers[i] }).replace(/[ \0]+$/, '');
       }
       // Números, fechas (AAAAMMDD) y lógicos son ASCII alineados con espacios.
       return bytes.toString('latin1').replace(/^[ \0]+|[ \0]+$/g, '');

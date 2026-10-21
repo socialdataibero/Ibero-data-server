@@ -17,27 +17,27 @@ export const UPLOAD_ENCODINGS = ['auto', ...DBF_ENCODINGS] as const;
 export type UploadEncoding = (typeof UPLOAD_ENCODINGS)[number];
 
 export class UploadDatasetDto {
-  @IsString({ message: 'name debe ser texto.' })
-  @MinLength(1, { message: 'name no puede quedar vacío.' })
+  @IsString({ message: 'name must be a string.' })
+  @MinLength(1, { message: 'name must not be empty.' })
   name!: string;
 
   @Type(() => Number)
-  @IsInt({ message: 'year debe ser un número entero.' })
-  @Min(1900, { message: 'year no puede ser anterior a 1900.' })
-  @Max(2100, { message: 'year no puede ser posterior a 2100.' })
+  @IsInt({ message: 'year must be an integer.' })
+  @Min(1900, { message: 'year must not be earlier than 1900.' })
+  @Max(2100, { message: 'year must not be later than 2100.' })
   year!: number;
 
-  @IsString({ message: 'surveyId debe ser texto.' })
-  @MinLength(1, { message: 'surveyId no puede quedar vacío.' })
+  @IsString({ message: 'surveyId must be a string.' })
+  @MinLength(1, { message: 'surveyId must not be empty.' })
   surveyId!: string;
 
   @IsOptional()
-  @IsString({ message: 'newSurvey debe ser texto.' })
+  @IsString({ message: 'newSurvey must be a string.' })
   newSurvey?: string;
 
   @IsOptional()
   @IsIn(UPLOAD_ENCODINGS, {
-    message: `encoding debe ser uno de: ${UPLOAD_ENCODINGS.join(', ')}.`,
+    message: `encoding must be one of: ${UPLOAD_ENCODINGS.join(', ')}.`,
   })
   encoding?: UploadEncoding;
 }

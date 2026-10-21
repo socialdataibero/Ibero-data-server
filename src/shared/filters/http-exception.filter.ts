@@ -11,6 +11,8 @@ import type { Response } from 'express';
 interface ExceptionBody {
   code?: unknown;
   message?: unknown;
+  reason?: unknown;
+  params?: unknown;
 }
 
 const DEFAULT_CODE_BY_STATUS: Record<number, string> = {
@@ -36,13 +38,15 @@ export class HttpExceptionFilter implements ExceptionFilter {
     let code = DEFAULT_CODE_BY_STATUS[status] ?? 'error';
     let message = 'An unexpected error occurred.';
     let details: string[] | undefined;
+    let reason: string | undefined;
+    let params: object | undefined;
 
     if (exception instanceof HttpException) {
       const body = exception.getResponse();
       if (typeof body === 'string') {
         message = body;
       } else if (body && typeof body === 'object') {
-        const { code: bodyCode, message: bodyMessage } = body as ExceptionBody;
+        const { code: bodyCode, message: bodyMessage, reason: bodyReason, params: bodyParams } = body as ExceptionBody;
         if (Array.isArray(bodyMessage)) {
           code = 'validation_error';
           details = bodyMessage as string[];
@@ -50,12 +54,21 @@ export class HttpExceptionFilter implements ExceptionFilter {
         } else {
           if (typeof bodyMessage === 'string') message = bodyMessage;
           if (typeof bodyCode === 'string') code = bodyCode;
+          if (typeof bodyReason === 'string') reason = bodyReason;
+          if (bodyParams && typeof bodyParams === 'object') params = bodyParams;
         }
       }
     } else {
       this.logger.error(exception instanceof Error ? (exception.stack ?? exception.message) : exception);
     }
 
-    response.status(status).json({ statusCode: status, code, message, ...(details ? { details } : {}) });
+    response.status(status).json({
+      statusCode: status,
+      code,
+      message,
+      ...(details ? { details } : {}),
+      ...(reason ? { reason } : {}),
+      ...(params ? { params } : {}),
+    });
   }
 }

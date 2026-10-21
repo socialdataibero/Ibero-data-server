@@ -10,17 +10,19 @@ export const CANONICAL_NAME_MAX = 64;
 const STARTS_WITH_LETTER = /^[A-Za-z]/;
 const IDENTIFIER = /^[A-Za-z][A-Za-z0-9_]*$/;
 
-/** Motivo por el que el nombre no es válido, o `null` si cumple las reglas. */
-export function canonicalNameProblem(name: string): string | null {
-  if (name.length < CANONICAL_NAME_MIN || name.length > CANONICAL_NAME_MAX) {
-    return `debe tener entre ${CANONICAL_NAME_MIN} y ${CANONICAL_NAME_MAX} caracteres`;
-  }
-  if (!STARTS_WITH_LETTER.test(name)) {
-    return 'debe empezar con una letra sin acento';
-  }
-  if (!IDENTIFIER.test(name)) {
-    return 'solo puede tener letras sin acento, números y guion bajo (_), sin espacios';
-  }
+export type CanonicalNameProblem = 'length' | 'start' | 'chars';
+
+export const CANONICAL_NAME_PROBLEM_TEXT: Record<CanonicalNameProblem, string> = {
+  length: `it must be between ${CANONICAL_NAME_MIN} and ${CANONICAL_NAME_MAX} characters long`,
+  start: 'it must start with an unaccented letter',
+  chars: 'it can only contain unaccented letters, digits and underscores (_), without spaces',
+};
+
+/** Why the name is not valid, or `null` if it follows the rules. */
+export function canonicalNameProblem(name: string): CanonicalNameProblem | null {
+  if (name.length < CANONICAL_NAME_MIN || name.length > CANONICAL_NAME_MAX) return 'length';
+  if (!STARTS_WITH_LETTER.test(name)) return 'start';
+  if (!IDENTIFIER.test(name)) return 'chars';
   return null;
 }
 
