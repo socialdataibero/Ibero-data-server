@@ -30,7 +30,11 @@ import {
   type RawData,
   type ValueType,
 } from './harmonized-view.js';
-import { NEW_SURVEY, type UploadDatasetDto } from './dto/upload-dataset.dto.js';
+import {
+  NEW_SURVEY,
+  type UploadDatasetDto,
+  type UploadEncoding,
+} from './dto/upload-dataset.dto.js';
 import {
   CANONICAL_PREFIX,
   NEW_CANONICAL,
@@ -41,6 +45,12 @@ import type { UpdateSurveyDto } from './dto/update-survey.dto.js';
 import type { SaveMappingDto } from './dto/save-mapping.dto.js';
 import type { RenameCanonicalVariableDto } from './dto/rename-canonical-variable.dto.js';
 import { canonicalNameProblem, sameCanonicalName } from './canonical-name.js';
+import {
+  DbfError,
+  readDbf,
+  type DbfEncoding,
+  type DbfEncodingSource,
+} from './dbf.js';
 
 export interface SurveyDatasetSummary {
   id: string;
@@ -77,7 +87,8 @@ export interface DatasetInfo {
   year: number;
   surveyId: string;
   surveyName: string;
-  // Filas de datos leídas del CSV, sin contar el encabezado (H-09).
+  // Filas de datos leídas del archivo, sin contar el encabezado ni, en un DBF,
+  // los registros borrados (H-09).
   rowCount: number;
   // Columnas del archivo, mapeadas o no (H-18).
   columnCount: number;
@@ -219,6 +230,23 @@ export interface RenamedColumn {
   position: number;
   original: string;
   renamed: string;
+}
+
+// Cómo se leyó el archivo subido, para que el cliente avise al usuario. No se guarda.
+export type UploadSource =
+  | { format: 'csv' }
+  | {
+      format: 'dbf';
+      encoding: DbfEncoding;
+      encodingSource: DbfEncodingSource;
+      deletedRecords: number;
+    };
+
+interface ParsedUpload {
+  columns: string[];
+  rows: RawData[];
+  renamed: RenamedColumn[];
+  source: UploadSource;
 }
 
 // Los encabezados repetidos se renombran con `.1`, `.2`, … y se informa al
@@ -568,10 +596,13 @@ export class HarmonizerService {
     datasetId: string;
     dataset: DatasetInfo;
     renamedColumns: RenamedColumn[];
+    source: UploadSource;
   }> {
     // Se valida el archivo antes de crear la encuesta nueva (`__new__`), para
     // que un archivo rechazado no deje una encuesta vacía.
-    const { columns, rows, renamed } = this.parseCsv(file.buffer);
+    const { columns, rows, renamed, source } = /\.dbf$/i.test(file.originalname)
+      ? this.parseDbf(file.buffer, dto.encoding)
+      : { ...this.parseCsv(file.buffer), source: { format: 'csv' as const } };
     const name = dto.name.trim();
     if (dto.surveyId !== NEW_SURVEY) {
       await this.assertDatasetNameFree(dto.surveyId, name);
@@ -627,6 +658,7 @@ export class HarmonizerService {
         columnCount: dataset.columns.length,
       },
       renamedColumns: renamed,
+      source,
     };
   }
 
@@ -652,6 +684,42 @@ export class HarmonizerService {
       });
     }
     return this.createSurvey({ name });
+  }
+
+  private parseDbf(
+    buffer: Buffer,
+    encoding: UploadEncoding | undefined,
+  ): ParsedUpload {
+    let table;
+    try {
+      table = readDbf(buffer, encoding === 'auto' ? undefined : encoding);
+    } catch (err) {
+      if (err instanceof DbfError) {
+        throw new BadRequestException({ code: err.code, message: err.message });
+      }
+      throw err;
+    }
+    if (table.rows.length === 0) {
+      throw new BadRequestException({
+        code: 'dbf_no_rows',
+        message:
+          'El archivo DBF no tiene registros, o todos están marcados como borrados. Sube un archivo con al menos un registro.',
+      });
+    }
+    const { columns, renamed } = dedupeHeaders(table.headers);
+    return {
+      columns,
+      rows: table.rows.map((values) =>
+        Object.fromEntries(columns.map((col, i) => [col, values[i]])),
+      ),
+      renamed,
+      source: {
+        format: 'dbf',
+        encoding: table.encoding,
+        encodingSource: table.encodingSource,
+        deletedRecords: table.deletedRecords,
+      },
+    };
   }
 
   private parseCsv(buffer: Buffer): {

@@ -146,7 +146,7 @@ export class HarmonizerController {
     if (!file) {
       throw new BadRequestException({
         code: 'file_required',
-        message: 'Falta el archivo CSV (campo «file»).',
+        message: 'Falta el archivo CSV o DBF (campo «file»).',
       });
     }
     return this.harmonizerService.uploadDataset(dto, file);

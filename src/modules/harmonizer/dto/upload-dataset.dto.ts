@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -7,8 +8,13 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import { DBF_ENCODINGS } from '../dbf.js';
 
 export const NEW_SURVEY = '__new__';
+
+/** Codificación de un DBF; `auto` la detecta. Un CSV siempre se lee como UTF-8. */
+export const UPLOAD_ENCODINGS = ['auto', ...DBF_ENCODINGS] as const;
+export type UploadEncoding = (typeof UPLOAD_ENCODINGS)[number];
 
 export class UploadDatasetDto {
   @IsString({ message: 'name debe ser texto.' })
@@ -28,4 +34,10 @@ export class UploadDatasetDto {
   @IsOptional()
   @IsString({ message: 'newSurvey debe ser texto.' })
   newSurvey?: string;
+
+  @IsOptional()
+  @IsIn(UPLOAD_ENCODINGS, {
+    message: `encoding debe ser uno de: ${UPLOAD_ENCODINGS.join(', ')}.`,
+  })
+  encoding?: UploadEncoding;
 }

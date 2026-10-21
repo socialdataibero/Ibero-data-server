@@ -359,7 +359,7 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 | `GET` | `/harmonizer/surveys/:surveyId` | One survey. |
 | `PATCH` | `/harmonizer/surveys/:surveyId` | Change `name` and/or `description`. |
 | `DELETE` | `/harmonizer/surveys/:surveyId` | Delete the survey and everything in it, including the stored files of its editions. Returns `204`. |
-| `POST` | `/harmonizer/upload` | Upload an edition (multipart). |
+| `POST` | `/harmonizer/upload` | Upload an edition (multipart), as CSV or DBF. |
 | `DELETE` | `/harmonizer/datasets/:datasetId` | Delete one edition, its mapping and its stored file. Returns `204`. |
 | `GET` | `/harmonizer/datasets/:datasetId/mapping` | Columns of an edition with saved or suggested mappings. |
 | `PUT` | `/harmonizer/datasets/:datasetId/mapping` | Save the mapping of an edition. |
@@ -388,17 +388,17 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 
 ### Upload
 
-Fields: `file`, `name` (edition name, required), `year` (1900–2100), `surveyId`, and `newSurvey`.
+Fields: `file`, `name` (edition name, required), `year` (1900–2100), `surveyId`, `newSurvey`, and `encoding` (DBF only, see [DBF files](#dbf-files)).
 
 - `surveyId` is an existing survey ID, or `__new__` to create a survey named `newSurvey` in the same request.
   - With `__new__`, `newSurvey` is required (`400 new_survey_name_required`) and must not be taken (`409 survey_name_taken`).
   - An unknown ID returns `404 survey_not_found`.
-- Maximum size: 200 MB. The file extension is not checked; the content must parse as CSV (`400 csv_invalid`).
+- Maximum size: 200 MB. A file whose name ends in `.dbf` (any case) is read as a DBF table, see [DBF files](#dbf-files). Any other file must parse as CSV (`400 csv_invalid`); its extension is not checked. The rules below about quotes, UTF-8, blank lines and the header row apply to CSV.
 - A quote inside a value that is not itself quoted, such as `{"clave":1}` or `5" pantalla`, is kept as written, like pandas, Polars and Python's `csv` module do (report H-07). Quoted values follow the usual rules: they may contain commas and line breaks, and `""` is a literal quote.
 - These files are still rejected with `400 csv_invalid`: a quote that opens a value and is never closed, and a row with more or fewer fields than the header. The Spanish `message` gives the line and what to check; the whole file is rejected and nothing is written.
 - The file must be valid UTF-8 (a BOM is allowed). Any other encoding, such as Latin-1, returns `400 csv_not_utf8` with the line of the first invalid byte, instead of storing accented characters as `�`.
 - The file must have a header and at least one data row. A file with no header (for example 0 bytes or only blank lines) returns `400 csv_empty`; a file with a header but no data rows returns `400 csv_no_rows` (report H-08).
-- The response is `{ datasetId, dataset }`. `dataset` includes `rowCount`, the number of data rows read (the header and skipped blank lines are not counted), so the client can check that nothing was dropped (report H-09). The same `dataset` object, with `rowCount`, is returned by `GET .../mapping` and the edition's harmonized view. It also includes `columnCount`, the number of columns in the uploaded file whether mapped or not, because the harmonized view only shows mapped columns (report H-18).
+- The response is `{ datasetId, dataset, renamedColumns, source }`. `source` says how the file was read, so the client can tell the user; it is not stored. It is `{ format: "csv" }`, or for a DBF `{ format: "dbf", encoding, encodingSource, deletedRecords }`. `dataset` includes `rowCount`, the number of data rows read (the header and skipped blank lines are not counted), so the client can check that nothing was dropped (report H-09). The same `dataset` object, with `rowCount`, is returned by `GET .../mapping` and the edition's harmonized view. It also includes `columnCount`, the number of columns in the uploaded file whether mapped or not, because the harmonized view only shows mapped columns (report H-18).
 - The file is checked before anything is written, so a rejected upload with `__new__` does not create the survey.
 - The first row is the header. A leading BOM is removed, blank lines are skipped, and values are kept exactly as written: no trimming and no type conversion. Every value is stored as text, and empty cells are `""`.
 - Headers are trimmed (leading and trailing spaces removed) before anything else. Spaces inside a name are kept.
@@ -407,6 +407,20 @@ Fields: `file`, `name` (edition name, required), `year` (1900–2100), `surveyId
 - All columns are stored, including those that are never mapped.
 - The edition name, after trimming, must be unique within its survey, because it is the `_dataset` of the survey view. A repeated name returns `409 dataset_name_taken` and nothing is written. Names are compared exactly (case and accents matter).
 - Uploading never changes other editions. Uploading the same file twice under two names creates two editions.
+
+### DBF files
+
+dBase and FoxPro tables (`.dbf`), as INEGI distributes its census microdata, are uploaded through the same endpoint. After reading, they follow the same rules as a CSV: every value is stored as text, headers are trimmed and repeated names renamed, and the rest of the harmonizer cannot tell the two formats apart.
+
+- Columns of type text (`C`), number (`N`, `F`), date (`D`, kept as written, `YYYYMMDD`) and logical (`L`) are read. The padding of the fixed-width format is removed: trailing spaces in text, both sides in the other types. Leading spaces in text are data and are kept. Values are not converted (`01` stays `01`).
+- A memo column (`M`, `G`, `P`, `B`) keeps its content in a separate `.dbt` or `.fpt` file that is not uploaded, and any other type cannot be read: either returns `400 dbf_field_unsupported`, naming the column. Visual FoxPro's internal `_NullFlags` column is skipped.
+- Records marked as deleted (`*`) are not loaded. `rowCount` counts only the other ones, and the upload response gives the deleted ones in `source.deletedRecords`.
+- A file that is not a DBF, has no columns, or is truncated (fewer records than its header announces) returns `400 dbf_invalid`. A DBF with no records left returns `400 dbf_no_rows`.
+- Encoding. The optional `encoding` field is `auto` (the default), `windows-1252`, `cp850`, `cp437` or `utf-8`; anything else is a `validation_error`. It is ignored for CSV, which is always UTF-8.
+  - With `auto`, the encoding is the one the header declares (byte 29, the language driver: `0x01` CP437, `0x02` CP850, `0x03`/`0x57`/`0x58`/`0x59` Windows-1252). If the header does not declare one, it is deduced from the text: UTF-8 when every non-ASCII column name and text value is valid UTF-8, otherwise whichever of CP850 and Windows-1252 yields more Spanish letters (á, ñ, ¿…), Windows-1252 on a tie.
+  - A chosen encoding is used even if the header declares another one. `utf-8` is strict: an invalid byte returns `400 dbf_not_utf8` with the record and column, instead of storing `�`.
+  - The response gives the encoding used in `source.encoding` and where it came from in `source.encodingSource` (`user`, `header` or `content`). If the text looks wrong, delete the edition and upload it again with another encoding.
+- [Original file](#original-file) returns a DBF edition as CSV.
 
 ### Mapping
 
