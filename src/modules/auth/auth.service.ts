@@ -6,7 +6,7 @@ import type { RegisterDto } from './dto/register.dto.js';
 import type { LoginDto } from './dto/login.dto.js';
 import type { AuthenticatedUser, JwtPayload } from './jwt-payload.interface.js';
 
-const SALT_ROUNDS = 12;
+export const SALT_ROUNDS = 12;
 
 @Injectable()
 export class AuthService {
