@@ -150,3 +150,72 @@ describe('recipe: join / merge entre recursos', () => {
     });
   });
 });
+
+describe('recipe: aggregate results in row-by-row steps (SDI-96)', () => {
+  const sum: Step = { op: 'aggregate', params: { func: 'SUM', column: 'ingreso', as: 'total' } };
+
+  it.each<[string, Step]>([
+    ['group_by', { op: 'group_by', params: { columns: ['municipio', 'total'] } }],
+    ['filter', { op: 'filter', params: { column: 'total', operator: '>', value: 1 } }],
+    ['aggregate', { op: 'aggregate', params: { func: 'MAX', column: 'total', as: 'max_total' } }],
+    ['compute', { op: 'compute', params: { left: 'total', right: 2, as: 'doble' } }],
+  ])('rejects an aggregate result in a %s step', (op, step) => {
+    expect(() => buildRecipeSql(stepsToInternal([sum, step]), null)).toThrow(
+      expect.objectContaining({ response: expect.objectContaining({ code: 'aggregate_result_not_allowed', params: { column: 'total', op } }) }),
+    );
+  });
+
+  it('still allows sorting by an aggregate result', () => {
+    const steps: Step[] = [
+      { op: 'group_by', params: { columns: ['municipio'] } },
+      sum,
+      { op: 'sort', params: { column: 'total', dir: 'desc' } },
+    ];
+    expect(buildRecipeSql(stepsToInternal(steps), null).sql).toContain('ORDER BY "total" DESC');
+  });
+});
+
+describe('recipe: options that never work (SDI-96)', () => {
+  it.each(['SUM', 'AVG', 'MIN', 'MAX', 'MEDIAN'])('rejects %s(*)', (func) => {
+    const steps: Step[] = [{ op: 'aggregate', params: { func, column: '*', as: 'r' } }];
+    expect(() => buildRecipeSql(stepsToInternal(steps), null)).toThrow(
+      expect.objectContaining({ response: expect.objectContaining({ code: 'star_requires_count', params: { func } }) }),
+    );
+  });
+
+  it('allows COUNT(*)', () => {
+    const steps: Step[] = [{ op: 'aggregate', params: { func: 'COUNT', column: '*', as: 'n' } }];
+    expect(buildRecipeSql(stepsToInternal(steps), null).sql).toContain('COUNT(*)');
+  });
+
+  it.each<[string, Step[]]>([
+    ['group by municipio, sort by folio', [
+      { op: 'group_by', params: { columns: ['municipio'] } },
+      { op: 'sort', params: { column: 'folio', dir: 'asc' } },
+    ]],
+    ['aggregate without group, sort by a file column', [
+      { op: 'aggregate', params: { func: 'SUM', column: 'ingreso', as: 'total' } },
+      { op: 'sort', params: { column: 'folio', dir: 'asc' } },
+    ]],
+  ])('rejects sorting by an ungrouped column: %s', (_name, steps) => {
+    expect(() => buildRecipeSql(stepsToInternal(steps), null)).toThrow(
+      expect.objectContaining({ response: expect.objectContaining({ code: 'sort_column_not_grouped', params: { column: 'folio' } }) }),
+    );
+  });
+
+  it('sorts by a grouped column, an aggregate or a percentage result', () => {
+    const steps: Step[] = [
+      { op: 'group_by', params: { columns: ['municipio'] } },
+      { op: 'aggregate', params: { func: 'SUM', column: 'ingreso', as: 'total' } },
+      { op: 'percentage', params: { of: 'total', as: 'pct' } },
+      { op: 'sort', params: { column: 'municipio', dir: 'asc' } },
+      { op: 'sort', params: { column: 'pct', dir: 'desc' } },
+    ];
+    expect(buildRecipeSql(stepsToInternal(steps), null).sql).toContain('ORDER BY "municipio" ASC, "pct" DESC');
+  });
+
+  it('sorts by any column when nothing is grouped', () => {
+    const steps: Step[] = [{ op: 'sort', params: { column: 'folio', dir: 'asc' } }];
+    expect(buildRecipeSql(stepsToInternal(steps), null).sql).toContain('ORDER BY "folio" ASC');
+  });
+});

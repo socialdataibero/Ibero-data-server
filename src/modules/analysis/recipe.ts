@@ -205,7 +205,50 @@ function computeOperand(operand: string | number): string {
   return quoteIdent(s);
 }
 
+// Aggregate and percentage results only exist after grouping, so row-by-row steps cannot use them.
+function assertRowColumns(recipe: Recipe): void {
+  const results = new Set([...recipe.aggregates.map((a) => a.as), ...(recipe.percentage ? [recipe.percentage.as] : [])]);
+  const uses: [string, unknown][] = [
+    ...recipe.groupBy.map((c): [string, unknown] => ['group_by', c]),
+    ...recipe.filters.map((f): [string, unknown] => ['filter', f.column]),
+    ...recipe.aggregates.map((a): [string, unknown] => ['aggregate', a.column]),
+    ...recipe.computes.flatMap((c): [string, unknown][] => [['compute', c.left], ['compute', c.right]]),
+  ];
+  for (const [op, column] of uses) {
+    if (typeof column === 'string' && results.has(column)) {
+      throw new BadRequestException({
+        code: 'aggregate_result_not_allowed',
+        message: `"${column}" is an aggregate result and cannot be used in a "${op}" step; use a file column or a computed column.`,
+        params: { column, op },
+      });
+    }
+  }
+
+  const star = recipe.aggregates.find((a) => a.column === '*' && a.func !== 'COUNT');
+  if (star) {
+    throw new BadRequestException({
+      code: 'star_requires_count',
+      message: `"*" (all rows) only works with COUNT, not ${star.func}.`,
+      params: { func: star.func },
+    });
+  }
+
+  // Grouped rows only have the grouped columns and the results, so sort can only use those.
+  if (recipe.groupBy.length > 0 || recipe.aggregates.length > 0) {
+    const sortable = new Set([...recipe.groupBy, ...results]);
+    const bad = recipe.sort.find((s) => !sortable.has(s.column));
+    if (bad) {
+      throw new BadRequestException({
+        code: 'sort_column_not_grouped',
+        message: `Cannot sort by "${bad.column}": once the analysis groups or aggregates, sort only by a grouped column or an aggregate result.`,
+        params: { column: bad.column },
+      });
+    }
+  }
+}
+
 export function buildRecipeSql(recipe: Recipe, previewLimit: number | null): { sql: string; params: (string | number)[] } {
+  assertRowColumns(recipe);
   let fromClause = 'data';
   for (const j of recipe.joins) {
     if (!ALLOWED_JOIN_TYPES.has(j.type)) {
