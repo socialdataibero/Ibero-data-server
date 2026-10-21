@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
+
+/** Sufijo de un archivo apartado para borrarse (ver `setAside`). */
+export const ASIDE_SUFFIX = '.deleting';
 
 function sanitizeFilename(name: string): string {
   return basename(name).replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -27,6 +30,38 @@ export class LocalStorageService {
 
   async ensureDir(storageKey: string): Promise<void> {
     await mkdir(dirname(this.resolvePath(storageKey)), { recursive: true });
+  }
+
+  /**
+   * Renombra el archivo a `<clave>.deleting` antes de borrar su registro: en Windows un
+   * archivo abierto por otro programa no se puede renombrar, así que esto falla (y lanza)
+   * antes de borrar nada. Devuelve la clave nueva, o `null` si el archivo no existe.
+   */
+  async setAside(storageKey: string): Promise<string | null> {
+    const asideKey = `${storageKey}${ASIDE_SUFFIX}`;
+    try {
+      await rename(this.resolvePath(storageKey), this.resolvePath(asideKey));
+      return asideKey;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw err;
+    }
+  }
+
+  /** Deshace `setAside`. */
+  async restore(asideKey: string): Promise<void> {
+    const original = asideKey.slice(0, -ASIDE_SUFFIX.length);
+    await rename(this.resolvePath(asideKey), this.resolvePath(original));
+  }
+
+  /** Nombres de los archivos de una carpeta; `[]` si la carpeta no existe. */
+  async list(relativeDir: string): Promise<string[]> {
+    try {
+      return await readdir(this.resolvePath(relativeDir));
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw err;
+    }
   }
 
   async remove(storageKey: string): Promise<void> {

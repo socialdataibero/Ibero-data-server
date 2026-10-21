@@ -2,7 +2,9 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
+  type OnApplicationBootstrap,
 } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { parse } from 'csv-parse/sync';
@@ -193,6 +195,9 @@ function rawStorageKey(datasetId: string): string {
   return `harmonizer/${datasetId}.parquet`;
 }
 
+// `<id>.parquet` y, apartado para borrarse, `<id>.parquet.deleting`.
+const RAW_FILE = /^([0-9a-f-]{36})\.parquet(\.deleting)?$/;
+
 // Las columnas del Parquet crudo son posicionales (`c0`, `c1`, …) y los nombres
 // reales viven en `HarmonizerDataset.columns`. DuckDB no distingue mayúsculas en
 // los identificadores, así que `EDAD` y `edad` chocarían como nombres de columna.
@@ -354,7 +359,9 @@ function csvError(err: unknown, lastRecordLine: number): { message: string; para
 }
 
 @Injectable()
-export class HarmonizerService {
+export class HarmonizerService implements OnApplicationBootstrap {
+  private readonly logger = new Logger(HarmonizerService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly analysisService: AnalysisService,
@@ -434,17 +441,125 @@ export class HarmonizerService {
   }
 
   async removeSurvey(surveyId: string): Promise<void> {
-    await this.getSurvey(surveyId);
+    const survey = await this.getSurvey(surveyId);
     const datasets = await this.prisma.harmonizerDataset.findMany({
       where: { surveyId },
-      select: { id: true },
+      select: { id: true, name: true },
     });
     // Las ediciones, los mapeos y las canónicas se borran en cascada; los
     // Parquet crudos no, porque viven en disco.
-    await this.prisma.harmonizerSurvey.delete({ where: { id: surveyId } });
-    await Promise.all(
-      datasets.map((d) => this.storage.remove(rawStorageKey(d.id))),
+    const aside = await this.setAsideRawFiles(
+      datasets,
+      (edition) =>
+        `No se borró la encuesta «${survey.name}» porque el archivo de datos de su edición «${edition}» está en uso por otro programa (por ejemplo, abierto o copiándose en un respaldo). No se borró ninguna edición. Ciérralo e inténtalo de nuevo.`,
     );
+    try {
+      await this.prisma.harmonizerSurvey.delete({ where: { id: surveyId } });
+    } catch (err) {
+      await this.restoreRawFiles(aside);
+      throw err;
+    }
+    await Promise.all(aside.map((key) => this.storage.remove(key)));
+  }
+
+  /**
+   * Aparta los Parquet crudos antes de borrar sus registros. Si alguno no se
+   * puede apartar (en Windows, abierto por otro programa), devuelve a su lugar los ya
+   * apartados y responde 409: no se borra nada y el usuario lo ve, en vez de quedar el
+   * archivo en disco sin ninguna edición que lo referencie.
+   */
+  private async setAsideRawFiles(
+    datasets: { id: string; name: string }[],
+    lockedMessage: (edition: string) => string,
+  ): Promise<string[]> {
+    const aside: string[] = [];
+    for (const dataset of datasets) {
+      try {
+        const key = await this.storage.setAside(rawStorageKey(dataset.id));
+        if (key) aside.push(key);
+      } catch (err) {
+        this.logger.warn(
+          `Could not set aside "${rawStorageKey(dataset.id)}": ${(err as Error).message}`,
+        );
+        await this.restoreRawFiles(aside);
+        throw new ConflictException({
+          code: 'harmonizer_file_in_use',
+          message: lockedMessage(dataset.name),
+        });
+      }
+    }
+    return aside;
+  }
+
+  // Si falla, el archivo queda como `.deleting` con su edición viva; la limpieza al
+  // arrancar lo devuelve a su lugar.
+  private async restoreRawFiles(aside: string[]): Promise<void> {
+    for (const key of aside) {
+      try {
+        await this.storage.restore(key);
+      } catch (err) {
+        this.logger.error(
+          `Could not restore "${key}": ${(err as Error).message}`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Limpieza al arrancar: borra los Parquet crudos que ya no tienen edición
+   * (apartados cuyo borrado falló, o huérfanos de antes de esta corrección o de una
+   * subida interrumpida) y devuelve a su lugar los apartados cuya edición sigue viva.
+   * Nunca impide que el servidor arranque.
+   */
+  async onApplicationBootstrap(): Promise<void> {
+    try {
+      await this.sweepRawFiles();
+    } catch (err) {
+      this.logger.warn(
+        `Harmonizer storage cleanup failed: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  private async sweepRawFiles(): Promise<void> {
+    const files = (await this.storage.list('harmonizer'))
+      .map((name) => ({ name, match: RAW_FILE.exec(name) }))
+      .filter((f) => f.match !== null)
+      .map((f) => ({
+        name: f.name,
+        id: f.match![1],
+        aside: f.match![2] !== undefined,
+      }));
+    if (files.length === 0) return;
+    const live = new Set(
+      (
+        await this.prisma.harmonizerDataset.findMany({
+          where: { id: { in: files.map((f) => f.id) } },
+          select: { id: true },
+        })
+      ).map((d) => d.id),
+    );
+    // `start:dev` y `start:local` comparten `storage/` con bases distintas. Si ningún
+    // archivo es de esta base, la carpeta es de la otra y no se toca.
+    if (live.size === 0) {
+      this.logger.warn(
+        `No file in storage/harmonizer belongs to an edition in this database; ${files.length} file(s) kept.`,
+      );
+      return;
+    }
+    let removed = 0;
+    for (const f of files) {
+      const key = `harmonizer/${f.name}`;
+      if (!live.has(f.id)) {
+        await this.storage.remove(key);
+        removed++;
+      } else if (f.aside) {
+        await this.restoreRawFiles([key]);
+      }
+    }
+    if (removed > 0) {
+      this.logger.log(`Removed ${removed} harmonizer file(s) with no edition.`);
+    }
   }
 
   async listCanonicalVariables(surveyId: string) {
@@ -813,12 +928,23 @@ export class HarmonizerService {
   }
 
   async removeDataset(datasetId: string): Promise<void> {
-    await this.getDataset(datasetId);
+    const dataset = await this.getDataset(datasetId);
     // Los mapeos se borran en cascada. Las canónicas se conservan (con su tipo
     // confirmado) para reutilizarlas al volver a subir la edición; las que ya no
     // mapea ninguna edición dejan de salir en la vista por encuesta.
-    await this.prisma.harmonizerDataset.delete({ where: { id: datasetId } });
-    await this.storage.remove(rawStorageKey(datasetId));
+    const aside = await this.setAsideRawFiles(
+      [dataset],
+      (edition) =>
+        `No se borró la edición «${edition}» porque su archivo de datos está en uso por otro programa (por ejemplo, abierto o copiándose en un respaldo). Ciérralo e inténtalo de nuevo.`,
+    );
+    try {
+      await this.prisma.harmonizerDataset.delete({ where: { id: datasetId } });
+    } catch (err) {
+      await this.restoreRawFiles(aside);
+      throw err;
+    }
+    // Si esto falla, el `.deleting` se borra en la limpieza al arrancar.
+    await Promise.all(aside.map((key) => this.storage.remove(key)));
   }
 
   private toDatasetInfo(dataset: {

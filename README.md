@@ -381,12 +381,14 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 - Sending an empty `description` in `PATCH` clears it.
 - Renaming a survey does not change its editions, canonical variables or mappings.
 - Deleting a survey also deletes its editions, their stored Parquet files, their mappings and its canonical variables. A missing survey returns `404 survey_not_found`.
+- If the file of any of its editions cannot be removed, nothing is deleted and the survey returns `409 harmonizer_file_in_use`, naming that edition. See [Deleting an edition](#deleting-an-edition).
 
 ### Deleting an edition
 
 - `DELETE /harmonizer/datasets/:datasetId` deletes the edition, its mappings and its stored Parquet file. The survey and its other editions are not changed. A missing edition returns `404 harmonizer_dataset_not_found`.
 - The survey's canonical variables are kept, including their confirmed `dataType`, so a corrected file can be uploaded again and mapped to the same names. A canonical that no edition maps any more stops appearing in the survey view (`available` only lists mapped canonicals).
 - Once deleted, the edition's name is free again, so the corrected file can be uploaded with the same name.
+- The stored file is moved aside (renamed to `<datasetId>.parquet.deleting`) before the edition is deleted from the database, and removed after. On Windows a file that another program has open (a viewer, a backup or sync tool) cannot be renamed. In that case nothing is deleted: the edition stays as it was and the request returns `409 harmonizer_file_in_use` with a Spanish message asking to close the file and try again. Before this, the edition was deleted, the request returned `204`, and the file stayed on disk with nothing pointing to it.
 
 ### Upload
 
@@ -548,6 +550,8 @@ Files are written to `storage/` under the directory the server is started from. 
 | `storage/harmonizer/<datasetId>.parquet` | Rows of a harmonizer edition, all text, in file order. Columns are positional (`c0`, `c1`, …); their names are the edition's stored headers. Uploads are never empty now (see [Upload](#upload)), but an edition uploaded from an empty file before that rule (report H-08) has no headers and no Parquet, and reads as 0 rows. |
 
 Deleting through the API removes the related files. A file deleted by hand makes its resource return `404 resource_file_missing`, and makes the views and exports of its harmonizer edition return `404 harmonizer_dataset_file_missing`.
+
+When the server starts, it cleans `storage/harmonizer/` (report SDI-100). It deletes every `<id>.parquet` or `<id>.parquet.deleting` whose edition no longer exists. Those are files whose removal failed after the edition was deleted, files left by an interrupted upload, or files orphaned before SDI-100. A `.deleting` file whose edition still exists is renamed back. Other files in the folder are not touched. `storage/` is shared by `start:dev` and `start:local`, which use different databases, so if no file in the folder belongs to an edition of the current database, the cleanup assumes the folder belongs to the other database: it keeps everything and logs a warning. A failed cleanup is logged and never stops the server from starting.
 
 ---
 
