@@ -3,13 +3,14 @@ import type { Response } from 'express';
 import { createReadStream } from 'node:fs';
 import { OrgRole } from '@prisma/client';
 import { OrgRolesGuard } from '../../shared/guards/org-roles.guard.js';
+import { DatasetAccessGuard } from '../../shared/guards/dataset-access.guard.js';
 import { OrgRoles } from '../../shared/decorators/org-roles.decorator.js';
 import { DownloadTokenGuard } from '../handoff/download-token.guard.js';
 import { LocalStorageService } from '../storage/local-storage.service.js';
 import { AnalysesService } from './analyses.service.js';
 
 @Controller('organizations/:organizationId/datasets/:datasetId/analyses')
-@UseGuards(DownloadTokenGuard, OrgRolesGuard)
+@UseGuards(DownloadTokenGuard, OrgRolesGuard, DatasetAccessGuard)
 export class AnalysesDownloadController {
   constructor(
     private readonly analysesService: AnalysesService,

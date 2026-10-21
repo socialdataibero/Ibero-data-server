@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { DatasetVisibility, type Prisma } from '@prisma/client';
+import type { AuthenticatedUser } from '../auth/jwt-payload.interface.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { LocalStorageService } from '../storage/local-storage.service.js';
 import type { CreateDatasetDto } from './dto/create-dataset.dto.js';
@@ -65,19 +66,37 @@ export class DatasetsService {
     };
   }
 
-  private buildWhere(organizationId: string | undefined, params: ListDatasetsParams): Prisma.DatasetWhereInput {
+  /** Who may see a dataset in a list (SDI-87): PUBLIC ones, plus PRIVATE ones of the viewer's organizations. */
+  private visibleTo(viewer: AuthenticatedUser): Prisma.DatasetWhereInput[] {
+    if (viewer.isSysadmin) return [];
+    return [
+      {
+        OR: [
+          { visibility: DatasetVisibility.PUBLIC },
+          { organization: { members: { some: { userId: viewer.id } } } },
+        ],
+      },
+    ];
+  }
+
+  private buildWhere(
+    organizationId: string | undefined,
+    viewer: AuthenticatedUser,
+    params: ListDatasetsParams,
+  ): Prisma.DatasetWhereInput {
     const q = (params.q ?? '').trim();
     const terms = (params.terms ?? []).map((t) => t.trim()).filter(Boolean);
     const and: Prisma.DatasetWhereInput[] = [
       ...(organizationId ? [{ organizationId }] : []),
+      ...this.visibleTo(viewer),
       ...(q ? [this.termWhere(q)] : []),
       ...terms.map((t) => this.termWhere(t)),
     ];
     return and.length ? { AND: and } : {};
   }
 
-  private async listDatasets(organizationId: string | undefined, params: ListDatasetsParams) {
-    const where = this.buildWhere(organizationId, params);
+  private async listDatasets(organizationId: string | undefined, viewer: AuthenticatedUser, params: ListDatasetsParams) {
+    const where = this.buildWhere(organizationId, viewer, params);
     const limit = clampLimit(params.limit);
     const offset = Math.max(params.offset ?? 0, 0);
 
@@ -95,12 +114,12 @@ export class DatasetsService {
     return { total, items };
   }
 
-  findAllByOrganization(organizationId: string, params: ListDatasetsParams = {}) {
-    return this.listDatasets(organizationId, params);
+  findAllByOrganization(organizationId: string, viewer: AuthenticatedUser, params: ListDatasetsParams = {}) {
+    return this.listDatasets(organizationId, viewer, params);
   }
 
-  findAllGlobal(params: ListDatasetsParams = {}) {
-    return this.listDatasets(undefined, params);
+  findAllGlobal(viewer: AuthenticatedUser, params: ListDatasetsParams = {}) {
+    return this.listDatasets(undefined, viewer, params);
   }
 
   async findOne(organizationId: string, datasetId: string) {

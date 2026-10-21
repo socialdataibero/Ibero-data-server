@@ -98,3 +98,38 @@ describe('DatasetsService.remove', () => {
     expect(deps.datasets.has('d1')).toBe(true); // no se tocó
   });
 });
+
+describe('DatasetsService lists: who sees which datasets (SDI-87)', () => {
+  function listWhere() {
+    const prisma = {
+      dataset: {
+        count: vi.fn(async () => 0),
+        findMany: vi.fn(async () => []),
+      },
+    };
+    const service = new DatasetsService(prisma as any, {} as any);
+    return { service, where: () => (prisma.dataset.findMany.mock.calls[0] as any)[0].where };
+  }
+
+  const visibleToUser = {
+    OR: [{ visibility: 'PUBLIC' }, { organization: { members: { some: { userId: 'u1' } } } }],
+  };
+
+  it('a regular user sees PUBLIC datasets and those of their organizations, globally', async () => {
+    const { service, where } = listWhere();
+    await service.findAllGlobal({ id: 'u1', isSysadmin: false } as any);
+    expect(where()).toEqual({ AND: [visibleToUser] });
+  });
+
+  it('a regular user browsing an organization gets the same rule', async () => {
+    const { service, where } = listWhere();
+    await service.findAllByOrganization('org-b', { id: 'u1', isSysadmin: false } as any, { q: 'enigh' });
+    expect(where().AND).toEqual(expect.arrayContaining([{ organizationId: 'org-b' }, visibleToUser]));
+  });
+
+  it('the sysadmin sees every dataset', async () => {
+    const { service, where } = listWhere();
+    await service.findAllGlobal({ id: 'admin', isSysadmin: true } as any);
+    expect(where()).toEqual({});
+  });
+});

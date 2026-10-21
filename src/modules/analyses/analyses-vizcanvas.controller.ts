@@ -3,6 +3,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { OrgRole } from '@prisma/client';
 import { OrgRolesGuard } from '../../shared/guards/org-roles.guard.js';
+import { DatasetAccessGuard } from '../../shared/guards/dataset-access.guard.js';
 import { OrgRoles } from '../../shared/decorators/org-roles.decorator.js';
 import { CurrentUser } from '../../shared/decorators/current-user.decorator.js';
 import type { AuthenticatedUser } from '../auth/jwt-payload.interface.js';
@@ -13,7 +14,7 @@ import { SaveVizcanvasAnalysisDto } from './dto/save-vizcanvas-analysis.dto.js';
 const MAX_RESULT_BYTES = 500 * 1024 * 1024;
 
 @Controller('organizations/:organizationId/datasets/:datasetId/analyses/vizcanvas')
-@UseGuards(PublishTokenGuard, OrgRolesGuard)
+@UseGuards(PublishTokenGuard, OrgRolesGuard, DatasetAccessGuard)
 export class AnalysesVizcanvasController {
   constructor(private readonly analysesService: AnalysesService) {}
 

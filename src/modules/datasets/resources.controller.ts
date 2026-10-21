@@ -14,6 +14,7 @@ import { memoryStorage } from 'multer';
 import { OrgRole } from '@prisma/client';
 import { JwtAuthGuard } from '../../shared/guards/jwt-auth.guard.js';
 import { OrgRolesGuard } from '../../shared/guards/org-roles.guard.js';
+import { DatasetAccessGuard } from '../../shared/guards/dataset-access.guard.js';
 import { OrgRoles } from '../../shared/decorators/org-roles.decorator.js';
 import { CurrentUser } from '../../shared/decorators/current-user.decorator.js';
 import type { AuthenticatedUser } from '../auth/jwt-payload.interface.js';
@@ -25,7 +26,7 @@ import { RunQueryDto } from './dto/run-query.dto.js';
 const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
 
 @Controller('organizations/:organizationId/datasets/:datasetId/resources')
-@UseGuards(JwtAuthGuard, OrgRolesGuard)
+@UseGuards(JwtAuthGuard, OrgRolesGuard, DatasetAccessGuard)
 export class ResourcesController {
   constructor(
     private readonly resourcesService: ResourcesService,

@@ -2,6 +2,7 @@ import { BadRequestException, Body, Controller, Delete, Get, HttpCode, HttpStatu
 import { OrgRole } from '@prisma/client';
 import { JwtAuthGuard } from '../../shared/guards/jwt-auth.guard.js';
 import { OrgRolesGuard } from '../../shared/guards/org-roles.guard.js';
+import { DatasetAccessGuard } from '../../shared/guards/dataset-access.guard.js';
 import { OrgRoles } from '../../shared/decorators/org-roles.decorator.js';
 import { CurrentUser } from '../../shared/decorators/current-user.decorator.js';
 import type { AuthenticatedUser } from '../auth/jwt-payload.interface.js';
@@ -13,7 +14,7 @@ import { PreviewAnalysisDto } from './dto/preview-analysis.dto.js';
 import { CreateAnalysisDto } from './dto/create-analysis.dto.js';
 
 @Controller('organizations/:organizationId/datasets/:datasetId/analyses')
-@UseGuards(JwtAuthGuard, OrgRolesGuard)
+@UseGuards(JwtAuthGuard, OrgRolesGuard, DatasetAccessGuard)
 export class AnalysesController {
   constructor(
     private readonly analysesService: AnalysesService,
