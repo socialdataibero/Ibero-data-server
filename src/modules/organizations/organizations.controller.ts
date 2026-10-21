@@ -3,6 +3,8 @@ import { OrgRole } from '@prisma/client';
 import { JwtAuthGuard } from '../../shared/guards/jwt-auth.guard.js';
 import { OrgRolesGuard } from '../../shared/guards/org-roles.guard.js';
 import { OrgRoles } from '../../shared/decorators/org-roles.decorator.js';
+import { SysadminGuard } from '../../shared/guards/sysadmin.guard.js';
+import { SysadminOnly } from '../../shared/decorators/sysadmin.decorator.js';
 import { CurrentUser } from '../../shared/decorators/current-user.decorator.js';
 import type { AuthenticatedUser } from '../auth/jwt-payload.interface.js';
 import { OrganizationsService, type OrganizationSort } from './organizations.service.js';
@@ -47,6 +49,8 @@ export class OrganizationsController {
   }
 
   @Post()
+  @UseGuards(SysadminGuard)
+  @SysadminOnly()
   create(@Body() dto: CreateOrganizationDto, @CurrentUser() user: AuthenticatedUser) {
     return this.organizationsService.create(dto, user.id);
   }
