@@ -1,5 +1,14 @@
 import { BadRequestException, type ArgumentsHost } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { HttpExceptionFilter } from './http-exception.filter.js';
+
+function recordNotFound(modelName?: string): Prisma.PrismaClientKnownRequestError {
+  return new Prisma.PrismaClientKnownRequestError('No record was found for a delete.', {
+    code: 'P2025',
+    clientVersion: 'test',
+    meta: modelName ? { modelName } : undefined,
+  });
+}
 
 function capture(exception: unknown): unknown {
   let sent: unknown;
@@ -35,5 +44,17 @@ describe('HttpExceptionFilter', () => {
       code: 'analysis_slug_taken',
       message: 'Slug taken.',
     });
+  });
+
+  it("answers 404 with the model's not-found code when a write finds no record (P2025)", () => {
+    expect(capture(recordNotFound('HarmonizerDataset'))).toEqual({
+      statusCode: 404,
+      code: 'harmonizer_dataset_not_found',
+      message: 'The record no longer exists. Another request may have deleted it at the same time.',
+    });
+  });
+
+  it('falls back to not_found for a P2025 on a model without its own code', () => {
+    expect(capture(recordNotFound())).toMatchObject({ statusCode: 404, code: 'not_found' });
   });
 });
