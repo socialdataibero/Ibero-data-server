@@ -219,3 +219,29 @@ describe('recipe: options that never work (SDI-96)', () => {
     expect(buildRecipeSql(stepsToInternal(steps), null).sql).toContain('ORDER BY "folio" ASC');
   });
 });
+
+describe('recipe: joins skip repeated columns when columns are known (SDI-103)', () => {
+  const joinStep: Step = {
+    op: 'join',
+    params: { resourceId: 'r2', alias: 'personas', type: 'inner', onLeft: 'folio', onRight: 'folio' },
+  };
+
+  it('excludes the columns the main resource already has', () => {
+    const { sql } = buildRecipeSql(stepsToInternal([joinStep]), null, {
+      data: ['folio', 'region'],
+      personas: ['folio', 'edad', 'region'],
+    });
+    expect(sql).toContain('SELECT data.*, "personas".* EXCLUDE ("folio", "region") FROM data INNER JOIN "personas"');
+  });
+
+  it('adds nothing from a joined resource whose columns all exist', () => {
+    const { sql } = buildRecipeSql(stepsToInternal([joinStep]), null, { data: ['folio', 'edad'], personas: ['folio', 'edad'] });
+    expect(sql).toContain('(SELECT data.* FROM data INNER JOIN "personas"');
+  });
+
+  it('keeps SELECT * without column info', () => {
+    expect(buildRecipeSql(stepsToInternal([joinStep]), null).sql).toBe(
+      'SELECT * FROM data INNER JOIN "personas" ON data."folio" = "personas"."folio"',
+    );
+  });
+});

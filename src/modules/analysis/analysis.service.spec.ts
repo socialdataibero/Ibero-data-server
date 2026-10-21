@@ -151,6 +151,46 @@ describe('AnalysisService: join / merge entre recursos (DuckDB real)', () => {
     ).rejects.toMatchObject({ response: { reason: 'unknown_column', params: { column: 'no_such_column' } } });
   });
 
+  describe('the join key and other shared columns appear once (SDI-103)', () => {
+    const joinStep = (type: string): Step => ({
+      op: 'join',
+      params: { resourceId: 'expansion', alias: 'expansion', type, onLeft: 'folio', onRight: 'folio' },
+    });
+    const sources = () => [{ alias: 'expansion', path: expansionPath }];
+
+    it.each(['inner', 'left'])('%s join returns each column once', async (type) => {
+      const result = await service.runRecipe(peoplePath, recipeFrom([joinStep(type)]), null, sources());
+      expect(result.columns).toEqual(['folio', 'municipio', 'ingreso', 'factor']);
+    });
+
+    it.each<[string, Step]>([
+      ['group by', { op: 'group_by', params: { columns: ['folio'] } }],
+      ['filter', { op: 'filter', params: { column: 'folio', operator: '>', value: 1 } }],
+      ['sort', { op: 'sort', params: { column: 'folio', dir: 'desc' } }],
+      ['compute', { op: 'compute', params: { left: 'folio', right: 'factor', as: 'x' } }],
+      ['aggregate', { op: 'aggregate', params: { func: 'MAX', column: 'folio', as: 'max_folio' } }],
+    ])('the join key works in a later %s step', async (_name, step) => {
+      await expect(service.runRecipe(peoplePath, recipeFrom([joinStep('inner'), step]), null, sources())).resolves.toBeDefined();
+    });
+
+    it('left join keeps the main resource key for unmatched rows', async () => {
+      const result = await service.runRecipe(
+        peoplePath,
+        recipeFrom([joinStep('left'), { op: 'sort', params: { column: 'folio', dir: 'asc' } }]),
+        null,
+        sources(),
+      );
+      expect(result.rows.map((r) => [r.folio, r.factor])).toEqual([[1, 4], [2, 2], [3, null]]);
+    });
+
+    it('writeRecipeResult writes each column once', async () => {
+      const destPath = join(dir, 'joined.parquet');
+      await service.writeRecipeResult(peoplePath, recipeFrom([joinStep('inner')]), destPath, sources());
+      const schema = await service.describeSchema(destPath);
+      expect(schema.map((c) => c.name)).toEqual(['folio', 'municipio', 'ingreso', 'factor']);
+    });
+  });
+
   it.each<[string, string, Step[]]>([
     ['filter with a date on a number column', 'invalid_value', [{ op: 'filter', params: { column: 'ingreso', operator: '<', value: '2020-01-01' } }]],
     ['compute multiplying a text column', 'incompatible_types', [{ op: 'compute', params: { left: 'municipio', right: 2, as: 'x' } }]],

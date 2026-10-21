@@ -247,9 +247,21 @@ function assertRowColumns(recipe: Recipe): void {
   }
 }
 
-export function buildRecipeSql(recipe: Recipe, previewLimit: number | null): { sql: string; params: (string | number)[] } {
+/**
+ * `columnsBySource` maps "data" and each join alias to its column names. With it, a joined
+ * resource only adds the columns that are not already there (SDI-103): `SELECT *` would keep
+ * both copies of a shared column such as the join key, and every later reference to it
+ * would be ambiguous. Without it, the join selects every column of both sides.
+ */
+export function buildRecipeSql(
+  recipe: Recipe,
+  previewLimit: number | null,
+  columnsBySource?: Record<string, string[]>,
+): { sql: string; params: (string | number)[] } {
   assertRowColumns(recipe);
   let fromClause = 'data';
+  const selected = ['data.*'];
+  const seen = new Set(columnsBySource?.data ?? []);
   for (const j of recipe.joins) {
     if (!ALLOWED_JOIN_TYPES.has(j.type)) {
       throw new BadRequestException({
@@ -259,6 +271,20 @@ export function buildRecipeSql(recipe: Recipe, previewLimit: number | null): { s
     }
     const alias = quoteIdent(j.alias);
     fromClause += ` ${j.type.toUpperCase()} JOIN ${alias} ON data.${quoteIdent(j.onLeft)} = ${alias}.${quoteIdent(j.onRight)}`;
+    const columns = columnsBySource?.[j.alias];
+    if (!columns) {
+      selected.push(`${alias}.*`);
+      continue;
+    }
+    const repeated = columns.filter((c) => seen.has(c));
+    columns.forEach((c) => seen.add(c));
+    if (repeated.length === columns.length) continue;
+    selected.push(
+      repeated.length > 0 ? `${alias}.* EXCLUDE (${repeated.map(quoteIdent).join(', ')})` : `${alias}.*`,
+    );
+  }
+  if (recipe.joins.length > 0 && columnsBySource) {
+    fromClause = `(SELECT ${selected.join(', ')} FROM ${fromClause}) AS data`;
   }
 
   if (recipe.computes.length > 0) {

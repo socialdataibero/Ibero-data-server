@@ -68,6 +68,19 @@ export class AnalysisService {
     }
   }
 
+  /** Column names of each view, so a join can skip the columns it would repeat. */
+  private async columnsBySource(
+    connection: DuckDBConnection,
+    sources: NamedSource[],
+  ): Promise<Record<string, string[]>> {
+    const result: Record<string, string[]> = {};
+    for (const source of sources) {
+      const reader = await connection.runAndReadAll(`DESCRIBE SELECT * FROM ${quoteIdent(source.alias)}`);
+      result[source.alias] = reader.getRowObjectsJson().map((row: any) => String(row.column_name));
+    }
+    return result;
+  }
+
   private withDataView<T>(
     parquetPath: string,
     fn: (connection: DuckDBConnection) => Promise<T>,
@@ -115,10 +128,11 @@ export class AnalysisService {
     limit: number | null,
     joinSources: NamedSource[] = [],
   ): Promise<QueryResult> {
-    const { sql, params } = buildRecipeSql(recipe, limit);
     const sources = [{ alias: 'data', path: parquetPath }, ...joinSources];
     try {
       return await this.withViews(sources, async (connection) => {
+        const columns = joinSources.length > 0 ? await this.columnsBySource(connection, sources) : undefined;
+        const { sql, params } = buildRecipeSql(recipe, limit, columns);
         const prepared = await connection.prepare(sql);
         params.forEach((value, i) => {
           const idx = i + 1;
@@ -137,6 +151,7 @@ export class AnalysisService {
         };
       });
     } catch (err) {
+      if (err instanceof BadRequestException) throw err;
       throw safeDuckDbError(
         err,
         sources.map((s) => s.path),
@@ -247,10 +262,11 @@ export class AnalysisService {
     destPath: string,
     joinSources: NamedSource[] = [],
   ): Promise<void> {
-    const { sql, params } = buildRecipeSql(recipe, null);
     const sources = [{ alias: 'data', path: parquetPath }, ...joinSources];
     try {
       await this.withViews(sources, async (connection) => {
+        const columns = joinSources.length > 0 ? await this.columnsBySource(connection, sources) : undefined;
+        const { sql, params } = buildRecipeSql(recipe, null, columns);
         const prepared = await connection.prepare(
           `COPY (${sql}) TO '${escapeSqlLiteral(destPath)}' (FORMAT PARQUET)`,
         );
@@ -267,6 +283,7 @@ export class AnalysisService {
         await prepared.run();
       });
     } catch (err) {
+      if (err instanceof BadRequestException) throw err;
       throw safeDuckDbError(
         err,
         sources.map((s) => s.path),
