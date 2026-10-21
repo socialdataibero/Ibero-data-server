@@ -10,11 +10,20 @@ function makeDeps() {
   function matchAnalyses(where: any) {
     return [...analyses.values()].filter((a) => {
       if (where.status && a.status !== where.status) return false;
+      if (where.visibility && a.visibility !== where.visibility) return false;
       if (where.slug && a.slug !== where.slug) return false;
       const ds = datasets.get(a.datasetId);
       if (where.dataset?.visibility && ds?.visibility !== where.dataset.visibility) return false;
       return true;
     });
+  }
+  function publicOrgs() {
+    const orgIdsConAnalisisPublico = new Set(
+      [...analyses.values()]
+        .filter((a) => a.status === 'DONE' && a.visibility === 'PUBLIC' && datasets.get(a.datasetId)?.visibility === 'PUBLIC')
+        .map((a) => datasets.get(a.datasetId)!.organizationId),
+    );
+    return [...orgsMap.values()].filter((o) => orgIdsConAnalisisPublico.has(o.id));
   }
   function withAnalysisIncludes(a: any) {
     const ds = datasets.get(a.datasetId);
@@ -55,14 +64,8 @@ function makeDeps() {
       }),
     },
     organization: {
-      findMany: vi.fn(async () => {
-        const orgIdsConAnalisisPublico = new Set(
-          [...analyses.values()]
-            .filter((a) => a.status === 'DONE' && datasets.get(a.datasetId)?.visibility === 'PUBLIC')
-            .map((a) => datasets.get(a.datasetId)!.organizationId),
-        );
-        return [...orgsMap.values()].filter((o) => orgIdsConAnalisisPublico.has(o.id));
-      }),
+      findMany: vi.fn(async () => publicOrgs()),
+      count: vi.fn(async () => publicOrgs().length),
     },
   };
 
@@ -80,7 +83,7 @@ function makeDeps() {
     handoffService,
     addOrg: (o: any) => orgsMap.set(o.id, o),
     addDataset: (d: any) => datasets.set(d.id, d),
-    addAnalysis: (a: any) => analyses.set(a.id, a),
+    addAnalysis: (a: any) => analyses.set(a.id, { visibility: 'PUBLIC', ...a }),
     addResource: (r: any) => resources.set(r.id, r),
   };
 }
@@ -162,6 +165,31 @@ describe('PublicService: solo análisis DONE de datasets PUBLIC', () => {
     await service.previewBySlug('ingreso', 10);
 
     expect(deps.analysisService.runQuery).toHaveBeenCalledWith('/storage/analyses/a1.parquet', 'SELECT * FROM data LIMIT 10');
+  });
+
+  describe('a PRIVATE analysis of a PUBLIC dataset stays hidden (SDI-98)', () => {
+    function setup() {
+      const deps = makeDeps();
+      deps.addOrg(ORG);
+      deps.addDataset({ id: 'd1', organizationId: 'org-1', visibility: 'PUBLIC' });
+      deps.addAnalysis({ id: 'a1', datasetId: 'd1', title: 'Borrador', slug: 'borrador', description: null, status: 'DONE', visibility: 'PRIVATE', resultStorageKey: 'analyses/a1.parquet', createdAt: new Date(), updatedAt: new Date() });
+      return { deps, service: makeService(deps) };
+    }
+
+    it('is not listed in the catalog or counted for its organization', async () => {
+      const { service } = setup();
+      expect((await service.search({})).total).toBe(0);
+      expect((await service.listOrganizations({})).total).toBe(0);
+    });
+
+    it('cannot be opened, previewed, downloaded or handed off by its public URL', async () => {
+      const { deps, service } = setup();
+      await expect(service.getPackageBySlug('borrador')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.previewBySlug('borrador')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.getResultFile('borrador')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.buildVizCanvasHandoff('borrador')).rejects.toBeInstanceOf(NotFoundException);
+      expect(deps.analysisService.runQuery).not.toHaveBeenCalled();
+    });
   });
 
   it('previewBySlug() rechaza un análisis de dataset PRIVATE', async () => {

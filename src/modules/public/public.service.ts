@@ -42,7 +42,12 @@ function clampInt(value: number | undefined, fallback: number, min: number, max:
   return Math.min(Math.max(n, min), max);
 }
 
-const PUBLIC_DONE_ANALYSIS = { status: 'DONE' as const, dataset: { visibility: DatasetVisibility.PUBLIC } };
+// A finished analysis is public only if both it and its dataset are public (SDI-98).
+const PUBLIC_DONE_ANALYSIS = {
+  status: 'DONE' as const,
+  visibility: DatasetVisibility.PUBLIC,
+  dataset: { visibility: DatasetVisibility.PUBLIC },
+};
 
 const PUBLIC_VISITOR: AuthenticatedUser = {
   id: 'public',
@@ -104,6 +109,7 @@ export class PublicService {
     const offset = clampInt(params.offset, 0, 0, Number.MAX_SAFE_INTEGER);
     const where = {
       status: PUBLIC_DONE_ANALYSIS.status,
+      visibility: PUBLIC_DONE_ANALYSIS.visibility,
       dataset: {
         visibility: PUBLIC_DONE_ANALYSIS.dataset.visibility,
         ...(org ? { organization: { slug: org } } : {}),
@@ -279,7 +285,7 @@ export class PublicService {
     const limit = clampInt(params.limit, DEFAULT_LIMIT, 1, MAX_LIMIT);
     const offset = clampInt(params.offset, 0, 0, Number.MAX_SAFE_INTEGER);
     const where = {
-      datasets: { some: { visibility: DatasetVisibility.PUBLIC, analyses: { some: { status: 'DONE' as const } } } },
+      datasets: { some: { visibility: DatasetVisibility.PUBLIC, analyses: { some: { status: 'DONE' as const, visibility: DatasetVisibility.PUBLIC } } } },
       ...(q
         ? { OR: [{ name: { contains: q, mode: 'insensitive' as const } }, { description: { contains: q, mode: 'insensitive' as const } }] }
         : {}),
