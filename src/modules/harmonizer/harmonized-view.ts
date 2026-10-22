@@ -99,6 +99,50 @@ export function valuesNotFitting(
   return [...bad];
 }
 
+export interface ColumnValues {
+  /** Los valores más frecuentes; en un empate, el que aparece antes en el archivo. */
+  top: { value: string; count: number }[];
+  distinct: number;
+  /** Hay más valores distintos que `distinct`: se dejó de contar en el tope. */
+  distinctCapped: boolean;
+  /** Celdas vacías o solo con espacios. */
+  empty: number;
+}
+
+/**
+ * Resumen de los valores de una columna de origen para mostrarlos al mapear. Los valores
+ * se recortan y se cuentan tal como vienen, sin quitar los códigos de no especificado.
+ * Para acotar la memoria se cuentan como mucho `maxDistinct` valores distintos; los que
+ * aparecen después no entran al resumen.
+ */
+export function columnValues(
+  rows: RawData[],
+  column: string,
+  limit = 5,
+  maxDistinct = 1000,
+): ColumnValues {
+  const counts = new Map<string, number>();
+  let empty = 0;
+  let distinctCapped = false;
+  for (const raw of rows) {
+    const value = (raw[column] ?? '').trim();
+    if (value === '') {
+      empty++;
+      continue;
+    }
+    const count = counts.get(value);
+    if (count !== undefined) counts.set(value, count + 1);
+    else if (counts.size < maxDistinct) counts.set(value, 1);
+    else distinctCapped = true;
+  }
+  // `sort` es estable: los empates conservan el orden de aparición del Map.
+  const top = [...counts]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([value, count]) => ({ value, count }));
+  return { top, distinct: counts.size, distinctCapped, empty };
+}
+
 /** Valores de una columna de origen ya con los faltantes como `null`. */
 export function sourceColumnValues(
   rows: RawData[],

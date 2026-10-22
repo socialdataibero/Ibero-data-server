@@ -23,10 +23,12 @@ import { asciiFold, matchByName, parseVariables } from './matching.js';
 import {
   buildDatasetView,
   buildSurveyView,
+  columnValues,
   inferValueType,
   neutralizeCsvFormula,
   sourceColumnValues,
   valuesNotFitting,
+  type ColumnValues,
   type DatasetEdition,
   type HarmonizedView,
   type RawData,
@@ -164,6 +166,7 @@ export interface MappingColumn {
   missingCodes: string[];
   // Tipo que sugieren los valores de esta edición, con sus códigos guardados.
   inferredType: ValueType;
+  values: ColumnValues;
 }
 
 export interface CanonicalVariableInfo {
@@ -1016,6 +1019,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
           new Set(savedCodesByColumn.get(name) ?? []),
         ),
       );
+      const values = columnValues(rawRows, name);
       const savedId = savedByColumn.get(name);
       if (savedId) {
         return {
@@ -1025,6 +1029,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
           suggestionSource: null,
           missingCodes: savedCodesByColumn.get(name) ?? [],
           inferredType,
+          values,
         };
       }
       const historicalId = historicalByColumn.get(name);
@@ -1037,6 +1042,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
           suggestionSource: 'history',
           missingCodes: [],
           inferredType,
+          values,
         };
       }
       const matchedId = matchByName(
@@ -1052,6 +1058,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
           suggestionSource: 'name',
           missingCodes: [],
           inferredType,
+          values,
         };
       }
       return {
@@ -1061,6 +1068,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
         suggestionSource: null,
         missingCodes: [],
         inferredType,
+        values,
       };
     });
 

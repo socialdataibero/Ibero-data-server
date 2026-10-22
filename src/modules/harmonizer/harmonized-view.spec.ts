@@ -1,6 +1,7 @@
 import {
   buildDatasetView,
   buildSurveyView,
+  columnValues,
   inferValueType,
   neutralizeCsvFormula,
   sourceColumnValues,
@@ -294,5 +295,42 @@ describe('harmonizer: sourceColumnValues', () => {
         new Set(['99']),
       ),
     ).toEqual(['1', null, null, null]);
+  });
+});
+
+describe('harmonizer: columnValues', () => {
+  it('cuenta los valores recortados, del más frecuente al menos, y aparte las vacías', () => {
+    const rows = ['2', '1', ' 1', '9', '', '2', '1', '  ', '3'].map((a) => ({ a }));
+    rows.push({} as { a: string });
+    expect(columnValues(rows, 'a', 3)).toEqual({
+      top: [
+        { value: '1', count: 3 },
+        { value: '2', count: 2 },
+        { value: '9', count: 1 },
+      ],
+      distinct: 4,
+      distinctCapped: false,
+      empty: 3,
+    });
+  });
+
+  it('no quita los códigos de no especificado', () => {
+    expect(columnValues([{ a: '99' }, { a: '1' }], 'a').top).toEqual([
+      { value: '99', count: 1 },
+      { value: '1', count: 1 },
+    ]);
+  });
+
+  it('deja de contar valores nuevos en el tope y lo indica', () => {
+    const rows = ['a', 'b', 'c', 'a', 'd'].map((x) => ({ x }));
+    expect(columnValues(rows, 'x', 5, 2)).toEqual({
+      top: [
+        { value: 'a', count: 2 },
+        { value: 'b', count: 1 },
+      ],
+      distinct: 2,
+      distinctCapped: true,
+      empty: 0,
+    });
   });
 });

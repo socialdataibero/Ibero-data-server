@@ -438,6 +438,13 @@ dBase and FoxPro tables (`.dbf`), as INEGI distributes its census microdata, are
 
 History and name suggestions never reuse a canonical variable that another column of the same edition already has (saved, or suggested to an earlier column in the header). The column is then left unmapped.
 
+Each column also has `values`, a summary of its values in this edition so they can be seen before mapping: `{ top, distinct, distinctCapped, empty }`.
+
+- `top` has up to 5 `{ value, count }`, most frequent first; on a tie, the value that appears first in the file goes first.
+- Values are trimmed and counted as they are in the file. Missing-value codes are not removed, so a `9` or `99` shows up before it is marked as missing. Empty or blank cells are not values: they are counted in `empty`.
+- `distinct` is the number of different values. To bound memory, at most 1,000 different values are counted per column. When a column has more, `distinct` is `1000`, `distinctCapped` is `true`, values first seen after that are left out, and `top` may miss a frequent value that only starts appearing late in the file.
+- It is computed on each request from the stored edition, not saved.
+
 Suggestions are preselected in the response but are not saved until the client sends `PUT`.
 
 `PUT .../mapping` takes `{ columns: [{ column, choice, newName?, dataType?, missingCodes? }] }`:
