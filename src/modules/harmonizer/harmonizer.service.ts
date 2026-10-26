@@ -6,7 +6,7 @@ import {
   NotFoundException,
   type OnApplicationBootstrap,
 } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
 import { randomUUID } from 'node:crypto';
@@ -55,6 +55,28 @@ import {
   type DbfEncoding,
   type DbfEncodingSource,
 } from './dbf.js';
+import {
+  CodebookError,
+  codebookMissingCodes,
+  normalizeLabel,
+  parseCodebookCsv,
+  parseCodebookWorkbook,
+  type CodebookCategory,
+  type CodebookVariableInfo,
+  type ParsedCodebook,
+} from './codebook.js';
+import {
+  compareVariable,
+  comparisonStatus,
+  suggestRecoding,
+  type CatalogCategory,
+  type ColumnProfile,
+  type ComparisonEditionInput,
+  type ComparisonStatus,
+  type VariableComparison,
+} from './comparison.js';
+import type { SetDatasetCodebookDto } from './dto/set-dataset-codebook.dto.js';
+import type { SaveRecodingDto } from './dto/save-recoding.dto.js';
 
 export interface SurveyDatasetSummary {
   id: string;
@@ -134,7 +156,25 @@ interface EditionRecord {
 interface EditionMapping {
   sourceColumn: string;
   missingCodes: string[];
+  valueMap: Prisma.JsonValue;
   canonicalVariable: { name: string };
+}
+
+/** La recodificación guardada de un mapeo (`{ valor: código }`) como Map. */
+function toValueMap(json: Prisma.JsonValue | undefined): Map<string, string> {
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return new Map();
+  return new Map(
+    Object.entries(json).filter((e): e is [string, string] => typeof e[1] === 'string'),
+  );
+}
+
+function toCatalog(json: Prisma.JsonValue | null | undefined): CatalogCategory[] {
+  if (!Array.isArray(json)) return [];
+  return json.flatMap((c) =>
+    c && typeof c === 'object' && !Array.isArray(c) && typeof c.code === 'string'
+      ? [{ code: c.code, label: typeof c.label === 'string' ? c.label : '' }]
+      : [],
+  );
 }
 
 function toEdition(
@@ -152,11 +192,22 @@ function toEdition(
     missingCodes: new Map(
       mappings.map((m) => [m.sourceColumn, new Set(m.missingCodes)]),
     ),
+    valueMaps: new Map(
+      mappings.map((m) => [m.sourceColumn, toValueMap(m.valueMap)]),
+    ),
     rows,
   };
 }
 
-export type SuggestionSource = 'history' | 'name';
+export type SuggestionSource = 'history' | 'name' | 'description';
+
+/** Lo que dice el diccionario de la edición sobre una columna. */
+export interface ColumnCodebook extends CodebookVariableInfo {
+  // Códigos de «No especificado» del diccionario, escritos como vienen en los datos.
+  missingCodes: string[];
+  // Tipo que sugieren el diccionario y los valores, sin los códigos de `missingCodes`.
+  suggestedType: ValueType;
+}
 
 export interface MappingColumn {
   name: string;
@@ -167,13 +218,71 @@ export interface MappingColumn {
   // Tipo que sugieren los valores de esta edición, con sus códigos guardados.
   inferredType: ValueType;
   values: ColumnValues;
+  codebook: ColumnCodebook | null;
 }
 
 export interface CanonicalVariableInfo {
   id: string;
   name: string;
+  description: string | null;
   // `null` = nadie lo ha confirmado todavía.
   dataType: ValueType | null;
+}
+
+/** Valores distintos que se guardan por columna en su perfil. */
+const PROFILE_MAX_VALUES = 200;
+
+/** Diccionarios: tamaño máximo del archivo y extensiones aceptadas. */
+export const MAX_CODEBOOK_BYTES = 20 * 1024 * 1024;
+const CODEBOOK_EXCEL = /\.xlsx?$/i;
+const CODEBOOK_CSV = /\.csv$/i;
+
+interface CodebookDatasetRef {
+  id: string;
+  columns: string[];
+  codebookId: string | null;
+  codebookTable: string | null;
+}
+
+/** Tipo sugerido para una columna con diccionario, ya sin sus códigos de no especificado. */
+function codebookSuggestedType(
+  info: CodebookVariableInfo,
+  values: (string | null)[],
+): ValueType {
+  if (info.declaredType === 'text') return 'text';
+  if (info.declaredType === null) {
+    // Una variable con categorías es un código: se guarda como texto para no perder ceros.
+    if (info.categories.filter((c) => c.kind === 'value').length >= 2) return 'text';
+    return inferValueType(values);
+  }
+  if (valuesNotFitting(values, 'integer', 1).length === 0) return 'integer';
+  if (valuesNotFitting(values, 'decimal', 1).length === 0) return 'decimal';
+  return 'text';
+}
+
+function toCodebookInfo(v: {
+  name: string;
+  label: string | null;
+  question: string | null;
+  section: string | null;
+  declaredType: string | null;
+  categories: Prisma.JsonValue;
+}): CodebookVariableInfo {
+  return {
+    name: v.name,
+    label: v.label,
+    question: v.question,
+    section: v.section,
+    declaredType: v.declaredType as ValueType | null,
+    categories: (Array.isArray(v.categories) ? v.categories : []) as unknown as CodebookCategory[],
+  };
+}
+
+function codebookNotFound() {
+  return new NotFoundException({
+    code: 'codebook_not_found',
+    message: 'Dictionary not found.',
+  });
 }
 
 export type ExportFormat = 'csv' | 'parquet';
@@ -579,12 +688,16 @@ export class HarmonizerService implements OnApplicationBootstrap {
         },
       },
     });
+    const comparisons = await this.variableComparisons(surveyId);
     return {
       survey: { id: survey.id, name: survey.name },
       items: variables.map((v) => ({
         id: v.id,
         name: v.name,
+        description: v.description,
         dataType: v.dataType,
+        categories: toCatalog(v.categories),
+        comparison: this.comparisonSummary(comparisons.get(v.id)?.comparison, v.reviewedSignature),
         // Nombres creados antes de las reglas: se pueden seguir usando, pero conviene renombrarlos.
         nameValid: canonicalNameProblem(v.name) === null,
         usages: v.mappings
@@ -599,6 +712,277 @@ export class HarmonizerService implements OnApplicationBootstrap {
               a.year - b.year || a.datasetName.localeCompare(b.datasetName),
           ),
       })),
+    };
+  }
+
+  private comparisonSummary(
+    comparison: VariableComparison | undefined,
+    reviewedSignature: string | null,
+  ): { status: ComparisonStatus; issueCount: number } {
+    if (!comparison) return { status: 'single', issueCount: 0 };
+    return {
+      status: comparisonStatus(comparison, reviewedSignature),
+      issueCount: comparison.issues.length,
+    };
+  }
+
+  /**
+   * Compara los códigos de cada variable (o solo de `variableIds`) entre las ediciones que la
+   * mapean. Usa los perfiles de valores guardados, el diccionario de cada edición y la
+   * recodificación; no lee los datos salvo para perfilar columnas que aún no tienen perfil.
+   */
+  private async variableComparisons(
+    surveyId: string,
+    variableIds?: string[],
+  ): Promise<Map<string, { inputs: ComparisonEditionInput[]; comparison: VariableComparison }>> {
+    const variables = await this.prisma.harmonizerCanonicalVariable.findMany({
+      where: { surveyId, ...(variableIds ? { id: { in: variableIds } } : {}) },
+      select: { id: true, dataType: true, categories: true },
+    });
+    const mappings = await this.prisma.harmonizerMapping.findMany({
+      where: { canonicalVariableId: { in: variables.map((v) => v.id) } },
+      include: {
+        dataset: {
+          select: {
+            id: true,
+            name: true,
+            year: true,
+            columns: true,
+            codebookId: true,
+            codebookTable: true,
+            createdAt: true,
+          },
+        },
+      },
+    });
+    mappings.sort(
+      (a, b) =>
+        a.dataset.year - b.dataset.year ||
+        a.dataset.createdAt.getTime() - b.dataset.createdAt.getTime() ||
+        a.dataset.id.localeCompare(b.dataset.id),
+    );
+    const datasets = [...new Map(mappings.map((m) => [m.dataset.id, m.dataset])).values()];
+    const [profiles, codebooks] = await Promise.all([
+      this.columnProfiles(mappings.map((m) => ({ dataset: m.dataset, column: m.sourceColumn }))),
+      this.codebookByColumn(datasets),
+    ]);
+
+    const out = new Map<string, { inputs: ComparisonEditionInput[]; comparison: VariableComparison }>();
+    for (const v of variables) {
+      const inputs: ComparisonEditionInput[] = mappings
+        .filter((m) => m.canonicalVariableId === v.id)
+        .map((m) => {
+          const info = codebooks.get(m.datasetId)?.get(m.sourceColumn);
+          return {
+            datasetId: m.datasetId,
+            datasetName: m.dataset.name,
+            year: m.dataset.year,
+            column: m.sourceColumn,
+            missingCodes: m.missingCodes,
+            valueMap: Object.fromEntries(toValueMap(m.valueMap)),
+            profile: profiles.get(m.datasetId)?.get(m.sourceColumn) ?? {
+              values: [],
+              distinctCapped: false,
+              empty: 0,
+            },
+            codebook: info ? { label: info.label, categories: info.categories } : null,
+          };
+        });
+      out.set(v.id, {
+        inputs,
+        comparison: compareVariable(inputs, toCatalog(v.categories), v.dataType as ValueType | null),
+      });
+    }
+    return out;
+  }
+
+  /** Comparación de una variable entre ediciones, con una propuesta de recodificación. */
+  async getVariableComparison(surveyId: string, variableId: string) {
+    const variable = await this.getCanonicalVariable(surveyId, variableId);
+    const { inputs, comparison } = (await this.variableComparisons(surveyId, [variableId])).get(
+      variableId,
+    )!;
+    const catalog = toCatalog(variable.categories);
+    return {
+      variable: {
+        id: variable.id,
+        name: variable.name,
+        description: variable.description,
+        dataType: variable.dataType as ValueType | null,
+        categories: catalog,
+        reviewedAt: variable.reviewedSignature ? variable.reviewedAt : null,
+        reviewedBy: variable.reviewedSignature ? variable.reviewedBy : null,
+      },
+      status: comparisonStatus(comparison, variable.reviewedSignature),
+      categorical: comparison.categorical,
+      editions: comparison.editions,
+      issues: comparison.issues,
+      suggestion: suggestRecoding(inputs, catalog),
+    };
+  }
+
+  /**
+   * «Revisada, es correcto»: guarda la firma de las diferencias actuales. Si cambian (otro
+   * mapeo, otros códigos, otra recodificación), el aviso vuelve.
+   */
+  async reviewVariable(surveyId: string, variableId: string, reviewer: string) {
+    const variable = await this.getCanonicalVariable(surveyId, variableId);
+    const { comparison } = (await this.variableComparisons(surveyId, [variableId])).get(variableId)!;
+    if (comparison.issues.length === 0) {
+      throw new ConflictException({
+        code: 'variable_has_no_differences',
+        message: `Variable "${variable.name}" has no code differences between editions to review.`,
+        params: { name: variable.name },
+      });
+    }
+    await this.prisma.harmonizerCanonicalVariable.update({
+      where: { id: variable.id },
+      data: {
+        reviewedSignature: comparison.signature,
+        reviewedAt: new Date(),
+        reviewedBy: reviewer,
+      },
+    });
+    return this.getVariableComparison(surveyId, variableId);
+  }
+
+  async clearVariableReview(surveyId: string, variableId: string): Promise<void> {
+    const variable = await this.getCanonicalVariable(surveyId, variableId);
+    await this.prisma.harmonizerCanonicalVariable.update({
+      where: { id: variable.id },
+      data: { reviewedSignature: null, reviewedAt: null, reviewedBy: null },
+    });
+  }
+
+  /**
+   * Guarda el catálogo de una variable y la recodificación de sus ediciones. La recodificación
+   * se aplica en las vistas y descargas después de los códigos de no especificado y antes del
+   * tipo, así que con un tipo numérico confirmado los códigos resultantes deben ser números.
+   */
+  async saveRecoding(surveyId: string, variableId: string, dto: SaveRecodingDto) {
+    const variable = await this.getCanonicalVariable(surveyId, variableId);
+    const invalid = (problem: string, message: string, params: Record<string, unknown> = {}) =>
+      new BadRequestException({
+        code: 'recoding_invalid',
+        message,
+        params: { problem, variable: variable.name, ...params },
+      });
+
+    const categories: CatalogCategory[] = [];
+    for (const c of dto.categories) {
+      const code = c.code.trim();
+      if (!code) throw invalid('empty_code', 'Every category of the catalog needs a code.');
+      if (categories.some((other) => other.code === code)) {
+        throw invalid('duplicate_code', `Code "${code}" appears twice in the catalog.`, { code });
+      }
+      categories.push({ code, label: (c.label ?? '').trim() });
+    }
+    const catalogCodes = new Set(categories.map((c) => c.code));
+
+    const mappings = await this.prisma.harmonizerMapping.findMany({
+      where: { canonicalVariableId: variable.id },
+      include: { dataset: { select: { id: true, name: true, columns: true, rowCount: true } } },
+    });
+    const byDataset = new Map(mappings.map((m) => [m.datasetId, m]));
+    const valueMaps = new Map<string, Map<string, string>>();
+    for (const edition of dto.editions) {
+      const mapping = byDataset.get(edition.datasetId);
+      if (!mapping) {
+        throw invalid(
+          'edition_not_mapped',
+          `Edition "${edition.datasetId}" does not map variable "${variable.name}".`,
+          { datasetId: edition.datasetId },
+        );
+      }
+      const map = new Map<string, string>();
+      for (const { from, to } of edition.values) {
+        const source = from.trim();
+        const target = to.trim();
+        if (!source || !target) continue;
+        if (map.has(source)) {
+          throw invalid(
+            'duplicate_value',
+            `Value "${source}" of edition "${mapping.dataset.name}" is recoded twice.`,
+            { edition: mapping.dataset.name, value: source },
+          );
+        }
+        if (catalogCodes.size > 0 && !catalogCodes.has(target)) {
+          throw invalid(
+            'target_not_in_catalog',
+            `Edition "${mapping.dataset.name}": value "${source}" is recoded to "${target}", which is not a code of the catalog.`,
+            { edition: mapping.dataset.name, value: source, target },
+          );
+        }
+        // `05` → `05` también se guarda: dice que el valor ya se revisó contra el catálogo.
+        map.set(source, target);
+      }
+      valueMaps.set(mapping.datasetId, map);
+    }
+
+    const dataType = variable.dataType as ValueType | null;
+    if (dataType === 'integer' || dataType === 'decimal') {
+      for (const [datasetId, map] of valueMaps) {
+        const mapping = byDataset.get(datasetId)!;
+        const rows = await this.readRawColumns(mapping.dataset, [mapping.sourceColumn]);
+        const bad = valuesNotFitting(
+          sourceColumnValues(rows, mapping.sourceColumn, new Set(mapping.missingCodes), map),
+          dataType,
+        );
+        if (bad.length > 0) {
+          throw new BadRequestException({
+            code: 'value_type_mismatch',
+            message: `Variable "${variable.name}" is confirmed as ${VALUE_TYPE_LABEL[dataType]}, but after recoding edition "${mapping.dataset.name}" (column "${mapping.sourceColumn}") it has values that are not: ${quoteList(bad)}.`,
+            params: {
+              source: 'recoding',
+              variable: variable.name,
+              edition: mapping.dataset.name,
+              column: mapping.sourceColumn,
+              expectedType: dataType,
+              values: bad,
+            },
+          });
+        }
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.harmonizerCanonicalVariable.update({
+        where: { id: variable.id },
+        data: {
+          categories:
+            categories.length > 0
+              ? (categories as unknown as Prisma.InputJsonValue)
+              : Prisma.DbNull,
+        },
+      });
+      for (const [datasetId, map] of valueMaps) {
+        await tx.harmonizerMapping.update({
+          where: { id: byDataset.get(datasetId)!.id },
+          data: { valueMap: Object.fromEntries(map) },
+        });
+      }
+    });
+    return this.getVariableComparison(surveyId, variableId);
+  }
+
+  /** Catálogo de categorías de todas las variables de la encuesta que tienen uno, como CSV. */
+  async exportCatalog(surveyId: string): Promise<ExportFile> {
+    const survey = await this.getSurvey(surveyId);
+    const variables = await this.prisma.harmonizerCanonicalVariable.findMany({
+      where: { surveyId },
+      orderBy: { name: 'asc' },
+      select: { name: true, description: true, categories: true },
+    });
+    const rows = variables.flatMap((v) =>
+      toCatalog(v.categories).map((c) => [v.name, v.description ?? '', c.code, c.label]),
+    );
+    const csv = stringify([['variable', 'descripcion', 'codigo', 'etiqueta'], ...rows], {
+      cast: { string: neutralizeCsvFormula },
+    });
+    return {
+      filename: `${safeFileBase(`catalogo_${survey.name}`, 'catalogo')}.csv`,
+      contentType: EXPORT_CONTENT_TYPE.csv,
+      body: Buffer.from(`\ufeff${csv}`, 'utf8'),
     };
   }
 
@@ -787,6 +1171,16 @@ export class HarmonizerService implements OnApplicationBootstrap {
       throw err;
     }
 
+    // El perfil se usa para comparar códigos entre ediciones. Si falla aquí, se calcula la
+    // primera vez que se necesite: la subida no se pierde por eso.
+    try {
+      await this.columnProfiles([{ dataset, column: null }]);
+    } catch (err) {
+      this.logger.warn(
+        `Could not profile edition ${dataset.id}: ${(err as Error).message}`,
+      );
+    }
+
     return {
       datasetId: dataset.id,
       dataset: {
@@ -801,6 +1195,80 @@ export class HarmonizerService implements OnApplicationBootstrap {
       renamedColumns: renamed,
       source,
     };
+  }
+
+  /**
+   * Perfil de valores (valores distintos con su frecuencia) de las columnas pedidas, por
+   * edición y columna. `column: null` pide todas las de la edición. Lo que no esté guardado
+   * se calcula con DuckDB sobre el Parquet y se guarda: los datos de una edición no cambian.
+   */
+  private async columnProfiles(
+    wanted: { dataset: { id: string; columns: string[] }; column: string | null }[],
+  ): Promise<Map<string, Map<string, ColumnProfile>>> {
+    const columnsByDataset = new Map<string, { columns: string[]; wanted: Set<string> }>();
+    for (const { dataset, column } of wanted) {
+      const entry = columnsByDataset.get(dataset.id) ?? {
+        columns: dataset.columns,
+        wanted: new Set<string>(),
+      };
+      for (const c of column === null ? dataset.columns : [column]) {
+        if (dataset.columns.includes(c)) entry.wanted.add(c);
+      }
+      columnsByDataset.set(dataset.id, entry);
+    }
+    const out = new Map<string, Map<string, ColumnProfile>>();
+    if (columnsByDataset.size === 0) return out;
+
+    const stored = await this.prisma.harmonizerColumnProfile.findMany({
+      where: {
+        datasetId: { in: [...columnsByDataset.keys()] },
+        sourceColumn: {
+          in: [...new Set([...columnsByDataset.values()].flatMap((e) => [...e.wanted]))],
+        },
+      },
+    });
+    for (const p of stored) {
+      if (!columnsByDataset.get(p.datasetId)?.wanted.has(p.sourceColumn)) continue;
+      const byColumn = out.get(p.datasetId) ?? new Map<string, ColumnProfile>();
+      byColumn.set(p.sourceColumn, {
+        values: p.values as unknown as ColumnProfile['values'],
+        distinctCapped: p.distinctCapped,
+        empty: p.empty,
+      });
+      out.set(p.datasetId, byColumn);
+    }
+
+    for (const [datasetId, { columns, wanted: wantedColumns }] of columnsByDataset) {
+      const byColumn = out.get(datasetId) ?? new Map<string, ColumnProfile>();
+      out.set(datasetId, byColumn);
+      const missing = [...wantedColumns].filter((c) => !byColumn.has(c));
+      if (missing.length === 0) continue;
+      const counts = await this.analysisService.columnValueCounts(
+        await this.rawPath({ id: datasetId }),
+        missing.map((c) => `c${columns.indexOf(c)}`),
+        PROFILE_MAX_VALUES,
+      );
+      const rows = missing.map((column, i) => ({
+        datasetId,
+        sourceColumn: column,
+        values: counts[i].values,
+        distinctCapped: counts[i].capped,
+        empty: counts[i].empty,
+      }));
+      // Dos peticiones a la vez pueden calcular el mismo perfil: gana la primera.
+      await this.prisma.harmonizerColumnProfile.createMany({
+        data: rows,
+        skipDuplicates: true,
+      });
+      for (const row of rows) {
+        byColumn.set(row.sourceColumn, {
+          values: row.values,
+          distinctCapped: row.distinctCapped,
+          empty: row.empty,
+        });
+      }
+    }
+    return out;
   }
 
   // `_dataset` en la vista por encuesta es el nombre de la edición: si se
@@ -970,18 +1438,311 @@ export class HarmonizerService implements OnApplicationBootstrap {
     };
   }
 
+  async createCodebook(
+    surveyId: string,
+    name: string | undefined,
+    file: { originalname: string; buffer: Buffer },
+  ) {
+    const survey = await this.getSurvey(surveyId);
+    const trimmed = (name ?? '').trim();
+    if (!trimmed) {
+      throw new BadRequestException({
+        code: 'codebook_name_required',
+        message: 'Enter a name for the dictionary (field "name").',
+      });
+    }
+    const parsed = this.parseCodebookFile(file);
+    const taken = () =>
+      new ConflictException({
+        code: 'codebook_name_taken',
+        message: `Survey "${survey.name}" already has a dictionary named "${trimmed}".`,
+        params: { survey: survey.name, name: trimmed },
+      });
+    const existing = await this.prisma.harmonizerCodebook.findUnique({
+      where: { surveyId_name: { surveyId, name: trimmed } },
+    });
+    if (existing) throw taken();
+    let created;
+    try {
+      created = await this.prisma.harmonizerCodebook.create({
+        data: {
+          surveyId,
+          name: trimmed,
+          fileName: file.originalname,
+          format: parsed.format,
+          variables: {
+            createMany: {
+              data: parsed.variables.map((v) => ({
+                ...v,
+                categories: v.categories as unknown as Prisma.InputJsonValue,
+              })),
+            },
+          },
+        },
+      });
+    } catch (err) {
+      if ((err as { code?: string }).code === 'P2002') throw taken();
+      throw err;
+    }
+    return this.getCodebookSummary(created.id);
+  }
+
+  private parseCodebookFile(file: {
+    originalname: string;
+    buffer: Buffer;
+  }): ParsedCodebook {
+    try {
+      if (CODEBOOK_EXCEL.test(file.originalname)) {
+        return parseCodebookWorkbook(file.buffer);
+      }
+      if (CODEBOOK_CSV.test(file.originalname)) {
+        return parseCodebookCsv(decodeUtf8(file.buffer));
+      }
+    } catch (err) {
+      if (err instanceof CodebookError) {
+        throw new BadRequestException({
+          code: 'codebook_invalid',
+          message: err.message,
+          params: { problem: err.problem, ...err.params },
+        });
+      }
+      throw err;
+    }
+    throw new BadRequestException({
+      code: 'codebook_format_unsupported',
+      message:
+        'The dictionary must be an Excel workbook (.xls, .xlsx) or a CSV file (.csv).',
+      params: { fileName: file.originalname },
+    });
+  }
+
+  async listCodebooks(surveyId: string) {
+    const survey = await this.getSurvey(surveyId);
+    const codebooks = await this.prisma.harmonizerCodebook.findMany({
+      where: { surveyId },
+      orderBy: { name: 'asc' },
+      select: { id: true },
+    });
+    return {
+      survey: { id: survey.id, name: survey.name },
+      items: await Promise.all(codebooks.map((c) => this.getCodebookSummary(c.id))),
+    };
+  }
+
+  private async getCodebookSummary(codebookId: string) {
+    const codebook = await this.prisma.harmonizerCodebook.findUnique({
+      where: { id: codebookId },
+      include: {
+        datasets: {
+          select: { id: true, name: true, year: true, codebookTable: true },
+          orderBy: [{ year: 'asc' }, { createdAt: 'asc' }],
+        },
+      },
+    });
+    if (!codebook) throw codebookNotFound();
+    const counts = await this.prisma.harmonizerCodebookVariable.groupBy({
+      by: ['table'],
+      where: { codebookId },
+      _count: { _all: true },
+      orderBy: { table: 'asc' },
+    });
+    return {
+      id: codebook.id,
+      surveyId: codebook.surveyId,
+      name: codebook.name,
+      fileName: codebook.fileName,
+      format: codebook.format,
+      createdAt: codebook.createdAt,
+      tables: counts.map((c) => ({ name: c.table, variableCount: c._count._all })),
+      datasets: codebook.datasets.map((d) => ({
+        id: d.id,
+        name: d.name,
+        year: d.year,
+        table: d.codebookTable,
+      })),
+    };
+  }
+
+  /** El diccionario con todas sus variables, agrupadas por tabla. */
+  async getCodebook(codebookId: string) {
+    const summary = await this.getCodebookSummary(codebookId);
+    const variables = await this.prisma.harmonizerCodebookVariable.findMany({
+      where: { codebookId },
+      orderBy: [{ table: 'asc' }, { position: 'asc' }],
+    });
+    return {
+      ...summary,
+      tables: summary.tables.map((t) => ({
+        ...t,
+        variables: variables
+          .filter((v) => v.table === t.name)
+          .map((v) => ({
+            ...toCodebookInfo(v),
+            validRange: v.validRange,
+            length: v.length,
+          })),
+      })),
+    };
+  }
+
+  /** Borrar un diccionario deja sin diccionario a las ediciones que lo usan; sus mapeos no cambian. */
+  async removeCodebook(codebookId: string): Promise<void> {
+    const codebook = await this.prisma.harmonizerCodebook.findUnique({
+      where: { id: codebookId },
+      select: { id: true },
+    });
+    if (!codebook) throw codebookNotFound();
+    await this.prisma.harmonizerCodebook.delete({ where: { id: codebookId } });
+  }
+
+  /**
+   * Asocia un diccionario de la encuesta a una edición (o lo quita con `codebookId: null`). Sin
+   * `table`, se elige la tabla con más columnas en común con el archivo.
+   */
+  async setDatasetCodebook(datasetId: string, dto: SetDatasetCodebookDto) {
+    const dataset = await this.getDataset(datasetId);
+    if (dto.codebookId === null || dto.codebookId === undefined) {
+      await this.prisma.harmonizerDataset.update({
+        where: { id: datasetId },
+        data: { codebookId: null, codebookTable: null },
+      });
+      return { codebook: null };
+    }
+    const codebook = await this.prisma.harmonizerCodebook.findFirst({
+      where: { id: dto.codebookId, surveyId: dataset.surveyId },
+      select: { id: true, name: true },
+    });
+    if (!codebook) throw codebookNotFound();
+    const variables = await this.prisma.harmonizerCodebookVariable.findMany({
+      where: { codebookId: codebook.id },
+      select: { table: true, name: true },
+    });
+    const namesByTable = new Map<string, Set<string>>();
+    for (const v of variables) {
+      const names = namesByTable.get(v.table) ?? new Set<string>();
+      names.add(v.name.toLowerCase());
+      namesByTable.set(v.table, names);
+    }
+    const matched = (table: string) =>
+      dataset.columns.filter((c) => namesByTable.get(table)?.has(c.toLowerCase()));
+
+    let table = dto.table?.trim();
+    if (table !== undefined && table !== '') {
+      if (!namesByTable.has(table)) {
+        throw new BadRequestException({
+          code: 'codebook_table_not_found',
+          message: `Dictionary "${codebook.name}" has no table "${table}".`,
+          params: { table, tables: [...namesByTable.keys()] },
+        });
+      }
+    } else {
+      table = [...namesByTable.keys()].sort(
+        (a, b) => matched(b).length - matched(a).length || a.localeCompare(b),
+      )[0];
+    }
+    const matchedColumns = table === undefined ? [] : matched(table);
+    if (table === undefined || matchedColumns.length === 0) {
+      throw new BadRequestException({
+        code: 'codebook_no_match',
+        message: `No column of edition "${dataset.name}" is described in dictionary "${codebook.name}"${dto.table ? ` (table "${table}")` : ''}.`,
+        params: { edition: dataset.name, codebook: codebook.name, table: dto.table ? table : null },
+      });
+    }
+    await this.prisma.harmonizerDataset.update({
+      where: { id: datasetId },
+      data: { codebookId: codebook.id, codebookTable: table },
+    });
+    return {
+      codebook: {
+        id: codebook.id,
+        name: codebook.name,
+        table,
+        matchedColumns: matchedColumns.length,
+        unmatchedColumns: dataset.columns.filter((c) => !matchedColumns.includes(c)),
+      },
+    };
+  }
+
+  /**
+   * Variables del diccionario de cada edición, por columna. Una columna se busca en la tabla de
+   * la edición por su nombre exacto o, si no está, sin distinguir mayúsculas.
+   */
+  private async codebookByColumn(
+    datasets: CodebookDatasetRef[],
+  ): Promise<Map<string, Map<string, CodebookVariableInfo>>> {
+    const out = new Map<string, Map<string, CodebookVariableInfo>>();
+    const refs = datasets.filter(
+      (d): d is CodebookDatasetRef & { codebookId: string } => d.codebookId !== null,
+    );
+    if (refs.length === 0) return out;
+    const pairs = [
+      ...new Map(
+        refs.map((d) => [
+          `${d.codebookId}\u0000${d.codebookTable ?? ''}`,
+          { codebookId: d.codebookId, table: d.codebookTable ?? '' },
+        ]),
+      ).values(),
+    ];
+    const variables = await this.prisma.harmonizerCodebookVariable.findMany({
+      where: { OR: pairs },
+    });
+    const byPair = new Map<string, { exact: Map<string, CodebookVariableInfo>; lower: Map<string, CodebookVariableInfo> }>();
+    for (const v of variables) {
+      const key = `${v.codebookId}\u0000${v.table}`;
+      const entry = byPair.get(key) ?? { exact: new Map(), lower: new Map() };
+      const info = toCodebookInfo(v);
+      entry.exact.set(v.name, info);
+      if (!entry.lower.has(v.name.toLowerCase())) entry.lower.set(v.name.toLowerCase(), info);
+      byPair.set(key, entry);
+    }
+    for (const d of refs) {
+      const entry = byPair.get(`${d.codebookId}\u0000${d.codebookTable ?? ''}`);
+      const byColumn = new Map<string, CodebookVariableInfo>();
+      for (const column of d.columns) {
+        const info = entry?.exact.get(column) ?? entry?.lower.get(column.toLowerCase());
+        if (info) byColumn.set(column, info);
+      }
+      out.set(d.id, byColumn);
+    }
+    return out;
+  }
+
+  /** El mapeo guardado de una edición, sin leer sus datos (para copiarlo a otra edición). */
+  async getSavedMapping(datasetId: string) {
+    const dataset = await this.getDataset(datasetId);
+    const mappings = await this.prisma.harmonizerMapping.findMany({
+      where: { datasetId },
+      include: { canonicalVariable: { select: { name: true } } },
+    });
+    const order = new Map(dataset.columns.map((c, i) => [c, i]));
+    return {
+      dataset: this.toDatasetInfo(dataset),
+      columns: mappings
+        .sort((a, b) => (order.get(a.sourceColumn) ?? 0) - (order.get(b.sourceColumn) ?? 0))
+        .map((m) => ({
+          column: m.sourceColumn,
+          canonicalId: m.canonicalVariableId,
+          canonicalName: m.canonicalVariable.name,
+          missingCodes: m.missingCodes,
+        })),
+    };
+  }
+
   async getMapping(datasetId: string): Promise<{
     dataset: DatasetInfo;
     columns: MappingColumn[];
     canonicalVariables: CanonicalVariableInfo[];
+    codebook: { id: string; name: string; table: string | null; matchedColumns: number } | null;
+    codebooks: { id: string; name: string; tables: string[] }[];
+    otherEditions: { id: string; name: string; year: number; mappedColumns: number }[];
   }> {
     const dataset = await this.getDataset(datasetId);
 
-    const [canonicals, saved, historical, rawRows] = await Promise.all([
+    const [canonicals, saved, historical, rawRows, codebookVars, codebooks, others] = await Promise.all([
       this.prisma.harmonizerCanonicalVariable.findMany({
         where: { surveyId: dataset.surveyId },
         orderBy: { name: 'asc' },
-        select: { id: true, name: true, dataType: true },
+        select: { id: true, name: true, description: true, dataType: true },
       }),
       this.prisma.harmonizerMapping.findMany({ where: { datasetId } }),
       this.prisma.harmonizerMapping.findMany({
@@ -992,7 +1753,24 @@ export class HarmonizerService implements OnApplicationBootstrap {
         },
       }),
       this.readRawRows(dataset),
+      this.codebookByColumn([dataset]),
+      this.prisma.harmonizerCodebook.findMany({
+        where: { surveyId: dataset.surveyId },
+        orderBy: { name: 'asc' },
+        select: { id: true, name: true },
+      }),
+      this.prisma.harmonizerDataset.findMany({
+        where: { surveyId: dataset.surveyId, id: { not: datasetId } },
+        orderBy: [{ year: 'asc' }, { createdAt: 'asc' }],
+        select: { id: true, name: true, year: true, _count: { select: { mappings: true } } },
+      }),
     ]);
+    const codebookTables = await this.prisma.harmonizerCodebookVariable.groupBy({
+      by: ['codebookId', 'table'],
+      where: { codebookId: { in: codebooks.map((c) => c.id) } },
+      orderBy: [{ codebookId: 'asc' }, { table: 'asc' }],
+    });
+    const columnCodebook = codebookVars.get(dataset.id) ?? new Map<string, CodebookVariableInfo>();
 
     const nameById = new Map(canonicals.map((c) => [c.id, c.name]));
     const savedByColumn = new Map(
@@ -1011,6 +1789,29 @@ export class HarmonizerService implements OnApplicationBootstrap {
     // no se vuelve a sugerir: dos columnas a la misma canónica colisionan.
     const usedIds = new Set(savedByColumn.values());
 
+    const suggestion = (
+      name: string,
+      info: CodebookVariableInfo | undefined,
+    ): { id: string; source: SuggestionSource } | null => {
+      const historicalId = historicalByColumn.get(name);
+      if (historicalId && !usedIds.has(historicalId)) {
+        return { id: historicalId, source: 'history' };
+      }
+      const available = canonicals.filter((c) => !usedIds.has(c.id));
+      const matchedId = matchByName(name, available);
+      if (matchedId) return { id: matchedId, source: 'name' };
+      // Con diccionario, una columna que cambió de nombre entre ediciones (PARENT → PARENTESCO)
+      // se reconoce por su descripción, que es la de la canónica.
+      const label = info?.label ? normalizeLabel(info.label) : '';
+      if (label) {
+        const byLabel = available.filter(
+          (c) => c.description && normalizeLabel(c.description) === label,
+        );
+        if (byLabel.length === 1) return { id: byLabel[0].id, source: 'description' };
+      }
+      return null;
+    };
+
     const columns = dataset.columns.map((name): MappingColumn => {
       const inferredType = inferValueType(
         sourceColumnValues(
@@ -1020,65 +1821,80 @@ export class HarmonizerService implements OnApplicationBootstrap {
         ),
       );
       const values = columnValues(rawRows, name);
+      const info = columnCodebook.get(name);
+      let codebook: ColumnCodebook | null = null;
+      if (info) {
+        const distinct = new Set(rawRows.map((r) => (r[name] ?? '').trim()));
+        distinct.delete('');
+        const missingCodes = codebookMissingCodes(info.categories, distinct);
+        codebook = {
+          ...info,
+          missingCodes,
+          suggestedType: codebookSuggestedType(
+            info,
+            sourceColumnValues(rawRows, name, new Set(missingCodes)),
+          ),
+        };
+      }
+      const base = { name, missingCodes: [] as string[], inferredType, values, codebook };
       const savedId = savedByColumn.get(name);
       if (savedId) {
         return {
-          name,
+          ...base,
           selectedCanonicalId: savedId,
           suggested: null,
           suggestionSource: null,
           missingCodes: savedCodesByColumn.get(name) ?? [],
-          inferredType,
-          values,
         };
       }
-      const historicalId = historicalByColumn.get(name);
-      if (historicalId && !usedIds.has(historicalId)) {
-        usedIds.add(historicalId);
+      const suggested = suggestion(name, info);
+      if (suggested) {
+        usedIds.add(suggested.id);
         return {
-          name,
-          selectedCanonicalId: historicalId,
-          suggested: nameById.get(historicalId) ?? null,
-          suggestionSource: 'history',
-          missingCodes: [],
-          inferredType,
-          values,
-        };
-      }
-      const matchedId = matchByName(
-        name,
-        canonicals.filter((c) => !usedIds.has(c.id)),
-      );
-      if (matchedId) {
-        usedIds.add(matchedId);
-        return {
-          name,
-          selectedCanonicalId: matchedId,
-          suggested: nameById.get(matchedId) ?? null,
-          suggestionSource: 'name',
-          missingCodes: [],
-          inferredType,
-          values,
+          ...base,
+          selectedCanonicalId: suggested.id,
+          suggested: nameById.get(suggested.id) ?? null,
+          suggestionSource: suggested.source,
         };
       }
       return {
-        name,
+        ...base,
         selectedCanonicalId: null,
         suggested: null,
         suggestionSource: null,
-        missingCodes: [],
-        inferredType,
-        values,
       };
     });
 
+    const attached = dataset.codebookId
+      ? codebooks.find((c) => c.id === dataset.codebookId)
+      : undefined;
     return {
       dataset: this.toDatasetInfo(dataset),
       columns,
       canonicalVariables: canonicals.map((c) => ({
         id: c.id,
         name: c.name,
+        description: c.description,
         dataType: c.dataType as ValueType | null,
+      })),
+      codebook: attached
+        ? {
+            id: attached.id,
+            name: attached.name,
+            table: dataset.codebookTable,
+            matchedColumns: columnCodebook.size,
+          }
+        : null,
+      codebooks: codebooks.map((c) => ({
+        id: c.id,
+        name: c.name,
+        tables: codebookTables.filter((t) => t.codebookId === c.id).map((t) => t.table),
+      })),
+      otherEditions: others.map((d) => ({
+        id: d.id,
+        name: d.name,
+        year: d.year,
+        mappedColumns: d._count.mappings,
       })),
     };
   }
@@ -1091,93 +1907,153 @@ export class HarmonizerService implements OnApplicationBootstrap {
     const choiceByColumn = new Map(dto.columns.map((c) => [c.column, c]));
 
     await this.assertNewCanonicalNames(dataset, choiceByColumn);
+    const saved = await this.prisma.harmonizerMapping.findMany({
+      where: { datasetId },
+    });
+    const savedByColumn = new Map(saved.map((m) => [m.sourceColumn, m]));
     // Fuera de la transacción: leer los Parquet puede tardar más que su timeout.
-    await this.assertValueTypes(dataset, choiceByColumn);
+    await this.assertValueTypes(dataset, choiceByColumn, savedByColumn);
+    const columnCodebook =
+      (await this.codebookByColumn([dataset])).get(dataset.id) ??
+      new Map<string, CodebookVariableInfo>();
 
-    await this.prisma.$transaction(async (tx) => {
-      const resolved: {
-        column: string;
-        canonicalId: string | null;
-        missingCodes: string[];
-        dataType: ValueType | undefined;
-      }[] = [];
-      const columnsByCanonical = new Map<string, string[]>();
-      for (const column of dataset.columns) {
-        const choice = choiceByColumn.get(column);
-        const canonicalId = await this.resolveCanonicalChoice(
-          tx,
-          dataset.surveyId,
-          choice,
-        );
-        resolved.push({
-          column,
-          canonicalId,
-          missingCodes: normalizeMissingCodes(choice?.missingCodes),
-          dataType: choice?.dataType,
+    // Todo se lee y se escribe en lotes: con una consulta por columna, guardar 500 columnas
+    // tardaba lo mismo aunque solo cambiaran 4.
+    await this.prisma.$transaction(
+      async (tx) => {
+        const canonicals = await tx.harmonizerCanonicalVariable.findMany({
+          where: { surveyId: dataset.surveyId },
+          select: { id: true, name: true, description: true, dataType: true },
         });
-        if (canonicalId !== null) {
-          const columns = columnsByCanonical.get(canonicalId) ?? [];
-          columns.push(column);
-          columnsByCanonical.set(canonicalId, columns);
+        const byId = new Map(canonicals.map((c) => [c.id, c]));
+        const byName = new Map(canonicals.map((c) => [c.name, c]));
+
+        // Las canónicas nuevas se crean de una vez. Su descripción es la del envío o, si no
+        // viene, la del diccionario de la edición.
+        const toCreate = new Map<string, string | null>();
+        for (const column of dataset.columns) {
+          const choice = choiceByColumn.get(column);
+          if (choice?.choice !== NEW_CANONICAL) continue;
+          const name = choice.newName?.trim() ?? '';
+          if (!name || byName.has(name) || toCreate.has(name)) continue;
+          toCreate.set(
+            name,
+            choice.newDescription?.trim() || columnCodebook.get(column)?.label || null,
+          );
         }
-      }
-
-      // La vista armonizada tiene una sola columna por canónica: si dos
-      // columnas del archivo apuntan a la misma, una sobrescribiría a la otra.
-      const collisions = [...columnsByCanonical.values()].filter(
-        (columns) => columns.length > 1,
-      );
-      if (collisions.length > 0) {
-        throw new ConflictException({
-          code: 'canonical_variable_collision',
-          message: `Each canonical variable can come from only one column per edition. These columns share a variable: ${collisions
-            .map((columns) => columns.join(', '))
-            .join('; ')}.`,
-          params: { groups: collisions },
-        });
-      }
-
-      for (const { column, canonicalId, missingCodes } of resolved) {
-        const existing = await tx.harmonizerMapping.findUnique({
-          where: {
-            datasetId_sourceColumn: { datasetId, sourceColumn: column },
-          },
-        });
-
-        if (canonicalId === null) {
-          if (existing)
-            await tx.harmonizerMapping.delete({ where: { id: existing.id } });
-        } else if (existing) {
-          if (
-            existing.canonicalVariableId !== canonicalId ||
-            existing.missingCodes.join('\u0000') !== missingCodes.join('\u0000')
-          ) {
-            await tx.harmonizerMapping.update({
-              where: { id: existing.id },
-              data: { canonicalVariableId: canonicalId, missingCodes },
-            });
+        if (toCreate.size > 0) {
+          const created = await tx.harmonizerCanonicalVariable.createManyAndReturn({
+            data: [...toCreate].map(([name, description]) => ({
+              surveyId: dataset.surveyId,
+              name,
+              description,
+            })),
+            select: { id: true, name: true, description: true, dataType: true },
+          });
+          for (const c of created) {
+            byId.set(c.id, c);
+            byName.set(c.name, c);
           }
-        } else {
-          await tx.harmonizerMapping.create({
-            data: {
-              datasetId,
-              sourceColumn: column,
-              canonicalVariableId: canonicalId,
-              missingCodes,
-            },
+        }
+
+        const resolved: {
+          column: string;
+          canonicalId: string | null;
+          missingCodes: string[];
+          dataType: ValueType | undefined;
+        }[] = [];
+        const columnsByCanonical = new Map<string, string[]>();
+        for (const column of dataset.columns) {
+          const choice = choiceByColumn.get(column);
+          let canonicalId: string | null = null;
+          if (choice?.choice === NEW_CANONICAL) {
+            const name = choice.newName?.trim() ?? '';
+            canonicalId = name ? (byName.get(name)?.id ?? null) : null;
+          } else if (choice?.choice.startsWith(CANONICAL_PREFIX)) {
+            const id = choice.choice.slice(CANONICAL_PREFIX.length);
+            if (!byId.has(id)) {
+              throw new BadRequestException({
+                code: 'canonical_variable_not_found',
+                message: `Variable with id "${id}" does not belong to this survey.`,
+                params: { id },
+              });
+            }
+            canonicalId = id;
+          }
+          resolved.push({
+            column,
+            canonicalId,
+            missingCodes: normalizeMissingCodes(choice?.missingCodes),
+            dataType: choice?.dataType,
+          });
+          if (canonicalId !== null) {
+            const columns = columnsByCanonical.get(canonicalId) ?? [];
+            columns.push(column);
+            columnsByCanonical.set(canonicalId, columns);
+          }
+        }
+
+        // La vista armonizada tiene una sola columna por canónica: si dos
+        // columnas del archivo apuntan a la misma, una sobrescribiría a la otra.
+        const collisions = [...columnsByCanonical.values()].filter(
+          (columns) => columns.length > 1,
+        );
+        if (collisions.length > 0) {
+          throw new ConflictException({
+            code: 'canonical_variable_collision',
+            message: `Each canonical variable can come from only one column per edition. These columns share a variable: ${collisions
+              .map((columns) => columns.join(', '))
+              .join('; ')}.`,
+            params: { groups: collisions },
           });
         }
-      }
 
-      // Guardar el tipo lo confirma para la variable canónica en todas las ediciones.
-      for (const { canonicalId, dataType } of resolved) {
-        if (canonicalId === null || dataType === undefined) continue;
-        await tx.harmonizerCanonicalVariable.update({
-          where: { id: canonicalId },
-          data: { dataType },
-        });
-      }
-    });
+        const toDelete: string[] = [];
+        const toInsert: Prisma.HarmonizerMappingCreateManyInput[] = [];
+        for (const { column, canonicalId, missingCodes } of resolved) {
+          const existing = savedByColumn.get(column);
+          if (canonicalId === null) {
+            if (existing) toDelete.push(existing.id);
+          } else if (!existing) {
+            toInsert.push({ datasetId, sourceColumn: column, canonicalVariableId: canonicalId, missingCodes });
+          } else if (existing.canonicalVariableId !== canonicalId) {
+            // La recodificación es de la variable anterior: con otra variable no aplica.
+            await tx.harmonizerMapping.update({
+              where: { id: existing.id },
+              data: { canonicalVariableId: canonicalId, missingCodes, valueMap: {} },
+            });
+          } else if (existing.missingCodes.join('\u0000') !== missingCodes.join('\u0000')) {
+            await tx.harmonizerMapping.update({
+              where: { id: existing.id },
+              data: { missingCodes },
+            });
+          }
+        }
+        if (toDelete.length > 0) {
+          await tx.harmonizerMapping.deleteMany({ where: { id: { in: toDelete } } });
+        }
+        if (toInsert.length > 0) {
+          await tx.harmonizerMapping.createMany({ data: toInsert });
+        }
+
+        // Guardar el tipo lo confirma para la variable canónica en todas las ediciones. Una
+        // canónica sin descripción toma la del diccionario de la columna que la mapea.
+        const updates = new Map<string, Prisma.HarmonizerCanonicalVariableUpdateInput>();
+        for (const { column, canonicalId, dataType } of resolved) {
+          if (canonicalId === null) continue;
+          const canonical = byId.get(canonicalId)!;
+          const data = updates.get(canonicalId) ?? {};
+          if (dataType !== undefined && canonical.dataType !== dataType) data.dataType = dataType;
+          const label = columnCodebook.get(column)?.label;
+          if (!canonical.description && label) data.description = label;
+          if (Object.keys(data).length > 0) updates.set(canonicalId, data);
+        }
+        for (const [id, data] of updates) {
+          await tx.harmonizerCanonicalVariable.update({ where: { id }, data });
+        }
+      },
+      { timeout: 60_000 },
+    );
 
     return { ok: true, datasetId };
   }
@@ -1240,8 +2116,12 @@ export class HarmonizerService implements OnApplicationBootstrap {
    * porque el tipo es uno solo para la variable.
    */
   private async assertValueTypes(
-    dataset: { id: string; name: string; surveyId: string; columns: string[] },
+    dataset: { id: string; name: string; surveyId: string; columns: string[]; rowCount: number },
     choiceByColumn: Map<string, MappingChoiceDto>,
+    savedByColumn: Map<
+      string,
+      { canonicalVariableId: string; missingCodes: string[]; valueMap: Prisma.JsonValue }
+    >,
   ): Promise<void> {
     const numeric = dataset.columns
       .map((column) => choiceByColumn.get(column))
@@ -1254,22 +2134,6 @@ export class HarmonizerService implements OnApplicationBootstrap {
       );
     if (numeric.length === 0) return;
 
-    const rows = await this.readRawRows(dataset);
-    for (const choice of numeric) {
-      const codes = new Set(normalizeMissingCodes(choice.missingCodes));
-      const bad = valuesNotFitting(
-        sourceColumnValues(rows, choice.column, codes),
-        choice.dataType,
-      );
-      if (bad.length > 0) {
-        throw new BadRequestException({
-          code: 'value_type_mismatch',
-          message: `Column "${choice.column}" has values that are not ${VALUE_TYPE_LABEL[choice.dataType]}: ${quoteList(bad)}.`,
-          params: { source: 'column', column: choice.column, expectedType: choice.dataType, values: bad },
-        });
-      }
-    }
-
     const canonicals = await this.prisma.harmonizerCanonicalVariable.findMany({
       where: {
         surveyId: dataset.surveyId,
@@ -1281,13 +2145,61 @@ export class HarmonizerService implements OnApplicationBootstrap {
       },
       select: { id: true, name: true, dataType: true },
     });
-    const wanted = new Map<string, ValueType>();
-    for (const c of numeric) {
-      const canonical = canonicals.find((cv) =>
+    const canonicalOf = (c: MappingChoiceDto) =>
+      canonicals.find((cv) =>
         c.choice === NEW_CANONICAL
           ? cv.name === c.newName?.trim()
           : cv.id === c.choice.slice(CANONICAL_PREFIX.length),
       );
+
+    // Una columna que ya estaba guardada con la misma variable, los mismos códigos y el tipo
+    // ya confirmado se validó al guardarla y sus datos no cambian: no se vuelve a leer.
+    const changed = numeric.filter((choice) => {
+      const saved = savedByColumn.get(choice.column);
+      const canonical = canonicalOf(choice);
+      return !(
+        saved &&
+        canonical &&
+        saved.canonicalVariableId === canonical.id &&
+        canonical.dataType === choice.dataType &&
+        saved.missingCodes.join('\u0000') ===
+          normalizeMissingCodes(choice.missingCodes).join('\u0000')
+      );
+    });
+    if (changed.length > 0) {
+      const rows = await this.readRawColumns(
+        dataset,
+        changed.map((c) => c.column),
+      );
+      for (const choice of changed) {
+        const codes = new Set(normalizeMissingCodes(choice.missingCodes));
+        // La recodificación guardada sigue aplicando si la columna mantiene su variable.
+        const saved = savedByColumn.get(choice.column);
+        const keepsVariable =
+          saved !== undefined &&
+          choice.choice === `${CANONICAL_PREFIX}${saved.canonicalVariableId}`;
+        const bad = valuesNotFitting(
+          sourceColumnValues(
+            rows,
+            choice.column,
+            codes,
+            keepsVariable ? toValueMap(saved.valueMap) : undefined,
+          ),
+          choice.dataType,
+        );
+        if (bad.length > 0) {
+          throw new BadRequestException({
+            code: 'value_type_mismatch',
+            message: `Column "${choice.column}" has values that are not ${VALUE_TYPE_LABEL[choice.dataType]}: ${quoteList(bad)}.`,
+            params: { source: 'column', column: choice.column, expectedType: choice.dataType, values: bad },
+          });
+        }
+      }
+    }
+
+    const wanted = new Map<string, ValueType>();
+    for (const c of numeric) {
+      const canonical = canonicalOf(c);
       if (canonical && canonical.dataType !== c.dataType)
         wanted.set(canonical.id, c.dataType);
     }
@@ -1299,21 +2211,21 @@ export class HarmonizerService implements OnApplicationBootstrap {
         datasetId: { not: dataset.id },
       },
       include: {
-        dataset: { select: { id: true, name: true, columns: true } },
+        dataset: { select: { id: true, name: true, columns: true, rowCount: true } },
         canonicalVariable: { select: { name: true } },
       },
       orderBy: { dataset: { year: 'asc' } },
     });
-    const rowsByDataset = new Map<string, RawData[]>();
     for (const m of others) {
-      let otherRows = rowsByDataset.get(m.datasetId);
-      if (!otherRows) {
-        otherRows = await this.readRawRows(m.dataset);
-        rowsByDataset.set(m.datasetId, otherRows);
-      }
+      const otherRows = await this.readRawColumns(m.dataset, [m.sourceColumn]);
       const type = wanted.get(m.canonicalVariableId)!;
       const bad = valuesNotFitting(
-        sourceColumnValues(otherRows, m.sourceColumn, new Set(m.missingCodes)),
+        sourceColumnValues(
+          otherRows,
+          m.sourceColumn,
+          new Set(m.missingCodes),
+          toValueMap(m.valueMap),
+        ),
         type,
       );
       if (bad.length > 0) {
@@ -1333,42 +2245,22 @@ export class HarmonizerService implements OnApplicationBootstrap {
     }
   }
 
-  private async resolveCanonicalChoice(
-    tx: Prisma.TransactionClient,
-    surveyId: string,
-    choice: MappingChoiceDto | undefined,
-  ): Promise<string | null> {
-    if (!choice) return null;
-
-    if (choice.choice === NEW_CANONICAL) {
-      const name = choice.newName?.trim() ?? '';
-      if (!name) return null;
-      const existing = await tx.harmonizerCanonicalVariable.findUnique({
-        where: { surveyId_name: { surveyId, name } },
-      });
-      if (existing) return existing.id;
-      const created = await tx.harmonizerCanonicalVariable.create({
-        data: { surveyId, name },
-      });
-      return created.id;
-    }
-
-    if (choice.choice.startsWith(CANONICAL_PREFIX)) {
-      const id = choice.choice.slice(CANONICAL_PREFIX.length);
-      const canonical = await tx.harmonizerCanonicalVariable.findFirst({
-        where: { id, surveyId },
-      });
-      if (!canonical) {
-        throw new BadRequestException({
-          code: 'canonical_variable_not_found',
-          message: `Variable with id "${id}" does not belong to this survey.`,
-          params: { id },
-        });
-      }
-      return canonical.id;
-    }
-
-    return null;
+  /** Todas las filas de una edición, pero solo con las columnas pedidas (validación de tipos). */
+  private async readRawColumns(
+    dataset: { id: string; columns: string[]; rowCount: number },
+    columns: string[],
+  ): Promise<RawData[]> {
+    const wanted = columns.filter((c) => dataset.columns.includes(c));
+    if (wanted.length === 0 || dataset.rowCount === 0) return [];
+    const rows = await this.analysisService.readParquetSlice(
+      await this.rawPath(dataset),
+      wanted.map((c) => `c${dataset.columns.indexOf(c)}`),
+      0,
+      dataset.rowCount,
+    );
+    return rows.map((values) =>
+      Object.fromEntries(wanted.map((c, i) => [c, String(values[i] ?? '')])),
+    );
   }
 
   /** Edición con todas sus filas (descargas y validación de tipos). */
@@ -1566,10 +2458,28 @@ export class HarmonizerService implements OnApplicationBootstrap {
     }
     const view = buildSurveyView(editions, wanted);
 
+    // Variables de la vista cuyos códigos difieren entre ediciones y nadie ha revisado (SDI-50).
+    const wantedVariables = await this.prisma.harmonizerCanonicalVariable.findMany({
+      where: { surveyId, name: { in: wanted } },
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true, reviewedSignature: true },
+    });
+    const comparisons = await this.variableComparisons(
+      surveyId,
+      wantedVariables.map((v) => v.id),
+    );
+    const codeWarnings = wantedVariables.flatMap((v) => {
+      const summary = this.comparisonSummary(comparisons.get(v.id)?.comparison, v.reviewedSignature);
+      return summary.status === 'warning'
+        ? [{ id: v.id, name: v.name, issueCount: summary.issueCount }]
+        : [];
+    });
+
     return {
       survey: { id: survey.id, name: survey.name },
       headers: view.headers,
       rows: view.rows,
+      codeWarnings,
       total: view.headers.length > 0 ? total : 0,
       limit: page.limit,
       offset: page.offset,

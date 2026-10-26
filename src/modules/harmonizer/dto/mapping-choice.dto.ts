@@ -13,6 +13,11 @@ export class MappingChoiceDto {
   @IsString({ message: 'newName must be a string.' })
   newName?: string;
 
+  /** Descripción de la canónica que crea `__new__`. Sin ella se usa la del diccionario, si hay. */
+  @IsOptional()
+  @IsString({ message: 'newDescription must be a string.' })
+  newDescription?: string;
+
   /** Tipo de la variable canónica. Si viene, se valida contra los valores y queda confirmado. */
   @IsOptional()
   @IsIn(VALUE_TYPES, {

@@ -20,12 +20,21 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../../shared/guards/jwt-auth.guard.js';
-import { HarmonizerService, type ExportFile } from './harmonizer.service.js';
+import { CurrentUser } from '../../shared/decorators/current-user.decorator.js';
+import type { AuthenticatedUser } from '../auth/jwt-payload.interface.js';
+import {
+  HarmonizerService,
+  MAX_CODEBOOK_BYTES,
+  type ExportFile,
+} from './harmonizer.service.js';
 import { CreateSurveyDto } from './dto/create-survey.dto.js';
 import { UpdateSurveyDto } from './dto/update-survey.dto.js';
 import { UploadDatasetDto } from './dto/upload-dataset.dto.js';
 import { SaveMappingDto } from './dto/save-mapping.dto.js';
 import { RenameCanonicalVariableDto } from './dto/rename-canonical-variable.dto.js';
+import { CreateCodebookDto } from './dto/create-codebook.dto.js';
+import { SetDatasetCodebookDto } from './dto/set-dataset-codebook.dto.js';
+import { SaveRecodingDto } from './dto/save-recoding.dto.js';
 
 const MAX_CSV_BYTES = 200 * 1024 * 1024;
 
@@ -105,6 +114,83 @@ export class HarmonizerController {
     return this.harmonizerService.removeCanonicalVariable(surveyId, variableId);
   }
 
+  @Get('surveys/:surveyId/variables/:variableId/comparison')
+  variableComparison(
+    @Param('surveyId') surveyId: string,
+    @Param('variableId') variableId: string,
+  ) {
+    return this.harmonizerService.getVariableComparison(surveyId, variableId);
+  }
+
+  @Post('surveys/:surveyId/variables/:variableId/review')
+  reviewVariable(
+    @Param('surveyId') surveyId: string,
+    @Param('variableId') variableId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.harmonizerService.reviewVariable(surveyId, variableId, user.email);
+  }
+
+  @Delete('surveys/:surveyId/variables/:variableId/review')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  clearVariableReview(
+    @Param('surveyId') surveyId: string,
+    @Param('variableId') variableId: string,
+  ) {
+    return this.harmonizerService.clearVariableReview(surveyId, variableId);
+  }
+
+  @Put('surveys/:surveyId/variables/:variableId/recoding')
+  saveRecoding(
+    @Param('surveyId') surveyId: string,
+    @Param('variableId') variableId: string,
+    @Body() dto: SaveRecodingDto,
+  ) {
+    return this.harmonizerService.saveRecoding(surveyId, variableId, dto);
+  }
+
+  @Get('surveys/:surveyId/catalog.csv')
+  async catalog(@Param('surveyId') surveyId: string, @Res() res: Response) {
+    this.sendFile(res, await this.harmonizerService.exportCatalog(surveyId));
+  }
+
+  @Get('surveys/:surveyId/codebooks')
+  codebooks(@Param('surveyId') surveyId: string) {
+    return this.harmonizerService.listCodebooks(surveyId);
+  }
+
+  @Post('surveys/:surveyId/codebooks')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: MAX_CODEBOOK_BYTES },
+    }),
+  )
+  createCodebook(
+    @Param('surveyId') surveyId: string,
+    @Body() dto: CreateCodebookDto,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException({
+        code: 'file_required',
+        message: 'Missing the dictionary file (field "file").',
+      });
+    }
+    return this.harmonizerService.createCodebook(surveyId, dto.name, file);
+  }
+
+  @Get('codebooks/:codebookId')
+  codebook(@Param('codebookId') codebookId: string) {
+    return this.harmonizerService.getCodebook(codebookId);
+  }
+
+  @Delete('codebooks/:codebookId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  removeCodebook(@Param('codebookId') codebookId: string) {
+    return this.harmonizerService.removeCodebook(codebookId);
+  }
+
   @Get('surveys/:surveyId/harmonized')
   surveyHarmonized(
     @Param('surveyId') surveyId: string,
@@ -155,6 +241,19 @@ export class HarmonizerController {
   @Get('datasets/:datasetId/mapping')
   mapping(@Param('datasetId') datasetId: string) {
     return this.harmonizerService.getMapping(datasetId);
+  }
+
+  @Get('datasets/:datasetId/mapping/saved')
+  savedMapping(@Param('datasetId') datasetId: string) {
+    return this.harmonizerService.getSavedMapping(datasetId);
+  }
+
+  @Put('datasets/:datasetId/codebook')
+  setDatasetCodebook(
+    @Param('datasetId') datasetId: string,
+    @Body() dto: SetDatasetCodebookDto,
+  ) {
+    return this.harmonizerService.setDatasetCodebook(datasetId, dto);
   }
 
   @Put('datasets/:datasetId/mapping')
