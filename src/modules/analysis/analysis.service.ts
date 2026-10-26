@@ -256,6 +256,47 @@ export class AnalysisService {
     }
   }
 
+  /**
+   * Valores distintos de cada columna (recortados) con su frecuencia, del más frecuente al
+   * menos y, en un empate, en orden alfabético. Devuelve como mucho `limit` valores por
+   * columna y avisa con `capped` si hay más. Las celdas vacías no son valores: se cuentan en
+   * `empty`. Lo usa el armonizador para comparar los códigos de una variable entre ediciones.
+   */
+  async columnValueCounts(
+    parquetPath: string,
+    columns: string[],
+    limit: number,
+  ): Promise<{ values: { value: string; count: number }[]; capped: boolean; empty: number }[]> {
+    if (columns.length === 0) return [];
+    const max = Math.max(Math.trunc(limit), 1);
+    const trimmed = (c: string) => `coalesce(trim(${quoteIdent(c)}), '')`;
+    try {
+      return await this.withDataView(parquetPath, async (connection) => {
+        const empties = (
+          await connection.runAndReadAll(
+            `SELECT ${columns.map((c) => `count(*) FILTER (WHERE ${trimmed(c)} = '')::INTEGER`).join(', ')} FROM data`,
+          )
+        ).getRowsJson()[0] as number[];
+        const out = [];
+        for (const [i, column] of columns.entries()) {
+          const rows = (
+            await connection.runAndReadAll(
+              `SELECT v, count(*)::INTEGER AS n FROM (SELECT ${trimmed(column)} AS v FROM data) WHERE v <> '' GROUP BY v ORDER BY n DESC, v LIMIT ${max + 1}`,
+            )
+          ).getRowsJson() as [string, number][];
+          out.push({
+            values: rows.slice(0, max).map(([value, count]) => ({ value, count: Number(count) })),
+            capped: rows.length > max,
+            empty: Number(empties[i]),
+          });
+        }
+        return out;
+      });
+    } catch (err) {
+      throw safeDuckDbError(err, [parquetPath], 'parquet_read_failed');
+    }
+  }
+
   async writeRecipeResult(
     parquetPath: string,
     recipe: Recipe,

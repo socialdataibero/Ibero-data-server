@@ -207,24 +207,31 @@ model HarmonizerSurvey {
 
   datasets           HarmonizerDataset[]
   canonicalVariables HarmonizerCanonicalVariable[]
+  codebooks          HarmonizerCodebook[]
 
   @@map("harmonizer_surveys")
 }
 
 /// Una edición concreta de la encuesta (el CSV subido para un año).
 model HarmonizerDataset {
-  id        String   @id @default(uuid())
-  surveyId  String
-  name      String
-  year      Int
+  id            String   @id @default(uuid())
+  surveyId      String
+  name          String
+  year          Int
   /// Encabezados del CSV en su orden original. Las columnas del Parquet crudo
   /// son posicionales (`c0`, `c1`, …): sus nombres reales salen de aquí.
-  columns   String[] @default([])
-  rowCount  Int      @default(0)
-  createdAt DateTime @default(now())
+  columns       String[] @default([])
+  rowCount      Int      @default(0)
+  createdAt     DateTime @default(now())
+  /// Diccionario de variables que describe este archivo, y la tabla (hoja) de él
+  /// que le corresponde. Borrar el diccionario deja la edición sin diccionario.
+  codebookId    String?
+  codebookTable String?
 
-  survey   HarmonizerSurvey    @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  survey   HarmonizerSurvey          @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  codebook HarmonizerCodebook?       @relation(fields: [codebookId], references: [id], onDelete: SetNull)
   mappings HarmonizerMapping[]
+  profiles HarmonizerColumnProfile[]
 
   /// El nombre es `_dataset` en la vista por encuesta: debe ser único en ella.
   @@unique([surveyId, name])
@@ -234,13 +241,22 @@ model HarmonizerDataset {
 /// Nombre canónico, único POR encuesta (no global): `edad` puede existir en
 /// dos encuestas distintas como dos filas.
 model HarmonizerCanonicalVariable {
-  id          String  @id @default(uuid())
-  surveyId    String
-  name        String
-  description String?
+  id                String    @id @default(uuid())
+  surveyId          String
+  name              String
+  description       String?
   /// Tipo en el Parquet exportado: "text", "integer" o "decimal". `null` = sin
   /// confirmar: el export usa el tipo inferido de los valores.
-  dataType    String?
+  dataType          String?
+  /// Catálogo de categorías: `[{ code, label }]` con los códigos comunes a los que
+  /// se recodifican las ediciones. `null` = sin catálogo.
+  categories        Json?
+  /// Revisión de las diferencias de códigos entre ediciones («Revisada, es
+  /// correcto»). Vale mientras las diferencias sigan siendo las mismas: la firma
+  /// es un hash de ellas.
+  reviewedSignature String?
+  reviewedAt        DateTime?
+  reviewedBy        String?
 
   survey   HarmonizerSurvey    @relation(fields: [surveyId], references: [id], onDelete: Cascade)
   mappings HarmonizerMapping[]
@@ -254,13 +270,16 @@ model HarmonizerCanonicalVariable {
 /// Clave (datasetId, sourceColumn): una columna se mapea a UNA canónica por
 /// dataset, y cada dataset puede mapear la misma columna a canónicas distintas.
 model HarmonizerMapping {
-  id                  String @id @default(uuid())
+  id                  String   @id @default(uuid())
   datasetId           String
   sourceColumn        String
   canonicalVariableId String
   /// Códigos de no especificado de esta columna en esta edición (p. ej. 9, 99).
   /// En la vista armonizada se entregan como nulo, igual que las celdas vacías.
-  missingCodes        String[]                    @default([])
+  missingCodes        String[] @default([])
+  /// Recodificación de valores de esta columna: `{ "valor del archivo": "código común" }`.
+  /// Se aplica después de los códigos de no especificado.
+  valueMap            Json     @default("{}")
 
   dataset           HarmonizerDataset           @relation(fields: [datasetId], references: [id], onDelete: Cascade)
   canonicalVariable HarmonizerCanonicalVariable @relation(fields: [canonicalVariableId], references: [id], onDelete: Cascade)
@@ -269,4 +288,70 @@ model HarmonizerMapping {
   @@index([datasetId])
   @@index([canonicalVariableId])
   @@map("harmonizer_mappings")
+}
+
+/// Diccionario de variables (descriptor) de una encuesta: describe las columnas de
+/// uno o varios archivos y sus categorías. Se sube una vez y se aplica a varias
+/// ediciones (por ejemplo, las 32 entidades de un censo).
+model HarmonizerCodebook {
+  id        String   @id @default(uuid())
+  surveyId  String
+  name      String
+  /// Nombre del archivo subido, solo informativo.
+  fileName  String
+  /// "inegi" (descriptor .xls/.xlsx del INEGI) o "csv" (plantilla de la plataforma).
+  format    String
+  createdAt DateTime @default(now())
+
+  survey    HarmonizerSurvey             @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  variables HarmonizerCodebookVariable[]
+  datasets  HarmonizerDataset[]
+
+  @@unique([surveyId, name])
+  @@map("harmonizer_codebooks")
+}
+
+/// Una variable del diccionario. `table` es la hoja del descriptor (VIVIENDAS,
+/// PERSONAS…) o "" en la plantilla CSV sin columna `tabla`.
+model HarmonizerCodebookVariable {
+  id           String  @id @default(uuid())
+  codebookId   String
+  table        String
+  position     Int
+  name         String
+  label        String?
+  question     String?
+  section      String?
+  /// "text", "integer" o "decimal" si el diccionario lo dice; si no, `null`.
+  declaredType String?
+  validRange   String?
+  length       Int?
+  /// `[{ code, label, kind }]`, `kind`: value, missing, blank, range o catalog.
+  categories   Json    @default("[]")
+
+  codebook HarmonizerCodebook @relation(fields: [codebookId], references: [id], onDelete: Cascade)
+
+  @@unique([codebookId, table, name])
+  @@index([codebookId])
+  @@map("harmonizer_codebook_variables")
+}
+
+/// Valores distintos de una columna de una edición con su frecuencia. Los datos de
+/// una edición no cambian, así que se calcula una vez (al subirla o la primera vez
+/// que se necesita) y se reutiliza para comparar códigos entre ediciones.
+model HarmonizerColumnProfile {
+  id             String  @id @default(uuid())
+  datasetId      String
+  sourceColumn   String
+  /// `[{ value, count }]`, valores recortados, del más frecuente al menos.
+  values         Json
+  /// Hay más valores distintos de los guardados.
+  distinctCapped Boolean
+  /// Celdas vacías o solo con espacios.
+  empty          Int
+
+  dataset HarmonizerDataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+
+  @@unique([datasetId, sourceColumn])
+  @@map("harmonizer_column_profiles")
 }

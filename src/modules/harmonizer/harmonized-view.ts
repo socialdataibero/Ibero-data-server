@@ -14,6 +14,8 @@ export interface DatasetEdition {
   columnToCanonical: Map<string, string>;
   /** Códigos de no especificado por columna de origen. */
   missingCodes?: Map<string, Set<string>>;
+  /** Recodificación por columna de origen: valor recortado → código común. */
+  valueMaps?: Map<string, Map<string, string>>;
   rows: RawData[];
   /** Filas del archivo antes de `rows[0]`, cuando `rows` es una página. */
   rowOffset?: number;
@@ -143,22 +145,29 @@ export function columnValues(
   return { top, distinct: counts.size, distinctCapped, empty };
 }
 
-/** Valores de una columna de origen ya con los faltantes como `null`. */
+/** Valores de una columna de origen ya con los faltantes como `null` y recodificados. */
 export function sourceColumnValues(
   rows: RawData[],
   column: string,
   codes: Set<string> | undefined,
+  valueMap?: Map<string, string>,
 ): (string | null)[] {
-  return rows.map((raw) => cellValue(raw[column], codes));
+  return rows.map((raw) => cellValue(raw[column], codes, valueMap));
 }
 
+/**
+ * Valor de una celda en la vista armonizada. Primero los faltantes (vacío o código de no
+ * especificado) pasan a `null`; luego, si la columna está recodificada, el valor recortado se
+ * cambia por su código común. Los valores sin recodificación quedan tal cual.
+ */
 function cellValue(
   value: string | undefined,
   codes: Set<string> | undefined,
+  valueMap?: Map<string, string>,
 ): string | null {
   const trimmed = (value ?? '').trim();
   if (trimmed === '' || codes?.has(trimmed)) return null;
-  return value ?? null;
+  return valueMap?.get(trimmed) ?? value ?? null;
 }
 
 export function buildDatasetView(edition: DatasetEdition): HarmonizedView {
@@ -177,7 +186,11 @@ export function buildDatasetView(edition: DatasetEdition): HarmonizedView {
     for (const col of edition.columns) {
       const canon = edition.columnToCanonical.get(col);
       if (canon)
-        row[canon] = cellValue(raw[col], edition.missingCodes?.get(col));
+        row[canon] = cellValue(
+          raw[col],
+          edition.missingCodes?.get(col),
+          edition.valueMaps?.get(col),
+        );
     }
     return row;
   });

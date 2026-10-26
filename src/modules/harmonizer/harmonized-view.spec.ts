@@ -18,6 +18,7 @@ function edition(
     columns: partial.columns,
     columnToCanonical: partial.columnToCanonical ?? new Map(),
     missingCodes: partial.missingCodes,
+    valueMaps: partial.valueMaps,
     rows: partial.rows,
     rowOffset: partial.rowOffset,
   };
@@ -82,6 +83,23 @@ describe('harmonizer: buildDatasetView', () => {
       { edad: '0', nivel: '00' },
       { edad: null, nivel: null },
     ]);
+  });
+
+  it('la recodificación cambia el valor recortado después de quitar los no especificados', () => {
+    const view = buildDatasetView(
+      edition({
+        columns: ['SEXO'],
+        columnToCanonical: new Map([['SEXO', 'sexo']]),
+        missingCodes: new Map([['SEXO', new Set(['9'])]]),
+        valueMaps: new Map([['SEXO', new Map([['H', '1'], ['M', '3'], ['9', '0']])]]),
+        rows: [{ SEXO: 'H' }, { SEXO: ' M ' }, { SEXO: '9' }, { SEXO: 'X' }, { SEXO: '' }],
+      }),
+    );
+    // `9` es no especificado antes que recodificación; `X` no tiene equivalencia y queda igual.
+    expect(view.rows).toEqual([{ sexo: '1' }, { sexo: '3' }, { sexo: null }, { sexo: 'X' }, { sexo: null }]);
+    expect(
+      sourceColumnValues([{ E: '100 y mas' }, { E: '7' }], 'E', undefined, new Map([['100 y mas', '100']])),
+    ).toEqual(['100', '7']);
   });
 
   it('dos columnas a la misma canónica: un solo header y en la fila gana la última', () => {
