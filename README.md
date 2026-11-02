@@ -47,6 +47,8 @@ cp .env.example .env
 
 Set `JWT_SECRET` in `.env` to a long random string. The server cannot sign tokens while it is empty.
 
+`xlsx` (SheetJS, used to read harmonizer dictionaries) is installed from `vendor/xlsx-0.20.3.tgz`, the official tarball from `cdn.sheetjs.com`. The `xlsx` package on the npm registry stopped at 0.18.5, which has known vulnerabilities (CVE-2023-30533, CVE-2024-22363), and npm 12 refuses to install packages from a URL by default, so the tarball is kept in the repository. To upgrade, download the new tarball from `https://cdn.sheetjs.com/`, put it in `vendor/` and run `npm install --save ./vendor/<file>.tgz`.
+
 ```bash
 npm run start:dev
 ```
@@ -352,6 +354,7 @@ Concepts:
 - **Edition** (called `dataset` in the API): one uploaded CSV for one year.
 - **Canonical variable**: a common name inside one survey. The same name in two surveys gives two separate variables.
 - **Mapping**: "column `edad1` of this edition is canonical `edad`".
+- **Dictionary** (called `codebook` in the API): what each column of a file means and what each of its codes means, for example an INEGI census descriptor. It belongs to a survey and can describe many editions.
 
 Every harmonizer endpoint needs a session, and any logged-in user can read and change every survey. Surveys do not belong to organizations.
 
@@ -366,12 +369,23 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 | `DELETE` | `/harmonizer/datasets/:datasetId` | Delete one edition, its mapping and its stored file. Returns `204`. |
 | `GET` | `/harmonizer/datasets/:datasetId/mapping` | Columns of an edition with saved or suggested mappings. |
 | `PUT` | `/harmonizer/datasets/:datasetId/mapping` | Save the mapping of an edition. |
+| `GET` | `/harmonizer/datasets/:datasetId/mapping/saved` | The saved mapping of an edition, without reading its data (to copy it to another edition). |
+| `PUT` | `/harmonizer/datasets/:datasetId/codebook` | Attach a dictionary to an edition, or detach it. See [Dictionaries](#dictionaries). |
+| `GET` | `/harmonizer/surveys/:surveyId/codebooks` | Dictionaries of a survey. |
+| `POST` | `/harmonizer/surveys/:surveyId/codebooks` | Upload a dictionary (multipart: `file`, `name`). |
+| `GET` | `/harmonizer/codebooks/:codebookId` | One dictionary with all its variables. |
+| `DELETE` | `/harmonizer/codebooks/:codebookId` | Delete a dictionary. Returns `204`. |
 | `GET` | `/harmonizer/datasets/:datasetId/harmonized` | Harmonized view of one edition, one page at a time (`limit`, `offset`). |
 | `GET` | `/harmonizer/datasets/:datasetId/harmonized.csv` | Same, as CSV. Also `.parquet`. |
 | `GET` | `/harmonizer/datasets/:datasetId/original.csv` | The uploaded file, rebuilt from storage with every column. See [Original file](#original-file). |
 | `GET` | `/harmonizer/surveys/:surveyId/variables` | Canonical variables of the survey and where each one is mapped. |
 | `PATCH` | `/harmonizer/surveys/:surveyId/variables/:variableId` | Rename a canonical variable: `{ name }`. |
 | `DELETE` | `/harmonizer/surveys/:surveyId/variables/:variableId` | Delete a canonical variable that no edition maps. Returns `204`. |
+| `GET` | `/harmonizer/surveys/:surveyId/variables/:variableId/comparison` | The codes of a variable in each edition, their differences and a recoding proposal. See [Codes between editions](#codes-between-editions). |
+| `POST` | `/harmonizer/surveys/:surveyId/variables/:variableId/review` | Mark the current differences as reviewed. |
+| `DELETE` | `/harmonizer/surveys/:surveyId/variables/:variableId/review` | Remove the review. Returns `204`. |
+| `PUT` | `/harmonizer/surveys/:surveyId/variables/:variableId/recoding` | Save the catalog of the variable and the recoding of its editions. |
+| `GET` | `/harmonizer/surveys/:surveyId/catalog.csv` | Catalog of categories of every variable that has one. |
 | `GET` | `/harmonizer/surveys/:surveyId/harmonized` | Harmonized view of all editions, one page at a time (`limit`, `offset`). Optional `variables`. |
 | `GET` | `/harmonizer/surveys/:surveyId/harmonized.csv` | Same, as CSV. Also `.parquet`. |
 
@@ -434,7 +448,8 @@ dBase and FoxPro tables (`.dbf`), as INEGI distributes its census microdata, are
 1. **Saved**: the mapping already saved for this edition. No suggestion is shown.
 2. **History** (`suggestionSource: "history"`): a column with exactly the same name was mapped in another edition of the same survey.
 3. **Name** (`suggestionSource: "name"`): a canonical variable matches the column name. Names are compared after removing accents, lowercasing and turning any run of other characters into `_`. An exact match wins. Otherwise the canonical name must appear as a whole part of the column, optionally followed by digits: `edad` matches `edad1` and `edad_jefe`, but not `edades`. Ties go to the longer canonical name.
-4. Otherwise the column is unmapped.
+4. **Description** (`suggestionSource: "description"`): the edition has a dictionary, and the column's description in it equals the description of exactly one canonical variable (after removing accents, lowercasing and collapsing punctuation and spaces). This finds columns renamed between editions, such as `PARENT` (2010) and `PARENTESCO` (2020), both "Parentesco".
+5. Otherwise the column is unmapped.
 
 History and name suggestions never reuse a canonical variable that another column of the same edition already has (saved, or suggested to an earlier column in the header). The column is then left unmapped.
 
@@ -445,19 +460,31 @@ Each column also has `values`, a summary of its values in this edition so they c
 - `distinct` is the number of different values. To bound memory, at most 1,000 different values are counted per column. When a column has more, `distinct` is `1000`, `distinctCapped` is `true`, values first seen after that are left out, and `top` may miss a frequent value that only starts appearing late in the file.
 - It is computed on each request from the stored edition, not saved.
 
+The response also has:
+
+- `codebook`: the dictionary attached to the edition, `{ id, name, table, matchedColumns }`, or `null`.
+- `codebooks`: the survey's dictionaries, `[{ id, name, tables }]`, so the client can offer them.
+- `otherEditions`: the survey's other editions, `[{ id, name, year, mappedColumns }]`, so the client can copy one's saved mapping (see `GET .../mapping/saved` below).
+- `canonicalVariables[].description`.
+- For each column, `codebook`: what the edition's dictionary says about it, or `null` when the edition has no dictionary or the dictionary does not have that column. It is `{ name, label, question, section, declaredType, categories, missingCodes, suggestedType }`. `missingCodes` are the dictionary's "No especificado" codes written as they appear in the data (a code `99` matches a value `099`); a code that does not appear in the data is given as the dictionary writes it. `suggestedType` is `text` when the dictionary says text ("Caracter") or when the variable has two or more coded categories, so codes such as `01` keep their zeros; for a numeric declared type it is `integer` or `decimal` when every value fits, after removing `missingCodes`, and `text` otherwise; with no declared type it is the inferred type.
+
 Suggestions are preselected in the response but are not saved until the client sends `PUT`.
+
+`GET .../mapping/saved` returns `{ dataset, columns }`, where each column is `{ column, canonicalId, canonicalName, missingCodes }`, in header order. It does not read the edition's file.
 
 `PUT .../mapping` takes `{ columns: [{ column, choice, newName?, dataType?, missingCodes? }] }`:
 
 | `choice` | Effect |
 | --- | --- |
 | `cv:<canonicalId>` | Map to that canonical variable. It must belong to the same survey (`400 canonical_variable_not_found`). |
-| `__new__` | Map to the canonical named `newName`. It is created if it does not exist in the survey; the new name must follow the [naming rules](#canonical-variables). A `newName` identical to an existing canonical reuses it. An empty `newName` leaves the column unmapped. |
+| `__new__` | Map to the canonical named `newName`. It is created if it does not exist in the survey; the new name must follow the [naming rules](#canonical-variables). A `newName` identical to an existing canonical reuses it. An empty `newName` leaves the column unmapped. The new canonical's description is `newDescription` or, when it is not sent, the column's description in the edition's dictionary. |
 | anything else | Leave the column unmapped. |
 
 - `PUT` replaces the whole mapping of the edition. Columns that are left out of the request become unmapped.
 - Entries for columns that are not in the edition are ignored.
-- The save runs in one transaction.
+- The save runs in one transaction. Existing mappings and canonicals are read once and only the mappings that change are written, so saving a 500-column file where 4 columns changed costs about the same as a small file (report H-15 / SDI-63).
+- A canonical variable without a description takes the description of the column that maps it in the edition's dictionary.
+- A column that keeps its canonical variable keeps its [recoding](#recoding). A column mapped to another canonical loses it, because the recoding belongs to the old variable.
 - Canonical names are trimmed. A new name that breaks the [naming rules](#canonical-variables) returns `400 canonical_variable_name_invalid`; one that differs only in case from an existing canonical, or from another new name in the same request, returns `409 canonical_variable_name_taken`. The `message` names the column. Both checks run before anything is saved.
 - `missingCodes` lists the values that mean "not specified" in that column of that edition (for example `["9", "99"]`). Codes are trimmed, and empty and repeated codes are dropped. They belong to the mapping, so each edition keeps its own codes, and unmapping the column discards them.
 - Unmapping every column that used a canonical variable does not delete it. See [Canonical variables](#canonical-variables) to rename or delete one.
@@ -494,7 +521,7 @@ Each canonical variable has one type, used for its column in the Parquet export:
 
 - **Inferred.** `inferredType` comes from the column's values in this edition, after the saved missing codes turn into `null`. It is `integer` when every value is a whole number (sign and surrounding spaces allowed), `decimal` when every value is a number and at least one is not whole (`2.5`, `.5`, `1e3`), and `text` otherwise. A value with a leading zero (`01`, a state code) makes the column `text` so the zero is kept, and so does a number too large for a double (`1e309`). So does a whole number of more than 15 digits, which is usually an identifier. A column with no values is `text`.
 - **Confirmed.** `dataType` on a `PUT` entry sets the type of the column's canonical variable, which confirms it. Leaving it out keeps the current type. The type belongs to the variable, so it applies to every edition that maps it. A canonical created before this change, or never sent a `dataType`, has `dataType: null` (not confirmed).
-- **Validation.** For `integer` (a whole number that fits in 64 bits; leading zeros allowed) or `decimal` (a finite number), every non-missing value of the column must fit, using the `missingCodes` of the same request. Otherwise the request returns `400 value_type_mismatch`, its `params` has `source` (`column`, `other_edition` or `confirmed_type`), `expectedType` and up to 5 offending `values`, and nothing is saved. When the request changes the type of an existing canonical, the other editions that map it are checked too, with their own saved codes. Validation reads the stored files before the save transaction starts.
+- **Validation.** For `integer` (a whole number that fits in 64 bits; leading zeros allowed) or `decimal` (a finite number), every non-missing value of the column must fit, using the `missingCodes` of the same request and the column's saved recoding. Otherwise the request returns `400 value_type_mismatch`, its `params` has `source` (`column`, `other_edition`, `confirmed_type` or `recoding`), `expectedType` and up to 5 offending `values`, and nothing is saved. When the request changes the type of an existing canonical, the other editions that map it are checked too, with their own saved codes and recoding. Validation reads only the columns it checks from the stored files, before the save transaction starts. A column already saved with the same canonical, the same codes and the canonical's confirmed type is not read again.
 
 ### Harmonized views
 
@@ -513,6 +540,7 @@ Edition view:
 - Columns are the canonical names of the mapped columns, in header order.
 - An edition with no mappings has no columns and no rows.
 - **Missing values.** A value is `null` when the cell is empty, contains only spaces, or, once trimmed, equals one of the column's `missingCodes`. Every other value, `0` included, is returned exactly as stored. The stored rows are never changed, so editing the codes changes the view right away.
+- **Recoding.** After missing values, a value whose trimmed text is in the column's recoding is replaced by its common code (see [Recoding](#recoding)). Values that are not in the recoding are returned as stored. Exports apply it too, before the Parquet types.
 
 Survey view:
 
@@ -524,6 +552,7 @@ Survey view:
 - A variable that an edition does not have is missing from that edition's rows.
 - Missing values keep the codes of their own edition: a `9` is `null` only in editions where `9` is a missing code for that column.
 - Rows that have none of the selected variables are dropped.
+- The JSON response adds `codeWarnings`: the selected variables whose codes differ between editions and that nobody has reviewed (status `warning` in [Codes between editions](#codes-between-editions)), as `[{ id, name, issueCount }]` in alphabetical order.
 
 Exports:
 
@@ -535,6 +564,78 @@ Exports:
 - Parquet columns take the canonical variable's confirmed type, or the type inferred from the exported values when it is not confirmed (the same rules as `inferredType`, applied to all exported editions together): `text` → `VARCHAR`, `integer` → `BIGINT`, `decimal` → `DOUBLE`. Numbers are converted from the trimmed text. `_dataset` is `VARCHAR`, and `_year` and `_row` are `BIGINT`. Missing values are `NULL`, so they are distinct from any value. This lets analyses sum, average, multiply and compare these columns (before, every column was text and `SUM` failed).
 - If a confirmed numeric variable has a value that does not fit (possible only for an edition saved without `dataType`), the Parquet export returns `409 value_type_mismatch` with the variable and the offending values.
 - Exporting an edition with no mappings as Parquet returns `400 harmonized_view_empty`.
+
+### Dictionaries
+
+A dictionary describes the columns of a file: for each variable, its description, question, section, declared type, valid range and length, and its categories (code and label). With it, the mapping page shows what each column and code means, fills the "No especificado" codes and suggests types, and the [comparison between editions](#codes-between-editions) can tell when a code changed meaning.
+
+Two formats are read, chosen by the file extension (any other returns `400 codebook_format_unsupported`):
+
+- **INEGI descriptor** (`.xls`, `.xlsx`), as INEGI publishes it for the census ("Descriptor_cpv2010.xls", "Descriptor_cpv2020.xlsx"). Each sheet that has a "Mnemónico" header is a table (VIVIENDAS, PERSONAS, MIGRANTES); other sheets ("Modelo de datos") are skipped. The columns are found by their header ("Descripción", "Mnemónico", "Pregunta y categoría", "Tipo", "Rango válido", "Longitud"), so the 2010 layout (no "Tipo") and the 2020 one both work. A row with a mnemonic starts a variable; the rows below it with a text and a code are its categories; a row with only a title is a section (IDENTIFICACIÓN GEOGRÁFICA…); rows with only a number (sums of "Longitud") are skipped. Codes Excel stores as numbers are read as text without `.0` (`99`). A repeated mnemonic in a sheet keeps the first one. "Caracter" is `text` and "Numérico" is `integer`.
+- **CSV template** (`.csv`, UTF-8, `400 csv_not_utf8` otherwise) for other surveys, or for descriptors only published as PDF (census 1990 and 2000). Columns, matched without accents or case: `tabla`, `variable` (required), `descripcion`, `pregunta`, `seccion`, `tipo` (`texto`, `entero` or `decimal`), `codigo`, `etiqueta`, `faltante`. Each row is a variable or one of its categories: the first row of a variable gives its metadata, and each row with `codigo` or `etiqueta` adds a category. `faltante` = `sí` marks the category as "No especificado". `tabla` separates variables of different files; without it every variable is in table `""`.
+
+Each category has a `kind`: `value` (a code), `missing` (its label starts with "No especificado"; or `faltante` = `sí`), `blank` ("Blanco por pase", code `b` or `Nulo`: the question did not apply; in the data it is an empty cell, which is already `null`, so its code is `""`), `range` (a code with `..`, such as `1..130` = "Años cumplidos") or `catalog` (the codes come from an external catalog that the descriptor does not include, such as `Tc_Entidad_2010`).
+
+`POST /harmonizer/surveys/:surveyId/codebooks` takes `file` (at most 20 MB) and `name`:
+
+- `name` is trimmed and required (`400 codebook_name_required`) and unique per survey (`409 codebook_name_taken`). A missing file returns `400 file_required`.
+- A file that cannot be read returns `400 codebook_invalid` with `params.problem`: `unreadable`, `no_dictionary` (no sheet has a "Mnemónico" column), `missing_variable_column` (CSV without `variable`), `bad_type` (with `line` and `value`) or `empty`.
+- Returns the summary: `{ id, surveyId, name, fileName, format, createdAt, tables: [{ name, variableCount }], datasets: [{ id, name, year, table }] }`. `format` is `inegi` or `csv`; `datasets` are the editions that use it.
+
+`GET .../codebooks` returns `{ survey, items }` with one summary per dictionary, by name. `GET /harmonizer/codebooks/:codebookId` returns the summary with each table's `variables` (`{ name, label, question, section, declaredType, validRange, length, categories }`, in file order). `DELETE` deletes it; editions that used it are left without a dictionary, and their mappings and recodings do not change. Unknown dictionaries return `404 codebook_not_found`.
+
+`PUT /harmonizer/datasets/:datasetId/codebook` takes `{ codebookId, table? }`:
+
+- `codebookId: null` detaches the dictionary and returns `{ codebook: null }`.
+- The dictionary must belong to the edition's survey (`404 codebook_not_found`).
+- Without `table`, the table that has most of the edition's columns is used (ties by name). A `table` the dictionary does not have returns `400 codebook_table_not_found` with the `tables` it has. If no column of the edition is in the table, it returns `400 codebook_no_match` and nothing changes.
+- A column is found in the table by its exact name or, if there is none, ignoring case.
+- Returns `{ codebook: { id, name, table, matchedColumns, unmatchedColumns } }`.
+
+The INEGI descriptors list the "No especificado" codes of most variables but not all of them: in the 2010 descriptor, `EDAD` gives `{000..130,999}` as its range without saying that `999` is "No especificado", so it is not proposed and has to be written in the mapping.
+
+### Codes between editions
+
+The harmonizer lines up the names of variables, not their codes. Joining years can mix codes that mean different things (report H-02 / SDI-50): in the census, `CLAVIVP` `2` is "Departamento en edificio" in 2010 and "Casa que comparte terreno" in 2020, and `SERSALUD` `09` is "No se atiende" in 2010 and "Otro lugar" in 2020.
+
+For each canonical variable, the values of each edition that maps it are compared, with the labels of each edition's dictionary and the variable's recoding. The values come from a **profile** of each column: its distinct trimmed values with their counts (the 200 most frequent), and its empty cells. Data never changes after upload, so the profile is computed once with DuckDB, at upload or the first time it is needed, and stored in the database.
+
+Codes are compared without leading zeros when they are numbers (`1`, `01` and `001` are the same code) and labels without accents, case or punctuation. Each edition's "No especificado" codes are left out. These differences are reported (`issues`):
+
+| `kind` | Meaning |
+| --- | --- |
+| `label_conflict` | The same code has different labels in different editions. Needs labels in at least two editions. |
+| `code_conflict` | The same label has different codes in different editions. |
+| `format` | The same code is written differently (`040` and `40`). For a variable that is not categorical, it is reported once, with examples, and only if the variable is exported as text; as a number the difference disappears. |
+| `only_in_some` | A code appears in the data of some editions but not of others. Often correct (a new category, or one nobody chose that year), which is why it can be marked as reviewed. |
+| `not_in_catalog` | With a catalog, a value that was not recoded to one of its codes. |
+
+A variable is **categorical** when it has a catalog, when the dictionary of an edition gives it two or more coded categories, or, without that, when every edition has at most 30 distinct values. Only categorical variables are checked for `label_conflict`, `code_conflict` and `only_in_some`. At most 50 issues of each kind are listed.
+
+Each variable's `status` is `single` (fewer than two editions map it), `ok` (no differences), `warning` (differences nobody reviewed) or `reviewed`.
+
+`GET .../variables` adds to each item `description`, `categories` (its catalog, `[]` if none) and `comparison: { status, issueCount }`.
+
+`GET .../variables/:variableId/comparison` returns:
+
+- `variable`: `{ id, name, description, dataType, categories, reviewedAt, reviewedBy }`.
+- `status`, `categorical` and `issues` (`[{ kind, subject, editions: [{ datasetName, year, codes, label }] }]`; `subject` is the code, or the shared label for `code_conflict`).
+- `editions`: for each mapping, ordered by year and upload time, `{ datasetId, datasetName, year, column, codebookLabel, values, distinctCapped, empty }`. Each value is `{ value, code, label, sourceLabel, count, missing, recoded }`: `value` as in the file, `code` as in the harmonized view, `label` from the catalog when recoded and otherwise from the edition's dictionary, `sourceLabel` from the edition's dictionary.
+- `suggestion`: a proposed recoding, `{ categories, valueMaps: { <datasetId>: { <value>: <code> } } }`. The catalog is the saved one or, without one, the categories of the most recent edition whose dictionary has them (or that edition's values when no edition has a dictionary). Each value of each edition is proposed to the category with the same label, or with a label that starts the same when only one does ("Vivienda en vecindad" → "Vivienda en vecindad o cuartería"), or to the same code written differently (`1` → `01`) when the labels do not contradict it. Anything else is left for the user. Nothing is saved.
+
+**Review.** `POST .../review` stores a signature (a hash) of the current differences, with the time and the reviewer's email, and returns the comparison. While the differences stay the same, the status is `reviewed` and the variable does not appear in `codeWarnings`. When they change (another mapping, other missing codes, another recoding, an edition added or removed), the signature no longer matches and the status goes back to `warning`; going back to the reviewed state restores it. A variable with no differences returns `409 variable_has_no_differences`. `DELETE .../review` removes the review.
+
+### Recoding
+
+`PUT .../variables/:variableId/recoding` takes `{ categories: [{ code, label? }], editions: [{ datasetId, values: [{ from, to }] }] }` and returns the new comparison:
+
+- `categories` is the variable's catalog: the common codes and their labels. `[]` removes it. Codes are trimmed, cannot be empty (`problem: empty_code`) or repeated (`duplicate_code`).
+- Each `editions` entry replaces the recoding of that edition's column; editions that are not sent keep theirs. The edition must map the variable (`edition_not_mapped`). Each `from` is a value as it appears in the file (trimmed) and `to` its common code. Entries with an empty `from` or `to` are ignored, a `from` cannot appear twice (`duplicate_value`), and with a catalog every `to` must be one of its codes (`target_not_in_catalog`). These errors are `400 recoding_invalid` with `params.problem`.
+- A value recoded to itself (`05` → `05`) is kept: it says the value was checked against the catalog, so its label is the catalog's and it is no longer compared with the label of its own dictionary.
+- If the variable's type is confirmed as `integer` or `decimal`, the recoded values must fit it (`400 value_type_mismatch` with `source: "recoding"`), so a recoding can also turn `100 y mas` into `100`.
+- The recoding is applied in the views and exports after the missing codes and before the type.
+
+`GET /harmonizer/surveys/:surveyId/catalog.csv` returns every catalog of the survey as CSV (UTF-8 with BOM, formula neutralization as in the exports): `variable, descripcion, codigo, etiqueta`, one row per category, variables in alphabetical order.
 
 ### Original file
 
@@ -556,6 +657,8 @@ Files are written to `storage/` under the directory the server is started from. 
 | `storage/<datasetId>/<uuid>-<filename>` | Uploaded resources. Unsafe characters in the name become `_`. |
 | `storage/analyses/<analysisId>.parquet` | Analysis results. |
 | `storage/harmonizer/<datasetId>.parquet` | Rows of a harmonizer edition, all text, in file order. Columns are positional (`c0`, `c1`, …); their names are the edition's stored headers. Uploads are never empty now (see [Upload](#upload)), but an edition uploaded from an empty file before that rule (report H-08) has no headers and no Parquet, and reads as 0 rows. |
+
+Column profiles (see [Codes between editions](#codes-between-editions)) and dictionaries are stored in the database, not in `storage/`. Deleting an edition deletes its profiles.
 
 Deleting through the API removes the related files. A file deleted by hand makes its resource return `404 resource_file_missing`, and makes the views and exports of its harmonizer edition return `404 harmonizer_dataset_file_missing`.
 
