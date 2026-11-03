@@ -1,5 +1,8 @@
 import { NotFoundException } from '@nestjs/common';
 import { DatasetsService } from './datasets.service.js';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import { UpdateDatasetDto } from './dto/update-dataset.dto.js';
 
 function makeDeps() {
   const datasets = new Map<string, any>();
@@ -25,6 +28,7 @@ function makeDeps() {
         }
         return { count };
       }),
+      update: vi.fn(async ({ where, data }: any) => Object.assign(datasets.get(where.id), data)),
       delete: vi.fn(async ({ where }: any) => {
         const d = datasets.get(where.id);
         datasets.delete(where.id);
@@ -131,5 +135,31 @@ describe('DatasetsService lists: who sees which datasets (SDI-87)', () => {
     const { service, where } = listWhere();
     await service.findAllGlobal({ id: 'admin', isSysadmin: true } as any);
     expect(where()).toEqual({});
+  });
+});
+
+describe('DatasetsService.update (SDI-132)', () => {
+  it('changes the metadata of a dataset in the organization, e.g. private to public', async () => {
+    const deps = makeDeps();
+    deps.addDataset({ id: 'd1', organizationId: 'org-1', title: 'Old', visibility: 'PRIVATE' });
+    const updated = await makeService(deps).update('org-1', 'd1', { title: 'New', visibility: 'PUBLIC' });
+    expect(updated).toMatchObject({ title: 'New', visibility: 'PUBLIC' });
+  });
+
+  it('answers 404 for a dataset of another organization and changes nothing', async () => {
+    const deps = makeDeps();
+    deps.addDataset({ id: 'd1', organizationId: 'org-1', title: 'Old' });
+    await expect(makeService(deps).update('org-2', 'd1', { title: 'New' })).rejects.toBeInstanceOf(NotFoundException);
+    expect(deps.prisma.dataset.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('UpdateDatasetDto', () => {
+  const check = async (body: object) =>
+    (await validate(plainToInstance(UpdateDatasetDto, body))).map((e) => e.property);
+
+  it('clears optional fields with null but never the title, visibility or tags', async () => {
+    expect(await check({ description: null, sourceUrl: null, year: null })).toEqual([]);
+    expect(await check({ title: null, visibility: null, tags: null })).toEqual(['title', 'visibility', 'tags']);
   });
 });

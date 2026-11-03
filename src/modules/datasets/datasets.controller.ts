@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { OrgRole } from '@prisma/client';
 import { JwtAuthGuard } from '../../shared/guards/jwt-auth.guard.js';
 import { OrgRolesGuard } from '../../shared/guards/org-roles.guard.js';
@@ -8,6 +8,7 @@ import { CurrentUser } from '../../shared/decorators/current-user.decorator.js';
 import type { AuthenticatedUser } from '../auth/jwt-payload.interface.js';
 import { DatasetsService, type DatasetSort } from './datasets.service.js';
 import { CreateDatasetDto } from './dto/create-dataset.dto.js';
+import { UpdateDatasetDto } from './dto/update-dataset.dto.js';
 
 function parseTerms(value: string | string[] | undefined): string[] {
   if (!value) return [];
@@ -51,6 +52,16 @@ export class DatasetsController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.datasetsService.create(organizationId, dto, user.id);
+  }
+
+  @Patch(':datasetId')
+  @OrgRoles(OrgRole.ADMIN, OrgRole.EDITOR)
+  update(
+    @Param('organizationId') organizationId: string,
+    @Param('datasetId') datasetId: string,
+    @Body() dto: UpdateDatasetDto,
+  ) {
+    return this.datasetsService.update(organizationId, datasetId, dto);
   }
 
   @Delete(':datasetId')

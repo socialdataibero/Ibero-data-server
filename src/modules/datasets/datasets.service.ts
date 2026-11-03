@@ -4,6 +4,7 @@ import type { AuthenticatedUser } from '../auth/jwt-payload.interface.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { LocalStorageService } from '../storage/local-storage.service.js';
 import type { CreateDatasetDto } from './dto/create-dataset.dto.js';
+import type { UpdateDatasetDto } from './dto/update-dataset.dto.js';
 
 export type DatasetSort = 'recent' | 'title-asc' | 'title-desc' | 'year-desc' | 'year-asc';
 
@@ -173,6 +174,12 @@ export class DatasetsService {
     }
 
     return created;
+  }
+
+  async update(organizationId: string, datasetId: string, dto: UpdateDatasetDto) {
+    await this.findOne(organizationId, datasetId);
+    await this.prisma.dataset.update({ where: { id: datasetId }, data: dto });
+    return this.findOne(organizationId, datasetId);
   }
 
   async remove(organizationId: string, datasetId: string): Promise<void> {
