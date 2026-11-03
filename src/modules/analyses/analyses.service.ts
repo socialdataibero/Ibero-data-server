@@ -9,9 +9,9 @@ import { stepsToInternal, roundRows, type Recipe, type Step } from '../analysis/
 import type { ColumnInfo } from '../analysis/analysis.service.js';
 import type { PreviewAnalysisDto } from './dto/preview-analysis.dto.js';
 import type { CreateAnalysisDto } from './dto/create-analysis.dto.js';
-import type { SaveVizcanvasAnalysisDto } from './dto/save-vizcanvas-analysis.dto.js';
+import type { SaveVistraceAnalysisDto } from './dto/save-vistrace-analysis.dto.js';
 
-export interface VizcanvasRecipe {
+export interface VistraceRecipe {
   version: number;
   resultNodeId: string;
   state: Record<string, unknown>;
@@ -137,35 +137,35 @@ export class AnalysesService {
   }
 
   private invalidRecipe(message: string): never {
-    throw new BadRequestException({ code: 'vizcanvas_recipe_invalid', message });
+    throw new BadRequestException({ code: 'vistrace_recipe_invalid', message });
   }
 
-  private async parseVizcanvasRecipe(datasetId: string, raw: string): Promise<VizcanvasRecipe> {
+  private async parseVistraceRecipe(datasetId: string, raw: string): Promise<VistraceRecipe> {
     let parsed: unknown;
     try {
       parsed = JSON.parse(raw);
     } catch {
-      this.invalidRecipe('The VizCanvas recipe is not valid JSON.');
+      this.invalidRecipe('The vistrace recipe is not valid JSON.');
     }
-    const recipe = parsed as Partial<VizcanvasRecipe>;
+    const recipe = parsed as Partial<VistraceRecipe>;
     const state = recipe?.state as { dag?: { nodes?: Record<string, Record<string, unknown>>; edges?: unknown } } | undefined;
     if (!state || typeof state !== 'object' || !state.dag?.nodes || typeof state.dag.nodes !== 'object' || !Array.isArray(state.dag.edges)) {
-      this.invalidRecipe('The VizCanvas recipe does not contain a canvas.');
+      this.invalidRecipe('The vistrace recipe does not contain a canvas.');
     }
     if (typeof recipe.resultNodeId !== 'string' || !(recipe.resultNodeId in state.dag.nodes)) {
-      this.invalidRecipe('The VizCanvas recipe does not say which node is the result.');
+      this.invalidRecipe('The vistrace recipe does not say which node is the result.');
     }
     const tables = Array.isArray(recipe.tables) ? recipe.tables : [];
     for (const t of tables) {
       if (!t || typeof t.tableName !== 'string' || !TABLE_NAME_RE.test(t.tableName) || typeof t.resourceId !== 'string') {
-        this.invalidRecipe('The VizCanvas recipe has an invalid table.');
+        this.invalidRecipe('The vistrace recipe has an invalid table.');
       }
     }
     const resourceIds = [...new Set(tables.map((t) => t.resourceId))];
     if (resourceIds.length > 0) {
       const found = await this.prisma.resource.count({ where: { id: { in: resourceIds }, datasetId } });
       if (found !== resourceIds.length) {
-        this.invalidRecipe('The VizCanvas recipe uses resources that are not part of this dataset.');
+        this.invalidRecipe('The vistrace recipe uses resources that are not part of this dataset.');
       }
     }
 
@@ -187,7 +187,7 @@ export class AnalysesService {
     if (!file?.buffer || !looksLikeParquet(file.buffer)) {
       throw new BadRequestException({
         code: 'invalid_parquet',
-        message: 'The VizCanvas result is not a valid Parquet file.',
+        message: 'The vistrace result is not a valid Parquet file.',
       });
     }
     return file.buffer;
@@ -225,7 +225,7 @@ export class AnalysesService {
         },
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error while saving the VizCanvas result.';
+      const message = err instanceof Error ? err.message : 'Unknown error while saving the vistrace result.';
       await this.prisma.analysis.update({
         where: { id: analysisId },
         data: { status: 'FAILED', errorMessage: message },
@@ -234,16 +234,16 @@ export class AnalysesService {
     }
   }
 
-  async createFromVizcanvas(
+  async createFromVistrace(
     datasetId: string,
-    dto: SaveVizcanvasAnalysisDto,
+    dto: SaveVistraceAnalysisDto,
     file: { buffer: Buffer } | undefined,
     userId: string,
   ) {
     const buffer = this.assertParquet(file);
     await this.assertSlugAvailable(dto.slug);
     await this.getResourceForDataset(datasetId, dto.sourceResourceId);
-    const recipe = await this.parseVizcanvasRecipe(datasetId, dto.recipe);
+    const recipe = await this.parseVistraceRecipe(datasetId, dto.recipe);
 
     const analysis = await this.prisma.analysis.create({
       data: {
@@ -255,8 +255,8 @@ export class AnalysesService {
         description: dto.description,
         visibility: dto.visibility,
         recipe: [],
-        origin: 'VIZCANVAS',
-        vizcanvasRecipe: recipe as unknown as object,
+        origin: 'VISTRACE',
+        vistraceRecipe: recipe as unknown as object,
         status: 'RUNNING',
         createdById: userId,
       },
@@ -264,23 +264,23 @@ export class AnalysesService {
     return this.persistUploadedResult(analysis.id, buffer);
   }
 
-  async updateFromVizcanvas(
+  async updateFromVistrace(
     datasetId: string,
     analysisId: string,
-    dto: SaveVizcanvasAnalysisDto,
+    dto: SaveVistraceAnalysisDto,
     file: { buffer: Buffer } | undefined,
   ) {
     const existing = await this.findOne(datasetId, analysisId);
-    if (existing.origin !== 'VIZCANVAS') {
+    if (existing.origin !== 'VISTRACE') {
       throw new BadRequestException({
-        code: 'analysis_not_from_vizcanvas',
+        code: 'analysis_not_from_vistrace',
         message: 'This analysis was built with the step builder; save it as a new analysis instead.',
       });
     }
     const buffer = this.assertParquet(file);
     await this.assertSlugAvailable(dto.slug, analysisId);
     await this.getResourceForDataset(datasetId, dto.sourceResourceId);
-    const recipe = await this.parseVizcanvasRecipe(datasetId, dto.recipe);
+    const recipe = await this.parseVistraceRecipe(datasetId, dto.recipe);
 
     await this.prisma.analysis.update({
       where: { id: analysisId },
@@ -291,7 +291,7 @@ export class AnalysesService {
         folder: dto.folder,
         description: dto.description,
         visibility: dto.visibility,
-        vizcanvasRecipe: recipe as unknown as object,
+        vistraceRecipe: recipe as unknown as object,
         status: 'RUNNING',
       },
     });
@@ -374,10 +374,10 @@ export class AnalysesService {
 
   async update(datasetId: string, analysisId: string, dto: CreateAnalysisDto) {
     const existing = await this.findOne(datasetId, analysisId);
-    if (existing.origin === 'VIZCANVAS') {
+    if (existing.origin === 'VISTRACE') {
       throw new BadRequestException({
-        code: 'analysis_from_vizcanvas',
-        message: 'This analysis was built in VizCanvas; open it in VizCanvas to edit it.',
+        code: 'analysis_from_vistrace',
+        message: 'This analysis was built in vistrace; open it in vistrace to edit it.',
       });
     }
 

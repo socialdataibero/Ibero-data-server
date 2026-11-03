@@ -3,9 +3,9 @@ import { DatasetVisibility } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { LocalStorageService } from '../storage/local-storage.service.js';
 import { AnalysisService, type QueryResult } from '../analysis/analysis.service.js';
-import { stepsToInternal, toVizCanvasRecipe, type Step } from '../analysis/recipe.js';
+import { stepsToInternal, toVistraceRecipe, type Step } from '../analysis/recipe.js';
 import { HandoffService } from '../handoff/handoff.service.js';
-import type { VizcanvasRecipe } from '../analyses/analyses.service.js';
+import type { VistraceRecipe } from '../analyses/analyses.service.js';
 import type { AuthenticatedUser } from '../auth/jwt-payload.interface.js';
 
 const DEFAULT_LIMIT = 24;
@@ -216,7 +216,7 @@ export class PublicService {
     return { path: this.storage.resolvePath(resource.storageKey), filename: resource.filename };
   }
 
-  async buildVizCanvasHandoff(slug: string): Promise<{ url: string }> {
+  async buildVistraceHandoff(slug: string): Promise<{ url: string }> {
     const analysis = await this.prisma.analysis.findFirst({
       where: { slug, ...PUBLIC_DONE_ANALYSIS },
       include: { sourceResource: true },
@@ -230,8 +230,8 @@ export class PublicService {
 
     const base = this.handoffService.apiBaseUrl();
 
-    if (analysis.origin === 'VIZCANVAS' && analysis.vizcanvasRecipe) {
-      const canvas = analysis.vizcanvasRecipe as unknown as VizcanvasRecipe;
+    if (analysis.origin === 'VISTRACE' && analysis.vistraceRecipe) {
+      const canvas = analysis.vistraceRecipe as unknown as VistraceRecipe;
       const url = this.handoffService.buildCanvasHandoffUrl(PUBLIC_VISITOR, {
         state: canvas.state,
         tables: canvas.tables.map((t) => ({
@@ -244,7 +244,7 @@ export class PublicService {
 
     const steps = Array.isArray(analysis.recipe) ? (analysis.recipe as unknown as Step[]) : [];
     const recipe = stepsToInternal(steps);
-    const vizCanvasRecipe = toVizCanvasRecipe(recipe);
+    const vistraceRecipe = toVistraceRecipe(recipe);
 
     const resultDownloadUrl = `${base}/public/catalog/${analysis.slug}/download`;
     const sourceDownloadUrl = `${base}/public/catalog/${analysis.slug}/resources/${analysis.sourceResource.id}/download`;
@@ -271,7 +271,7 @@ export class PublicService {
       PUBLIC_VISITOR,
       { downloadUrl: resultDownloadUrl, filename: `${analysis.title}.parquet` },
       { downloadUrl: sourceDownloadUrl, filename: analysis.sourceResource.filename },
-      vizCanvasRecipe,
+      vistraceRecipe,
       joinResources,
     );
     return { url };

@@ -27,14 +27,14 @@ export class PublishTokenGuard implements CanActivate {
     } catch {
       throw new UnauthorizedException({
         code: 'publish_token_invalid',
-        message: 'Invalid or expired publish token. Open VizCanvas again from Ibero Data.',
+        message: 'Invalid or expired publish token. Open vistrace again from Ibero Data.',
       });
     }
 
     if (payload.purpose !== PUBLISH_PURPOSE) {
       throw new UnauthorizedException({
         code: 'publish_token_invalid',
-        message: 'Invalid or expired publish token. Open VizCanvas again from Ibero Data.',
+        message: 'Invalid or expired publish token. Open vistrace again from Ibero Data.',
       });
     }
     if (
@@ -51,7 +51,7 @@ export class PublishTokenGuard implements CanActivate {
     if (!user) {
       throw new UnauthorizedException({
         code: 'publish_token_invalid',
-        message: 'Invalid or expired publish token. Open VizCanvas again from Ibero Data.',
+        message: 'Invalid or expired publish token. Open vistrace again from Ibero Data.',
       });
     }
     request.user = user;

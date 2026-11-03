@@ -6,10 +6,10 @@ import { DatasetAccessGuard } from '../../shared/guards/dataset-access.guard.js'
 import { OrgRoles } from '../../shared/decorators/org-roles.decorator.js';
 import { CurrentUser } from '../../shared/decorators/current-user.decorator.js';
 import type { AuthenticatedUser } from '../auth/jwt-payload.interface.js';
-import { OP_CATALOG, stepsToInternal, toVizCanvasRecipe } from '../analysis/recipe.js';
+import { OP_CATALOG, stepsToInternal, toVistraceRecipe } from '../analysis/recipe.js';
 import { ResourcesService } from '../datasets/resources.service.js';
 import { HandoffService } from '../handoff/handoff.service.js';
-import { AnalysesService, type VizcanvasRecipe } from './analyses.service.js';
+import { AnalysesService, type VistraceRecipe } from './analyses.service.js';
 import { PreviewAnalysisDto } from './dto/preview-analysis.dto.js';
 import { CreateAnalysisDto } from './dto/create-analysis.dto.js';
 
@@ -75,9 +75,9 @@ export class AnalysesController {
     return this.analysesService.remove(datasetId, analysisId);
   }
 
-  @Get(':analysisId/vizcanvas-handoff')
+  @Get(':analysisId/vistrace-handoff')
   @OrgRoles(OrgRole.ADMIN, OrgRole.EDITOR, OrgRole.MEMBER)
-  async vizcanvasHandoff(
+  async vistraceHandoff(
     @Param('organizationId') organizationId: string,
     @Param('datasetId') datasetId: string,
     @Param('analysisId') analysisId: string,
@@ -89,12 +89,12 @@ export class AnalysesController {
     const resourceDownloadUrl = (resourceId: string) =>
       `${base}/organizations/${organizationId}/datasets/${datasetId}/resources/${resourceId}/download`;
 
-    if (analysis.origin === 'VIZCANVAS') {
-      const recipe = analysis.vizcanvasRecipe as unknown as VizcanvasRecipe | null;
+    if (analysis.origin === 'VISTRACE') {
+      const recipe = analysis.vistraceRecipe as unknown as VistraceRecipe | null;
       if (!recipe) {
         throw new BadRequestException({
-          code: 'vizcanvas_recipe_missing',
-          message: 'This analysis does not have a VizCanvas recipe.',
+          code: 'vistrace_recipe_missing',
+          message: 'This analysis does not have a vistrace recipe.',
         });
       }
       const url = this.handoffService.buildCanvasHandoffUrl(
@@ -112,7 +112,7 @@ export class AnalysesController {
     const resultDownloadUrl = `${base}/organizations/${organizationId}/datasets/${datasetId}/analyses/${analysisId}/download`;
 
     const recipe = stepsToInternal(analysis.recipe as { op: string; params?: Record<string, unknown> }[]);
-    const vizCanvasRecipe = toVizCanvasRecipe(recipe);
+    const vistraceRecipe = toVistraceRecipe(recipe);
 
     const joinResources = await Promise.all(
       recipe.joins.map(async (join) => {
@@ -129,7 +129,7 @@ export class AnalysesController {
       user,
       { downloadUrl: resultDownloadUrl, filename: `${analysis.title}.parquet` },
       { downloadUrl: resourceDownloadUrl(sourceResource.id), filename: sourceResource.filename },
-      vizCanvasRecipe,
+      vistraceRecipe,
       joinResources,
       { ...context, resourceId: sourceResource.id, resourceName: sourceResource.filename },
     );

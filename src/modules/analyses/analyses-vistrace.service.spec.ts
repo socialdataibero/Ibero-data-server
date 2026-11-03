@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { AnalysesService } from './analyses.service.js';
-import type { SaveVizcanvasAnalysisDto } from './dto/save-vizcanvas-analysis.dto.js';
+import type { SaveVistraceAnalysisDto } from './dto/save-vistrace-analysis.dto.js';
 
 vi.mock('node:fs/promises', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:fs/promises')>()),
@@ -76,39 +76,39 @@ function recipe(overrides: Record<string, unknown> = {}) {
   });
 }
 
-function dto(overrides: Partial<SaveVizcanvasAnalysisDto> = {}): SaveVizcanvasAnalysisDto {
+function dto(overrides: Partial<SaveVistraceAnalysisDto> = {}): SaveVistraceAnalysisDto {
   return {
     sourceResourceId: 'res-a',
     title: 'Ingreso',
     slug: 'ingreso',
-    folder: 'VizCanvas',
+    folder: 'vistrace',
     recipe: recipe(),
     ...overrides,
   };
 }
 
-describe('AnalysesService: análisis guardados desde VizCanvas', () => {
-  it('crea el análisis con origin VIZCANVAS, la receta sin resultados y el parquet recibido', async () => {
+describe('AnalysesService: analyses saved from vistrace', () => {
+  it('creates the analysis with origin VISTRACE, the recipe without results and the received parquet', async () => {
     const { service } = makeService();
 
-    const result = await service.createFromVizcanvas('d1', dto(), { buffer: PARQUET }, 'user-1');
+    const result = await service.createFromVistrace('d1', dto(), { buffer: PARQUET }, 'user-1');
 
     expect(result).toMatchObject({
-      origin: 'VIZCANVAS',
+      origin: 'VISTRACE',
       status: 'DONE',
       recipe: [],
       resultStorageKey: 'analyses/an-1.parquet',
       resultRowCount: 42,
     });
-    const nodes = (result as any).vizcanvasRecipe.state.dag.nodes;
+    const nodes = (result as any).vistraceRecipe.state.dag.nodes;
     expect(nodes.f1).toMatchObject({ result: null, status: 'idle', config: { tableName: 'hogares' } });
-    expect((result as any).vizcanvasRecipe.tables).toEqual([{ tableName: 'hogares', resourceId: 'res-a' }]);
+    expect((result as any).vistraceRecipe.tables).toEqual([{ tableName: 'hogares', resourceId: 'res-a' }]);
   });
 
   it('rechaza un archivo que no es parquet', async () => {
     const { service } = makeService();
     await expect(
-      service.createFromVizcanvas('d1', dto(), { buffer: Buffer.from('a,b\n1,2') }, 'user-1'),
+      service.createFromVistrace('d1', dto(), { buffer: Buffer.from('a,b\n1,2') }, 'user-1'),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
@@ -116,35 +116,35 @@ describe('AnalysesService: análisis guardados desde VizCanvas', () => {
     const { service } = makeService();
     const bad = recipe({ tables: [{ tableName: 'hogares', resourceId: 'res-other' }] });
     await expect(
-      service.createFromVizcanvas('d1', dto({ recipe: bad }), { buffer: PARQUET }, 'user-1'),
-    ).rejects.toMatchObject({ response: { code: 'vizcanvas_recipe_invalid' } });
+      service.createFromVistrace('d1', dto({ recipe: bad }), { buffer: PARQUET }, 'user-1'),
+    ).rejects.toMatchObject({ response: { code: 'vistrace_recipe_invalid' } });
   });
 
   it('rechaza una receta cuyo nodo resultado no existe', async () => {
     const { service } = makeService();
     await expect(
-      service.createFromVizcanvas('d1', dto({ recipe: recipe({ resultNodeId: 'nope' }) }), { buffer: PARQUET }, 'user-1'),
-    ).rejects.toMatchObject({ response: { code: 'vizcanvas_recipe_invalid' } });
+      service.createFromVistrace('d1', dto({ recipe: recipe({ resultNodeId: 'nope' }) }), { buffer: PARQUET }, 'user-1'),
+    ).rejects.toMatchObject({ response: { code: 'vistrace_recipe_invalid' } });
   });
 
-  it('actualiza solo análisis que salieron de VizCanvas', async () => {
+  it('updates only analyses that came from vistrace', async () => {
     const { service, analyses } = makeService();
     analyses.set('an-ibero', { id: 'an-ibero', datasetId: 'd1', slug: 'x', origin: 'IBERO' });
-    analyses.set('an-viz', { id: 'an-viz', datasetId: 'd1', slug: 'ingreso', origin: 'VIZCANVAS' });
+    analyses.set('an-viz', { id: 'an-viz', datasetId: 'd1', slug: 'ingreso', origin: 'VISTRACE' });
 
-    await expect(service.updateFromVizcanvas('d1', 'an-ibero', dto({ slug: 'y' }), { buffer: PARQUET })).rejects.toMatchObject({
-      response: { code: 'analysis_not_from_vizcanvas' },
+    await expect(service.updateFromVistrace('d1', 'an-ibero', dto({ slug: 'y' }), { buffer: PARQUET })).rejects.toMatchObject({
+      response: { code: 'analysis_not_from_vistrace' },
     });
 
-    const updated = await service.updateFromVizcanvas('d1', 'an-viz', dto({ title: 'Ingreso 2' }), { buffer: PARQUET });
+    const updated = await service.updateFromVistrace('d1', 'an-viz', dto({ title: 'Ingreso 2' }), { buffer: PARQUET });
     expect(updated).toMatchObject({ id: 'an-viz', title: 'Ingreso 2', status: 'DONE' });
   });
 
-  it('el step-builder no puede sobrescribir un análisis de VizCanvas', async () => {
+  it('the step builder cannot overwrite a vistrace analysis', async () => {
     const { service, analyses } = makeService();
-    analyses.set('an-viz', { id: 'an-viz', datasetId: 'd1', slug: 'ingreso', origin: 'VIZCANVAS' });
+    analyses.set('an-viz', { id: 'an-viz', datasetId: 'd1', slug: 'ingreso', origin: 'VISTRACE' });
     await expect(
       service.update('d1', 'an-viz', { resourceId: 'res-a', title: 'X', slug: 'ingreso', folder: 'f', steps: [] } as any),
-    ).rejects.toMatchObject({ response: { code: 'analysis_from_vizcanvas' } });
+    ).rejects.toMatchObject({ response: { code: 'analysis_from_vistrace' } });
   });
 });

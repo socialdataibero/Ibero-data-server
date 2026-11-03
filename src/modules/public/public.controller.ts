@@ -50,9 +50,9 @@ export class PublicController {
     createReadStream(path).pipe(res);
   }
 
-  @Get('catalog/:slug/vizcanvas-handoff')
-  vizcanvasHandoff(@Param('slug') slug: string) {
-    return this.publicService.buildVizCanvasHandoff(slug);
+  @Get('catalog/:slug/vistrace-handoff')
+  vistraceHandoff(@Param('slug') slug: string) {
+    return this.publicService.buildVistraceHandoff(slug);
   }
 
   @Get('organizations')

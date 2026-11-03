@@ -379,7 +379,7 @@ export function buildRecipeSql(
   return { sql, params };
 }
 
-export function toVizCanvasRecipe(recipe: Recipe): Record<string, unknown> {
+export function toVistraceRecipe(recipe: Recipe): Record<string, unknown> {
   return {
     joins: recipe.joins,
     filters: recipe.filters,

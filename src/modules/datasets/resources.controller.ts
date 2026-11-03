@@ -68,9 +68,9 @@ export class ResourcesController {
     return this.analysisService.runQuery(filePath, dto.sql);
   }
 
-  @Get(':resourceId/vizcanvas-handoff')
+  @Get(':resourceId/vistrace-handoff')
   @OrgRoles(OrgRole.ADMIN, OrgRole.EDITOR, OrgRole.MEMBER)
-  async vizcanvasHandoff(
+  async vistraceHandoff(
     @Param('organizationId') organizationId: string,
     @Param('datasetId') datasetId: string,
     @Param('resourceId') resourceId: string,

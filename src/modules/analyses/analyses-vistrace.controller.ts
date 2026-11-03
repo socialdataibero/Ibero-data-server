@@ -9,13 +9,13 @@ import { CurrentUser } from '../../shared/decorators/current-user.decorator.js';
 import type { AuthenticatedUser } from '../auth/jwt-payload.interface.js';
 import { PublishTokenGuard } from '../handoff/publish-token.guard.js';
 import { AnalysesService } from './analyses.service.js';
-import { SaveVizcanvasAnalysisDto } from './dto/save-vizcanvas-analysis.dto.js';
+import { SaveVistraceAnalysisDto } from './dto/save-vistrace-analysis.dto.js';
 
 const MAX_RESULT_BYTES = 500 * 1024 * 1024;
 
-@Controller('organizations/:organizationId/datasets/:datasetId/analyses/vizcanvas')
+@Controller('organizations/:organizationId/datasets/:datasetId/analyses/vistrace')
 @UseGuards(PublishTokenGuard, OrgRolesGuard, DatasetAccessGuard)
-export class AnalysesVizcanvasController {
+export class AnalysesVistraceController {
   constructor(private readonly analysesService: AnalysesService) {}
 
   @Post()
@@ -23,11 +23,11 @@ export class AnalysesVizcanvasController {
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: MAX_RESULT_BYTES } }))
   create(
     @Param('datasetId') datasetId: string,
-    @Body() dto: SaveVizcanvasAnalysisDto,
+    @Body() dto: SaveVistraceAnalysisDto,
     @UploadedFile() file: Express.Multer.File | undefined,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.analysesService.createFromVizcanvas(datasetId, dto, file, user.id);
+    return this.analysesService.createFromVistrace(datasetId, dto, file, user.id);
   }
 
   @Put(':analysisId')
@@ -36,9 +36,9 @@ export class AnalysesVizcanvasController {
   update(
     @Param('datasetId') datasetId: string,
     @Param('analysisId') analysisId: string,
-    @Body() dto: SaveVizcanvasAnalysisDto,
+    @Body() dto: SaveVistraceAnalysisDto,
     @UploadedFile() file: Express.Multer.File | undefined,
   ) {
-    return this.analysesService.updateFromVizcanvas(datasetId, analysisId, dto, file);
+    return this.analysesService.updateFromVistrace(datasetId, analysisId, dto, file);
   }
 }

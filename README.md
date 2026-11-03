@@ -1,13 +1,13 @@
 # Ibero Data Server
 
-REST API for Ibero Data. It stores organizations, datasets and Parquet files, runs analyses over them with DuckDB, publishes a public catalog, hands data off to VizCanvas, and hosts the survey harmonizer.
+REST API for Ibero Data. It stores organizations, datasets and Parquet files, runs analyses over them with DuckDB, publishes a public catalog, hands data off to vistrace, and hosts the survey harmonizer.
 
 Built with NestJS 12, Prisma 7 on PostgreSQL 16, and DuckDB.
 
 Related projects:
 
 - `Ibero-data-ng`: the web app (React + Vite, port 4200).
-- `vizcanvas`: the visual editor that receives data through the handoff (port 4201).
+- `vistrace`: the visual editor that receives data through the handoff (port 4201).
 
 This document describes what the code does today. Business rules are listed per module. When the code and this document disagree, one of them is a bug: fix the code or update this file in the same change.
 
@@ -26,7 +26,7 @@ This document describes what the code does today. Business rules are listed per 
 - [Resources (Parquet files)](#resources-parquet-files)
 - [Analyses](#analyses)
 - [Public catalog](#public-catalog)
-- [VizCanvas handoff](#vizcanvas-handoff)
+- [vistrace handoff](#vistrace-handoff)
 - [Survey harmonizer](#survey-harmonizer)
 - [File storage](#file-storage)
 - [Open questions](#open-questions)
@@ -71,8 +71,8 @@ To use a PostgreSQL you already run, point `DATABASE_URL` at it and use `npm run
 | `DATABASE_URL` | Yes | Local Docker database | PostgreSQL connection string. |
 | `JWT_SECRET` | Yes | empty | Signs session, download and publish tokens. |
 | `PORT` | No | `3000` | HTTP port. |
-| `API_BASE_URL` | Yes | `http://localhost:3000` | Public URL of this API. Used to build download links sent to VizCanvas. |
-| `VIZCANVAS_URL` | Yes | `http://localhost:4201` | Base URL of VizCanvas for handoff links. |
+| `API_BASE_URL` | Yes | `http://localhost:3000` | Public URL of this API. Used to build download links sent to vistrace. |
+| `VISTRACE_URL` | Yes | `http://localhost:4201` | Base URL of vistrace for handoff links. |
 | `SEED_ADMIN_EMAIL` | No | `admin@ibero.mx` | Sysadmin created by the seed. |
 | `SEED_ADMIN_PASSWORD` | No | `password123` | Sysadmin password. Change it outside local development. |
 | `SEED_ADMIN_NAME` | No | `Admin Ibero` | Sysadmin display name. |
@@ -159,7 +159,7 @@ Roles inside an organization: `ADMIN`, `EDITOR`, `MEMBER`.
 | Manage members, delete the organization | ✓ | | |
 | Create datasets, upload resources, create and edit analyses | ✓ | ✓ | |
 | Delete datasets and analyses | ✓ | | |
-| Run queries, preview analyses, download files, open VizCanvas | ✓ | ✓ | ✓ |
+| Run queries, preview analyses, download files, open vistrace | ✓ | ✓ | ✓ |
 
 Rules:
 
@@ -221,7 +221,7 @@ Rules:
 | `POST` | `.../datasets/:datasetId/resources` | `ADMIN`, `EDITOR` | Upload a file (multipart, field `file`). |
 | `POST` | `.../resources/:resourceId/query` | any role | Run a SQL query: `{ sql }`. |
 | `GET` | `.../resources/:resourceId/download` | any role, download token | Download the file. |
-| `GET` | `.../resources/:resourceId/vizcanvas-handoff` | any role | Get a VizCanvas link. See [handoff](#vizcanvas-handoff). |
+| `GET` | `.../resources/:resourceId/vistrace-handoff` | any role | Get a vistrace link. See [handoff](#vistrace-handoff). |
 
 `...` stands for `/organizations/:organizationId/datasets/:datasetId`.
 
@@ -254,9 +254,9 @@ An analysis is a saved transformation of a resource. Its result is stored as a P
 | `PATCH` | `.../analyses/:analysisId` | `ADMIN`, `EDITOR` | Replace and rerun. |
 | `DELETE` | `.../analyses/:analysisId` | `ADMIN` | Delete it and its result file. |
 | `GET` | `.../analyses/:analysisId/download` | any role, download token | Download the result. |
-| `GET` | `.../analyses/:analysisId/vizcanvas-handoff` | any role | Get a VizCanvas link. |
-| `POST` | `.../analyses/vizcanvas` | `ADMIN`, `EDITOR`, publish token | Save an analysis built in VizCanvas. |
-| `PUT` | `.../analyses/vizcanvas/:analysisId` | `ADMIN`, `EDITOR`, publish token | Update an analysis built in VizCanvas. |
+| `GET` | `.../analyses/:analysisId/vistrace-handoff` | any role | Get a vistrace link. |
+| `POST` | `.../analyses/vistrace` | `ADMIN`, `EDITOR`, publish token | Save an analysis built in vistrace. |
+| `PUT` | `.../analyses/vistrace/:analysisId` | `ADMIN`, `EDITOR`, publish token | Update an analysis built in vistrace. |
 
 Fields (create and `PATCH` take the same body; `PATCH` replaces everything):
 
@@ -294,11 +294,11 @@ Rules:
 - Preview returns 100 rows by default (`sampleRows`, 1–500). A `limit` step smaller than that is respected.
 - **Status.** A saved analysis goes `RUNNING` → `DONE`, or `FAILED` with `errorMessage` set. The request waits for the run to finish. `PENDING` exists in the schema but is not used.
 - `data` and `download` return `400 analysis_result_not_ready` unless the status is `DONE`.
-- **Origin.** Analyses built here have origin `IBERO`. Analyses saved from VizCanvas have origin `VIZCANVAS`.
-  - A `VIZCANVAS` analysis cannot be edited with `PATCH` (`400 analysis_from_vizcanvas`). It is edited by opening it in VizCanvas.
-  - An `IBERO` analysis cannot be updated through the VizCanvas `PUT` (`400 analysis_not_from_vizcanvas`). VizCanvas must save it as a new analysis.
-- **Saving from VizCanvas.** The body is multipart: the fields above with `sourceResourceId` instead of `resourceId`, `recipe` (the canvas as a JSON string, up to 5 MB) and `file` (the result as Parquet, up to 500 MB). The server does not rerun the canvas; it stores the file it receives. Rules:
-  - The recipe must have a canvas (`state.dag` with `nodes` and `edges`) and a `resultNodeId` that exists in it (`400 vizcanvas_recipe_invalid`).
+- **Origin.** Analyses built here have origin `IBERO`. Analyses saved from vistrace have origin `VISTRACE`.
+  - A `VISTRACE` analysis cannot be edited with `PATCH` (`400 analysis_from_vistrace`). It is edited by opening it in vistrace.
+  - An `IBERO` analysis cannot be updated through the vistrace `PUT` (`400 analysis_not_from_vistrace`). vistrace must save it as a new analysis.
+- **Saving from vistrace.** The body is multipart: the fields above with `sourceResourceId` instead of `resourceId`, `recipe` (the canvas as a JSON string, up to 5 MB) and `file` (the result as Parquet, up to 500 MB). The server does not rerun the canvas; it stores the file it receives. Rules:
+  - The recipe must have a canvas (`state.dag` with `nodes` and `edges`) and a `resultNodeId` that exists in it (`400 vistrace_recipe_invalid`).
   - Every table in `recipe.tables` must have a name matching `^[a-zA-Z0-9_]{1,60}$` and point to a resource of the same dataset.
   - Node results and errors are cleared before the recipe is stored.
 
@@ -315,21 +315,21 @@ An analysis is public when **its status is `DONE` and its dataset's visibility i
 | `GET` | `/public/catalog/:slug/preview` | First rows of the result (`limit`, default and max 500). |
 | `GET` | `/public/catalog/:slug/download` | Download the result. |
 | `GET` | `/public/catalog/:slug/resources/:resourceId/download` | Download any resource of the analysis' dataset. |
-| `GET` | `/public/catalog/:slug/vizcanvas-handoff` | VizCanvas link for an anonymous visitor. |
+| `GET` | `/public/catalog/:slug/vistrace-handoff` | vistrace link for an anonymous visitor. |
 | `GET` | `/public/organizations` | Organizations with at least one public analysis. `q`, `sort` (`name-asc` default, `name-desc`), `limit`, `offset`. |
 | `GET` | `/public/organizations/count` | Per organization slug: `sources` (datasets with public analyses) and `charts` (public analyses). |
 
-Response shapes follow CKAN naming (`name` is the slug, `title` the display name, `notes` the description) because VizCanvas was built against CKAN.
+Response shapes follow CKAN naming (`name` is the slug, `title` the display name, `notes` the description) because vistrace was built against CKAN.
 
 Because the resource download is scoped to the dataset, publishing one analysis also makes every resource of that dataset downloadable.
 
-## VizCanvas handoff
+## vistrace handoff
 
-The handoff opens VizCanvas with data from this API without sharing the session token.
+The handoff opens vistrace with data from this API without sharing the session token.
 
-1. The web app calls a `vizcanvas-handoff` endpoint and gets `{ url }`.
-2. The URL points to `VIZCANVAS_URL` with a one-time `handoff` code and the download links.
-3. VizCanvas exchanges the code at `POST /api/3/action/duckdb_consume_handoff` with `{ token }`. This endpoint mimics CKAN: it always answers `200`, with `{ success: true, result }` or `{ success: false, error }`.
+1. The web app calls a `vistrace-handoff` endpoint and gets `{ url }`.
+2. The URL points to `VISTRACE_URL` with a one-time `handoff` code and the download links.
+3. vistrace exchanges the code at `POST /api/3/action/duckdb_consume_handoff` with `{ token }`. This endpoint mimics CKAN: it always answers `200`, with `{ success: true, result }` or `{ success: false, error }`.
 4. `result` contains the user's email and name, a `download_token`, the dataset context, and the canvas when there is one.
 
 Tokens:
@@ -338,7 +338,7 @@ Tokens:
 | --- | --- | --- |
 | Handoff code | 5 minutes, single use | Exchanged once for the payload. Stored in memory: codes are lost on restart and are not shared between server instances. |
 | Download token | 10 minutes | Download endpoints. They also accept the normal session token. |
-| Publish token | 12 hours | Saving from VizCanvas. Only valid for the organization and dataset it was issued for (`403 publish_token_scope`). |
+| Publish token | 12 hours | Saving from vistrace. Only valid for the organization and dataset it was issued for (`403 publish_token_scope`). |
 
 Download and publish tokens are checked like a session: the user must still exist and be active, and still needs the required role in the organization.
 

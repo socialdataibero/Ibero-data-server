@@ -42,7 +42,7 @@ export interface PublishTokenPayload extends JwtPayload {
   datasetId: string;
 }
 
-export const PUBLISH_PURPOSE = 'vizcanvas_publish';
+export const PUBLISH_PURPOSE = 'vistrace_publish';
 
 const TTL_MS = 300_000;
 const DOWNLOAD_TOKEN_TTL = '10m';
@@ -71,19 +71,19 @@ export class HandoffService {
       resource_name: this.safeName(filename),
       resource_format: 'parquet',
     });
-    return `${this.vizcanvasUrl()}?${params.toString()}`;
+    return `${this.vistraceUrl()}?${params.toString()}`;
   }
 
   buildAnalysisHandoffUrl(
     user: AuthenticatedUser,
     result: { downloadUrl: string; filename: string },
     source: { downloadUrl: string; filename: string },
-    vizCanvasRecipe: Record<string, unknown>,
+    vistraceRecipe: Record<string, unknown>,
     joinResources: { alias: string; downloadUrl: string; filename: string }[] = [],
     ibero?: Omit<IberoContext, 'apiUrl' | 'publishToken'>,
   ): string {
     const token = this.createToken(user, ibero ? this.withPublishToken(user, ibero) : undefined);
-    const pipeline = Buffer.from(JSON.stringify(vizCanvasRecipe)).toString('base64url');
+    const pipeline = Buffer.from(JSON.stringify(vistraceRecipe)).toString('base64url');
     const params = new URLSearchParams({
       handoff: token,
       ckan_url: this.apiBaseUrl(),
@@ -102,7 +102,7 @@ export class HandoffService {
       }));
       params.set('join_resources', Buffer.from(JSON.stringify(encoded)).toString('base64url'));
     }
-    return `${this.vizcanvasUrl()}?${params.toString()}`;
+    return `${this.vistraceUrl()}?${params.toString()}`;
   }
 
   buildCanvasHandoffUrl(
@@ -112,7 +112,7 @@ export class HandoffService {
   ): string {
     const token = this.createToken(user, ibero ? this.withPublishToken(user, ibero) : undefined, canvas);
     const params = new URLSearchParams({ handoff: token, ckan_url: this.apiBaseUrl() });
-    return `${this.vizcanvasUrl()}?${params.toString()}`;
+    return `${this.vistraceUrl()}?${params.toString()}`;
   }
 
   createDownloadToken(user: AuthenticatedUser): string {
@@ -168,8 +168,8 @@ export class HandoffService {
     return this.configService.getOrThrow<string>('API_BASE_URL').replace(/\/+$/, '');
   }
 
-  private vizcanvasUrl(): string {
-    return this.configService.getOrThrow<string>('VIZCANVAS_URL').replace(/\/+$/, '');
+  private vistraceUrl(): string {
+    return this.configService.getOrThrow<string>('VISTRACE_URL').replace(/\/+$/, '');
   }
 
   private sweep(): void {

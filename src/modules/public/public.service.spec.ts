@@ -187,7 +187,7 @@ describe('PublicService: solo análisis DONE de datasets PUBLIC', () => {
       await expect(service.getPackageBySlug('borrador')).rejects.toBeInstanceOf(NotFoundException);
       await expect(service.previewBySlug('borrador')).rejects.toBeInstanceOf(NotFoundException);
       await expect(service.getResultFile('borrador')).rejects.toBeInstanceOf(NotFoundException);
-      await expect(service.buildVizCanvasHandoff('borrador')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.buildVistraceHandoff('borrador')).rejects.toBeInstanceOf(NotFoundException);
       expect(deps.analysisService.runQuery).not.toHaveBeenCalled();
     });
   });
@@ -256,7 +256,7 @@ describe('PublicService: "cómo se hizo" (recipe público)', () => {
   });
 });
 
-describe('PublicService: descargas y handoff a VizCanvas sin cuenta', () => {
+describe('PublicService: downloads and vistrace handoff without an account', () => {
   it('getResultFile() resuelve el parquet del análisis, no de ningún resource', async () => {
     const deps = makeDeps();
     deps.addOrg(ORG);
@@ -306,7 +306,7 @@ describe('PublicService: descargas y handoff a VizCanvas sin cuenta', () => {
     await expect(service.getDatasetResourceFile('ingreso', 'res-ajeno')).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('buildVizCanvasHandoff() arma las URLs públicas (sin token) para el resultado, el recurso base y los joins', async () => {
+  it('buildVistraceHandoff() builds the public URLs (no token) for the result, the base resource and the joins', async () => {
     const deps = makeDeps();
     deps.addOrg(ORG);
     deps.addDataset({ id: 'd1', organizationId: 'org-1', visibility: 'PUBLIC' });
@@ -319,7 +319,7 @@ describe('PublicService: descargas y handoff a VizCanvas sin cuenta', () => {
     });
 
     const service = makeService(deps);
-    const { url } = await service.buildVizCanvasHandoff('con-join');
+    const { url } = await service.buildVistraceHandoff('con-join');
 
     expect(url).toBe('http://localhost:4201?handoff=fake');
     expect(deps.handoffService.buildAnalysisHandoffUrl).toHaveBeenCalledWith(
@@ -331,7 +331,7 @@ describe('PublicService: descargas y handoff a VizCanvas sin cuenta', () => {
     );
   });
 
-  it('buildVizCanvasHandoff() rechaza un análisis de dataset PRIVATE', async () => {
+  it('buildVistraceHandoff() rejects an analysis from a PRIVATE dataset', async () => {
     const deps = makeDeps();
     deps.addOrg(ORG);
     deps.addDataset({ id: 'd2', organizationId: 'org-1', visibility: 'PRIVATE' });
@@ -339,7 +339,7 @@ describe('PublicService: descargas y handoff a VizCanvas sin cuenta', () => {
     deps.addAnalysis({ id: 'a2', datasetId: 'd2', sourceResourceId: 'res-base', title: 'Interno', slug: 'interno', description: null, status: 'DONE', createdAt: new Date(), updatedAt: new Date(), recipe: [] });
 
     const service = makeService(deps);
-    await expect(service.buildVizCanvasHandoff('interno')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.buildVistraceHandoff('interno')).rejects.toBeInstanceOf(NotFoundException);
     expect(deps.handoffService.buildAnalysisHandoffUrl).not.toHaveBeenCalled();
   });
 });

@@ -6,11 +6,11 @@ import { HandoffModule } from '../handoff/handoff.module.js';
 import { AnalysesService } from './analyses.service.js';
 import { AnalysesController } from './analyses.controller.js';
 import { AnalysesDownloadController } from './analyses-download.controller.js';
-import { AnalysesVizcanvasController } from './analyses-vizcanvas.controller.js';
+import { AnalysesVistraceController } from './analyses-vistrace.controller.js';
 
 @Module({
   imports: [AuthModule, AnalysisModule, DatasetsModule, HandoffModule],
-  controllers: [AnalysesVizcanvasController, AnalysesController, AnalysesDownloadController],
+  controllers: [AnalysesVistraceController, AnalysesController, AnalysesDownloadController],
   providers: [AnalysesService],
 })
 export class AnalysesModule {}

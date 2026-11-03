@@ -1,7 +1,7 @@
 import { IsEnum, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength } from 'class-validator';
 import { DatasetVisibility } from '@prisma/client';
 
-export class SaveVizcanvasAnalysisDto {
+export class SaveVistraceAnalysisDto {
   @IsUUID()
   sourceResourceId!: string;
 

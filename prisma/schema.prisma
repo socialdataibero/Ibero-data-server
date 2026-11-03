@@ -48,7 +48,7 @@ enum AnalysisStatus {
 
 enum AnalysisOrigin {
   IBERO
-  VIZCANVAS
+  VISTRACE
 }
 
 model User {
@@ -172,7 +172,7 @@ model Analysis {
   /// Los steps tal como los mandó el step-builder: [{ op, params }, ...]
   recipe           Json
   origin           AnalysisOrigin    @default(IBERO)
-  vizcanvasRecipe  Json?
+  vistraceRecipe   Json?
   status           AnalysisStatus    @default(PENDING)
   errorMessage     String?
   resultStorageKey String?
