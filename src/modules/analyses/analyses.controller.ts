@@ -84,7 +84,7 @@ export class AnalysesController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     const analysis = await this.analysesService.findOne(datasetId, analysisId);
-    const context = await this.resourcesService.handoffContext(organizationId, datasetId);
+    const context = await this.resourcesService.handoffContext(organizationId, datasetId, user);
     const base = this.handoffService.apiBaseUrl();
     const resourceDownloadUrl = (resourceId: string) =>
       `${base}/organizations/${organizationId}/datasets/${datasetId}/resources/${resourceId}/download`;

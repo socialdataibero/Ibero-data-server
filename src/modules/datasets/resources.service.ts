@@ -1,5 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { access } from 'node:fs/promises';
+import { OrgRole } from '@prisma/client';
+import type { AuthenticatedUser } from '../auth/jwt-payload.interface.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { LocalStorageService } from '../storage/local-storage.service.js';
 import { AnalysisService } from '../analysis/analysis.service.js';
@@ -26,11 +28,17 @@ export class ResourcesService {
     return this.prisma.resource.findMany({ where: { datasetId }, orderBy: { createdAt: 'desc' } });
   }
 
-  async handoffContext(organizationId: string, datasetId: string) {
-    const dataset = await this.prisma.dataset.findFirst({
-      where: { id: datasetId, organizationId },
-      select: { title: true, organization: { select: { name: true } } },
-    });
+  async handoffContext(organizationId: string, datasetId: string, user: AuthenticatedUser) {
+    const [dataset, membership] = await Promise.all([
+      this.prisma.dataset.findFirst({
+        where: { id: datasetId, organizationId },
+        select: { title: true, organization: { select: { name: true } } },
+      }),
+      this.prisma.organizationMember.findUnique({
+        where: { userId_organizationId: { userId: user.id, organizationId } },
+        select: { role: true },
+      }),
+    ]);
     if (!dataset) {
       throw new NotFoundException({ code: 'dataset_not_found', message: 'Dataset not found.' });
     }
@@ -39,6 +47,8 @@ export class ResourcesService {
       organizationName: dataset.organization.name,
       datasetId,
       datasetTitle: dataset.title,
+      // Same roles as the publish endpoints; members may explore in vistrace but not save back.
+      canPublish: user.isSysadmin || membership?.role === OrgRole.ADMIN || membership?.role === OrgRole.EDITOR,
     };
   }
 

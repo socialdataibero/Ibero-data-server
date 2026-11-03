@@ -15,6 +15,8 @@ export interface IberoContext {
   analysisId?: string;
   analysisTitle?: string;
   publishToken?: string;
+  /** False for users who may open vistrace but not save back to Ibero Data (no publishToken then). */
+  canPublish: boolean;
 }
 
 export interface CanvasTable {
@@ -146,6 +148,7 @@ export class HandoffService {
     user: AuthenticatedUser,
     ibero: Omit<IberoContext, 'apiUrl' | 'publishToken'>,
   ): IberoContext {
+    if (!ibero.canPublish) return { ...ibero, apiUrl: this.apiBaseUrl() };
     const publishToken = this.jwtService.sign(
       {
         sub: user.id,
