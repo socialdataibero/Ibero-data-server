@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../shared/guards/jwt-auth.guard.js';
 import { CurrentUser } from '../../shared/decorators/current-user.decorator.js';
 import type { AuthenticatedUser } from '../auth/jwt-payload.interface.js';
@@ -22,7 +22,6 @@ export class UsersController {
   }
 
   @Patch('me/password')
-  @HttpCode(204)
   changePassword(@CurrentUser() user: AuthenticatedUser, @Body() dto: ChangePasswordDto) {
     return this.usersService.changePassword(user.id, dto.currentPassword, dto.newPassword);
   }

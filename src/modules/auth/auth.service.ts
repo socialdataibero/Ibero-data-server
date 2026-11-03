@@ -46,12 +46,12 @@ export class AuthService {
       throw new UnauthorizedException({ code: 'wrong_password', message: 'Incorrect password.' });
     }
 
-    return this.buildToken(user.id, user.email, user.isSysadmin);
+    return this.buildToken(user.id, user.email, user.isSysadmin, user.tokenVersion);
   }
 
   async validateUser(payload: JwtPayload): Promise<AuthenticatedUser | null> {
     const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
-    if (!user || !user.isActive) {
+    if (!user || !user.isActive || (payload.ver ?? 0) !== user.tokenVersion) {
       return null;
     }
     return {
@@ -62,8 +62,8 @@ export class AuthService {
     };
   }
 
-  private buildToken(userId: string, email: string, isSysadmin: boolean) {
-    const payload: JwtPayload = { sub: userId, email, isSysadmin };
+  buildToken(userId: string, email: string, isSysadmin: boolean, tokenVersion: number) {
+    const payload: JwtPayload = { sub: userId, email, isSysadmin, ver: tokenVersion };
     return { accessToken: this.jwtService.sign(payload) };
   }
 }

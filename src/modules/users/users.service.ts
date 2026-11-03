@@ -1,13 +1,16 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { SALT_ROUNDS } from '../auth/auth.service.js';
+import { AuthService, SALT_ROUNDS } from '../auth/auth.service.js';
 
 const PROFILE_SELECT = { id: true, email: true, fullName: true, isSysadmin: true, createdAt: true } as const;
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly authService: AuthService,
+  ) {}
 
   async findById(id: string) {
     const user = await this.prisma.user.findUnique({ where: { id }, select: PROFILE_SELECT });
@@ -21,7 +24,7 @@ export class UsersService {
     return this.prisma.user.update({ where: { id }, data: { fullName }, select: PROFILE_SELECT });
   }
 
-  async changePassword(id: string, currentPassword: string, newPassword: string): Promise<void> {
+  async changePassword(id: string, currentPassword: string, newPassword: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) {
       throw new NotFoundException({ code: 'user_not_found', message: 'User not found.' });
@@ -31,7 +34,12 @@ export class UsersService {
       throw new BadRequestException({ code: 'wrong_current_password', message: 'The current password is incorrect.' });
     }
     const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
-    await this.prisma.user.update({ where: { id }, data: { passwordHash } });
+    // Bumping tokenVersion signs out every other session (SDI-133); this one gets a fresh token.
+    const updated = await this.prisma.user.update({
+      where: { id },
+      data: { passwordHash, tokenVersion: { increment: 1 } },
+    });
+    return this.authService.buildToken(updated.id, updated.email, updated.isSysadmin, updated.tokenVersion);
   }
 
   findMemberships(userId: string) {

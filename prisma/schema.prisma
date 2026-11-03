@@ -58,6 +58,8 @@ model User {
   fullName     String
   isSysadmin   Boolean  @default(false)
   isActive     Boolean  @default(true)
+  /// Bumped on password change so tokens issued before it stop working (SDI-133).
+  tokenVersion Int      @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
