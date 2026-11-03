@@ -91,6 +91,8 @@ export interface SurveySummary {
   id: string;
   name: string;
   description: string | null;
+  /** Owner (SDI-91); null on surveys created before ownership existed. */
+  organizationId: string | null;
   datasets: SurveyDatasetSummary[];
 }
 
@@ -503,6 +505,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
       id: s.id,
       name: s.name,
       description: s.description,
+      organizationId: s.organizationId,
       datasets: s.datasets.map((d) => ({
         id: d.id,
         name: d.name,
@@ -515,7 +518,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
     return { total, items };
   }
 
-  async createSurvey(dto: CreateSurveyDto) {
+  async createSurvey(dto: CreateSurveyDto, createdById: string) {
     const name = dto.name.trim();
     if (!name) {
       throw new BadRequestException({
@@ -534,7 +537,12 @@ export class HarmonizerService implements OnApplicationBootstrap {
       });
     }
     const created = await this.prisma.harmonizerSurvey.create({
-      data: { name, description: dto.description?.trim() || null },
+      data: {
+        name,
+        description: dto.description?.trim() || null,
+        organizationId: dto.organizationId,
+        createdById,
+      },
     });
     return this.toSurveyDto(created);
   }
@@ -1106,17 +1114,20 @@ export class HarmonizerService implements OnApplicationBootstrap {
     id: string;
     name: string;
     description: string | null;
+    organizationId: string | null;
   }) {
     return {
       id: survey.id,
       name: survey.name,
       description: survey.description,
+      organizationId: survey.organizationId,
     };
   }
 
   async uploadDataset(
     dto: UploadDatasetDto,
     file: { originalname: string; buffer: Buffer },
+    userId: string,
   ): Promise<{
     datasetId: string;
     dataset: DatasetInfo;
@@ -1132,7 +1143,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
     if (dto.surveyId !== NEW_SURVEY) {
       await this.assertDatasetNameFree(dto.surveyId, name);
     }
-    const survey = await this.resolveSurveyForUpload(dto);
+    const survey = await this.resolveSurveyForUpload(dto, userId);
 
     // El Parquet se escribe antes que la edición: si falla, no queda una
     // edición sin datos; si falla la edición, se borra el Parquet.
@@ -1281,7 +1292,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
     if (existing) throw datasetNameTaken(name, existing.survey.name);
   }
 
-  private async resolveSurveyForUpload(dto: UploadDatasetDto) {
+  private async resolveSurveyForUpload(dto: UploadDatasetDto, userId: string) {
     if (dto.surveyId !== NEW_SURVEY) {
       return this.getSurvey(dto.surveyId);
     }
@@ -1292,7 +1303,8 @@ export class HarmonizerService implements OnApplicationBootstrap {
         message: 'Enter the name of the new survey (field "newSurvey").',
       });
     }
-    return this.createSurvey({ name });
+    // The controller already checked that organizationId is set and the user may create surveys there.
+    return this.createSurvey({ name, organizationId: dto.organizationId! }, userId);
   }
 
   private parseDbf(

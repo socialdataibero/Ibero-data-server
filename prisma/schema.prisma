@@ -61,9 +61,10 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  memberships   OrganizationMember[]
-  ownedDatasets Dataset[]
-  analyses      Analysis[]
+  memberships       OrganizationMember[]
+  ownedDatasets     Dataset[]
+  analyses          Analysis[]
+  harmonizerSurveys HarmonizerSurvey[]
 
   @@map("users")
 }
@@ -76,8 +77,9 @@ model Organization {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  members  OrganizationMember[]
-  datasets Dataset[]
+  members           OrganizationMember[]
+  datasets          Dataset[]
+  harmonizerSurveys HarmonizerSurvey[]
 
   @@map("organizations")
 }
@@ -200,10 +202,15 @@ model Analysis {
 // ---------------------------------------------------------------------------
 
 model HarmonizerSurvey {
-  id          String   @id @default(uuid())
-  name        String   @unique
-  description String?
-  createdAt   DateTime @default(now())
+  id             String        @id @default(uuid())
+  name           String        @unique
+  description    String?
+  createdAt      DateTime      @default(now())
+  /// Owner (SDI-91): its ADMIN and EDITOR members may edit it. Null on surveys created before ownership; only the sysadmin edits those.
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  createdById    String?
+  createdBy      User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
   datasets           HarmonizerDataset[]
   canonicalVariables HarmonizerCanonicalVariable[]

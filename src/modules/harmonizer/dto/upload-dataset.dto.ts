@@ -35,6 +35,11 @@ export class UploadDatasetDto {
   @IsString({ message: 'newSurvey must be a string.' })
   newSurvey?: string;
 
+  /** Owning organization of the new survey; required when surveyId is `__new__` (SDI-91). */
+  @IsOptional()
+  @IsString({ message: 'organizationId must be a string.' })
+  organizationId?: string;
+
   @IsOptional()
   @IsIn(UPLOAD_ENCODINGS, {
     message: `encoding must be one of: ${UPLOAD_ENCODINGS.join(', ')}.`,
