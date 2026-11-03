@@ -25,11 +25,11 @@ export class AuthService {
     }
 
     const passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
-    const user = await this.prisma.user.create({
+    // Returns the new account, not a token: the caller is the sysadmin, who stays signed in as themselves.
+    return this.prisma.user.create({
       data: { email: dto.email, passwordHash, fullName: dto.fullName },
+      select: { id: true, email: true, fullName: true, isSysadmin: true },
     });
-
-    return this.buildToken(user.id, user.email, user.isSysadmin);
   }
 
   async login(dto: LoginDto) {
