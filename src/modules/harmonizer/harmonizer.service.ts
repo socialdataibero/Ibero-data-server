@@ -371,23 +371,30 @@ interface ParsedUpload {
 // Los encabezados repetidos se renombran con `.1`, `.2`, … y se informa al
 // usuario (H-10). El sufijo salta los nombres que ya existen en el archivo:
 // con `EDAD, EDAD, EDAD.1` la segunda pasa a `EDAD.2`, no a otro `EDAD.1`.
-function dedupeHeaders(headers: string[]): {
+// Un encabezado vacío recibe `columna_N` (N = su posición) y también se informa.
+export function dedupeHeaders(headers: string[]): {
   columns: string[];
   renamed: RenamedColumn[];
 } {
-  const taken = new Set(headers);
+  const named = headers.map((h, i) =>
+    h.trim() === '' ? `columna_${i + 1}` : h,
+  );
+  const taken = new Set(named);
   const seen = new Set<string>();
   const renamed: RenamedColumn[] = [];
-  const columns = headers.map((h, i) => {
-    if (!seen.has(h)) {
+  const columns = named.map((h, i) => {
+    let name = h;
+    if (seen.has(h)) {
+      let n = 1;
+      while (taken.has(`${h}.${n}`)) n++;
+      name = `${h}.${n}`;
+      taken.add(name);
+    } else {
       seen.add(h);
-      return h;
     }
-    let n = 1;
-    while (taken.has(`${h}.${n}`)) n++;
-    const name = `${h}.${n}`;
-    taken.add(name);
-    renamed.push({ position: i + 1, original: h, renamed: name });
+    if (name !== headers[i]) {
+      renamed.push({ position: i + 1, original: headers[i], renamed: name });
+    }
     return name;
   });
   return { columns, renamed };

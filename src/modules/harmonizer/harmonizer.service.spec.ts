@@ -3,7 +3,43 @@ import { mkdtemp, readdir, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LocalStorageService } from '../storage/local-storage.service.js';
-import { HarmonizerService } from './harmonizer.service.js';
+import { HarmonizerService, dedupeHeaders } from './harmonizer.service.js';
+
+describe('dedupeHeaders', () => {
+  it('keeps unique headers as they are', () => {
+    expect(dedupeHeaders(['EDAD', 'SEXO'])).toEqual({
+      columns: ['EDAD', 'SEXO'],
+      renamed: [],
+    });
+  });
+
+  it('renames repeated headers, skipping suffixes already in the file', () => {
+    expect(dedupeHeaders(['EDAD', 'EDAD', 'EDAD.1'])).toEqual({
+      columns: ['EDAD', 'EDAD.2', 'EDAD.1'],
+      renamed: [{ position: 2, original: 'EDAD', renamed: 'EDAD.2' }],
+    });
+  });
+
+  it('names empty headers columna_N by position and reports them', () => {
+    expect(dedupeHeaders(['ID', '', 'EDAD', ''])).toEqual({
+      columns: ['ID', 'columna_2', 'EDAD', 'columna_4'],
+      renamed: [
+        { position: 2, original: '', renamed: 'columna_2' },
+        { position: 4, original: '', renamed: 'columna_4' },
+      ],
+    });
+  });
+
+  it('suffixes the automatic name when the file already has a header with it', () => {
+    expect(dedupeHeaders(['', 'columna_1'])).toEqual({
+      columns: ['columna_1', 'columna_1.1'],
+      renamed: [
+        { position: 1, original: '', renamed: 'columna_1' },
+        { position: 2, original: 'columna_1', renamed: 'columna_1.1' },
+      ],
+    });
+  });
+});
 
 // Borrado de ediciones y encuestas con su Parquet crudo, y limpieza al arrancar.
 // El almacenamiento es real, sobre una carpeta temporal; Prisma es un doble en memoria.

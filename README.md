@@ -421,7 +421,7 @@ Fields: `file`, `name` (edition name, required), `year` (1900–2100), `surveyId
 - The file is checked before anything is written, so a rejected upload with `__new__` does not create the survey.
 - The first row is the header. A leading BOM is removed, blank lines are skipped, and values are kept exactly as written: no trimming and no type conversion. Every value is stored as text, and empty cells are `""`.
 - Headers are trimmed (leading and trailing spaces removed) before anything else. Spaces inside a name are kept.
-- Repeated headers, compared after trimming, are renamed by appending `.1`, `.2`, and so on (`edad`, `edad.1`). `EDAD ` and `EDAD` become `EDAD` and `EDAD.1`. A suffix that would clash with another header in the file is skipped: `EDAD, EDAD, EDAD.1` becomes `EDAD, EDAD.2, EDAD.1`. The upload response lists each rename in `renamedColumns` as `{ position, original, renamed }` (`position` starts at 1; `[]` when nothing was renamed), so the client can warn the user (report H-10).
+- Repeated headers, compared after trimming, are renamed by appending `.1`, `.2`, and so on (`edad`, `edad.1`). `EDAD ` and `EDAD` become `EDAD` and `EDAD.1`. A suffix that would clash with another header in the file is skipped: `EDAD, EDAD, EDAD.1` becomes `EDAD, EDAD.2, EDAD.1`. An empty header (or one with only spaces) is named `columna_N`, where `N` is its position starting at 1 (`ID,,EDAD` becomes `ID, columna_2, EDAD`); if the file already has that name, the automatic one gets a suffix like any repeated header. The upload response lists each rename in `renamedColumns` as `{ position, original, renamed }` (`position` starts at 1; `original` is `""` for an empty header; `[]` when nothing was renamed), so the client can warn the user (report H-10). Editions uploaded before empty headers were named keep their empty header.
 - The header order is stored and used for column order in the harmonized view.
 - All columns are stored, including those that are never mapped.
 - The edition name, after trimming, must be unique within its survey, because it is the `_dataset` of the survey view. A repeated name returns `409 dataset_name_taken` and nothing is written. Names are compared exactly (case and accents matter).
@@ -643,7 +643,7 @@ Each variable's `status` is `single` (fewer than two editions map it), `ok` (no 
 
 - Every column of the file, mapped or not, in header order, with every data row in file order.
 - Values exactly as read: no mapping, no `missingCodes` (codes such as `9` stay `9`), no type conversion, and no formula neutralization (a value `=1+1` is downloaded as `=1+1`, as it was uploaded).
-- Headers are the stored ones, so they carry the changes made at upload: trimmed, and repeated names renamed (`EDAD.1`). An empty header stays empty.
+- Headers are the stored ones, so they carry the changes made at upload: trimmed, repeated names renamed (`EDAD.1`) and empty headers named `columna_N`.
 - Differences from the uploaded bytes: UTF-8 with a BOM, comma separator, `\n` line endings, values quoted only when needed, and blank lines dropped.
 - The filename is `original_<edition>_<year>.csv`, with accents and symbols removed. The name of the uploaded file is not stored.
 - An unknown edition returns `404 harmonizer_dataset_not_found`.
