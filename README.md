@@ -2,7 +2,7 @@
 
 REST API for Ibero Data. It stores organizations, datasets and Parquet files, runs analyses over them with DuckDB, publishes a public catalog, hands data off to vistrace, and hosts the survey harmonizer.
 
-Built with NestJS 12, Prisma 7 on PostgreSQL 16, and DuckDB.
+Built with NestJS 12, Prisma 7 on PostgreSQL 16, DuckDB, and BullMQ on Redis for background jobs.
 
 Related projects:
 
@@ -20,6 +20,7 @@ This document describes what the code does today. Business rules are listed per 
 - [Configuration](#configuration)
 - [Scripts](#scripts)
 - [Conventions](#conventions)
+- [Background jobs](#background-jobs)
 - [Users and authentication](#users-and-authentication)
 - [Organizations and roles](#organizations-and-roles)
 - [Datasets](#datasets)
@@ -36,7 +37,8 @@ This document describes what the code does today. Business rules are listed per 
 ## Requirements
 
 - Node `^20.19`, `^22.12` or `>=24` (required by Prisma 7).
-- Docker, for the local PostgreSQL container. You can use your own PostgreSQL 16 instead (see `start:local`).
+- Docker, for the local PostgreSQL and Redis containers. You can use your own PostgreSQL 16 instead (see `start:local`).
+- Redis 6.2 or later for the background jobs (the container uses Redis 7.4). It must keep every key (`maxmemory-policy noeviction`), as BullMQ requires.
 
 ## Setup
 
@@ -55,7 +57,7 @@ npm run start:dev
 
 `start:dev` first runs `setup:dev`, which:
 
-1. Starts the `db` container from `docker-compose.yml` (PostgreSQL 16 on host port `5433`, user/password/db `ibero`/`ibero`/`ibero_data`).
+1. Starts the `db` and `redis` containers from `docker-compose.yml`: PostgreSQL 16 on host port `5433` (user/password/db `ibero`/`ibero`/`ibero_data`) and Redis 7.4 on host port `6380`, with `appendonly` on so queued jobs survive a restart.
 2. Generates the Prisma client.
 3. Applies migrations (`prisma migrate deploy`).
 4. Runs the seed, which creates the sysadmin from `SEED_ADMIN_*` if that email does not exist yet. An existing user is left untouched.
@@ -63,6 +65,14 @@ npm run start:dev
 The API listens on `http://localhost:3000`. `GET /` returns `Hello World!` and works as a health check.
 
 To use a PostgreSQL you already run, point `DATABASE_URL` at it and use `npm run start:local`, which skips Docker.
+
+Background jobs run in a separate process, the worker (see [Background jobs](#background-jobs)). Start it in a second terminal:
+
+```bash
+npm run start:worker
+```
+
+`npm run jobs:check` checks that the queue and the worker work: it adds a test job, waits for the worker to run it and prints the worker's pid and DuckDB settings.
 
 ## Configuration
 
@@ -76,6 +86,11 @@ To use a PostgreSQL you already run, point `DATABASE_URL` at it and use `npm run
 | `SEED_ADMIN_EMAIL` | No | `admin@ibero.mx` | Sysadmin created by the seed. |
 | `SEED_ADMIN_PASSWORD` | No | `password123` | Sysadmin password. Change it outside local development. |
 | `SEED_ADMIN_NAME` | No | `Admin Ibero` | Sysadmin display name. |
+| `REDIS_URL` | No | `redis://localhost:6380` | Redis for the background jobs (`redis://` or `rediss://`). |
+| `WORKER_CONCURRENCY` | No | `1` | Jobs a worker process runs at once. |
+| `DUCKDB_MEMORY_LIMIT` | No | `4GB` | DuckDB memory limit in the worker, in any unit DuckDB accepts (`4GB`, `512MiB`). |
+| `DUCKDB_THREADS` | No | `4` | DuckDB threads in the worker. |
+| `DUCKDB_TEMP_DIR` | No | empty (`<OS temp>/ibero-duckdb`) | Where DuckDB in the worker spills to disk when a job does not fit in memory. Created if missing. |
 | `HARMONIZER_FULL_READ_MAX_ROWS` | No | `400000` | Temporary. Largest edition or survey, in rows, that the harmonizer mapping and downloads accept. See [Temporary row limit](#temporary-row-limit). |
 
 CORS is open to every origin. The `Content-Disposition` header is exposed so the web app can read download filenames.
@@ -88,6 +103,9 @@ CORS is open to every origin. The `Content-Disposition` header is exposed so the
 | `start:local` | `setup:local` (no Docker), then the server in watch mode. |
 | `start:once` | Start once, without watch and without setup. |
 | `start:prod` | Run the compiled build (`node dist/main`). Run `build` first. |
+| `start:worker` | The worker process in watch mode. It compiles to `dist-worker/`, because the API's watch mode deletes `dist/` on every rebuild. |
+| `start:worker:prod` | Run the compiled worker (`node dist/worker`). Run `build` first. |
+| `jobs:check` | Add a test job and wait for a worker to run it. Uses `dist/` (built by `start:dev` or `build`). |
 | `build` | Compile to `dist/`. |
 | `test` | Unit tests with Vitest. |
 | `test:e2e` | End-to-end tests. Needs a running database. |
@@ -121,6 +139,20 @@ CORS is open to every origin. The `Content-Disposition` header is exposed so the
 **Identifiers.** All IDs are UUIDs. Slugs accept only lowercase letters, numbers and hyphens (`^[a-z0-9-]+$`).
 
 ---
+
+## Background jobs
+
+Heavy work runs outside the API, in a worker process (`src/worker.ts`), so a job that runs out of memory cannot take the API down. The API adds jobs to a queue in Redis with BullMQ, and the worker takes them from there.
+
+- There is one queue, `ibero-jobs`, for every kind of job. A worker runs `WORKER_CONCURRENCY` jobs at once (1 by default), whatever their kind, so it never runs two heavy DuckDB jobs at the same time unless told to.
+- Jobs and their payloads are typed in `src/modules/jobs/job-types.ts`. The API adds them with `JobsService` (`src/modules/jobs/`); each name has a handler in `src/worker/job-handlers.ts`, and a name without a handler does not compile.
+- Each job runs once (`attempts: 1`): a job that fails because of its input would fail again. A job with no handler fails without retrying. If the worker dies while running a job, BullMQ hands the job to a worker again once.
+- Completed jobs are kept 7 days and failed jobs 30 days (at most 1,000 of each), so their status can still be read; then Redis removes them.
+- A job added while no worker is running waits in Redis and runs when a worker starts. Redis keeps it across a restart.
+- DuckDB in the worker uses `DUCKDB_MEMORY_LIMIT`, `DUCKDB_THREADS` and `DUCKDB_TEMP_DIR`. The worker opens DuckDB with them when it starts and exits with an error if DuckDB rejects a value, instead of failing every job. Invalid `WORKER_CONCURRENCY`, `DUCKDB_THREADS` or `REDIS_URL` values also stop it at startup. The API's own DuckDB queries (analyses, harmonizer views) do not use these settings.
+- If Redis is down, the worker waits and connects when it comes back. Redis errors are logged at most once every 30 seconds.
+- On `SIGTERM` or `SIGINT` the worker stops taking jobs and waits for the running ones to finish before exiting.
+- The only job so far is `diagnostic`, used by `npm run jobs:check`. The API does not connect to Redis yet; it will once a module adds jobs.
 
 ## Users and authentication
 
