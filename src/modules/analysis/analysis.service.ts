@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+  Optional,
+} from '@nestjs/common';
 import { DuckDBConnection, DuckDBInstance } from '@duckdb/node-api';
 import { describeDuckDbError } from './duckdb-error.js';
 import { assertReadOnlySelect } from './sql-sanitizer.js';
@@ -48,13 +54,30 @@ function safeDuckDbError(
   return new BadRequestException({ code, ...describeDuckDbError(message) });
 }
 
+/**
+ * Options for every DuckDB this service opens (`memory_limit`, `threads`, …). The worker
+ * process provides its `DUCKDB_*` settings here; the API provides nothing, so its queries
+ * use DuckDB's defaults as before.
+ */
+export const ANALYSIS_DUCKDB_OPTIONS = Symbol('ANALYSIS_DUCKDB_OPTIONS');
+
 @Injectable()
 export class AnalysisService {
+  constructor(
+    @Optional()
+    @Inject(ANALYSIS_DUCKDB_OPTIONS)
+    private readonly duckdbOptions?: Record<string, string>,
+  ) {}
+
+  private createInstance(): Promise<DuckDBInstance> {
+    return DuckDBInstance.create(':memory:', this.duckdbOptions);
+  }
+
   private async withViews<T>(
     sources: NamedSource[],
     fn: (connection: DuckDBConnection) => Promise<T>,
   ): Promise<T> {
-    const instance = await DuckDBInstance.create(':memory:');
+    const instance = await this.createInstance();
     const connection = await instance.connect();
     try {
       for (const source of sources) {
@@ -178,7 +201,7 @@ export class AnalysisService {
         message: 'Cannot write a Parquet file without columns.',
       });
     }
-    const instance = await DuckDBInstance.create(':memory:');
+    const instance = await this.createInstance();
     const connection = await instance.connect();
     try {
       const columnDefs = columns

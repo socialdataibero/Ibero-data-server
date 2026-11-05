@@ -60,12 +60,16 @@ export function duckDbOptions(
   };
 }
 
-/** A fresh in-memory DuckDB with the worker's settings. The temp directory is created first. */
+/**
+ * A fresh DuckDB with the worker's settings: in memory, or in a database file at `path` when the
+ * data may not fit in memory. The temp directory is created first.
+ */
 export async function createWorkerDuckDb(
   settings: DuckDbSettings,
+  path = ':memory:',
 ): Promise<DuckDBInstance> {
   await mkdir(settings.tempDirectory, { recursive: true });
-  return DuckDBInstance.create(':memory:', duckDbOptions(settings));
+  return DuckDBInstance.create(path, duckDbOptions(settings));
 }
 
 /** What DuckDB actually applied, read back from a connection. */
