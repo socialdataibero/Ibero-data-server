@@ -91,6 +91,10 @@ npm run start:worker
 | `DUCKDB_MEMORY_LIMIT` | No | `4GB` | DuckDB memory limit in the worker, in any unit DuckDB accepts (`4GB`, `512MiB`). |
 | `DUCKDB_THREADS` | No | `4` | DuckDB threads in the worker. |
 | `DUCKDB_TEMP_DIR` | No | empty (`<OS temp>/ibero-duckdb`) | Where DuckDB in the worker spills to disk when a job does not fit in memory. Created if missing. |
+| `UPLOAD_DIR` | No | empty (`storage/uploads`) | Where harmonizer uploads arrive through tus, until the worker imports them. |
+| `UPLOAD_MAX_BYTES` | No | `10737418240` (10 GiB) | Largest harmonizer upload through tus. |
+| `DBF_MAX_BYTES` | No | `209715200` (200 MiB) | Largest DBF upload: a DBF is read whole into the worker's memory. |
+| `UPLOAD_EXPIRATION_HOURS` | No | `24` | An unfinished upload is deleted this long after it started. |
 | `HARMONIZER_FULL_READ_MAX_ROWS` | No | `400000` | Temporary. Largest edition or survey, in rows, that the harmonizer mapping and downloads accept. See [Temporary row limit](#temporary-row-limit). |
 
 CORS is open to every origin. The `Content-Disposition` header is exposed so the web app can read download filenames.
@@ -149,10 +153,11 @@ Heavy work runs outside the API, in a worker process (`src/worker.ts`), so a job
 - Each job runs once (`attempts: 1`): a job that fails because of its input would fail again. A job with no handler fails without retrying. If the worker dies while running a job, BullMQ hands the job to a worker again once.
 - Completed jobs are kept 7 days and failed jobs 30 days (at most 1,000 of each), so their status can still be read; then Redis removes them.
 - A job added while no worker is running waits in Redis and runs when a worker starts. Redis keeps it across a restart.
-- DuckDB in the worker uses `DUCKDB_MEMORY_LIMIT`, `DUCKDB_THREADS` and `DUCKDB_TEMP_DIR`. The worker opens DuckDB with them when it starts and exits with an error if DuckDB rejects a value, instead of failing every job. Invalid `WORKER_CONCURRENCY`, `DUCKDB_THREADS` or `REDIS_URL` values also stop it at startup. The API's own DuckDB queries (analyses, harmonizer views) do not use these settings.
+- DuckDB in the worker uses `DUCKDB_MEMORY_LIMIT`, `DUCKDB_THREADS` and `DUCKDB_TEMP_DIR`. The worker opens DuckDB with them when it starts and exits with an error if DuckDB rejects a value, instead of failing every job. Invalid `WORKER_CONCURRENCY`, `DUCKDB_THREADS` or `REDIS_URL` values also stop it at startup. The `AnalysisService` used inside the worker (column profiles) uses them too. The API's own DuckDB queries (analyses, harmonizer views) do not.
 - If Redis is down, the worker waits and connects when it comes back. Redis errors are logged at most once every 30 seconds.
 - On `SIGTERM` or `SIGINT` the worker stops taking jobs and waits for the running ones to finish before exiting.
-- The only job so far is `diagnostic`, used by `npm run jobs:check`. The API does not connect to Redis yet; it will once a module adds jobs.
+- Jobs: `harmonizerImport` (see [Imports](#imports); its job id is the import id) and `diagnostic`, used by `npm run jobs:check`.
+- The API connects to Redis to add jobs. Without the worker running, uploads arrive but stay `PENDING` until it starts.
 
 ## Users and authentication
 
@@ -398,7 +403,10 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 | `GET` | `/harmonizer/surveys/:surveyId` | One survey. |
 | `PATCH` | `/harmonizer/surveys/:surveyId` | Change `name` and/or `description`. |
 | `DELETE` | `/harmonizer/surveys/:surveyId` | Delete the survey and everything in it, including the stored files of its editions. Returns `204`. |
-| `POST` | `/harmonizer/upload` | Upload an edition (multipart), as CSV or DBF. |
+| `POST` | `/harmonizer/uploads` | Start an upload of an edition with tus (CSV, `.csv.gz` or DBF). See [Upload](#upload). |
+| `HEAD`, `PATCH`, `DELETE` | `/harmonizer/uploads/:importId` | Continue (tus `PATCH`), check (`HEAD`) or cancel (`DELETE`) an upload. |
+| `GET` | `/harmonizer/imports/:importId` | Status of an upload and of its import. See [Imports](#imports). |
+| `POST` | `/harmonizer/upload` | Upload an edition in one request (multipart), as CSV or DBF. Up to 200 MB, read in memory. The web app uses tus instead. |
 | `DELETE` | `/harmonizer/datasets/:datasetId` | Delete one edition, its mapping and its stored file. Returns `204`. |
 | `GET` | `/harmonizer/datasets/:datasetId/mapping` | Columns of an edition with saved or suggested mappings. |
 | `PUT` | `/harmonizer/datasets/:datasetId/mapping` | Save the mapping of an edition. |
@@ -430,12 +438,12 @@ Mapping, saving a mapping and the downloads still load every row into the server
 | --- | --- |
 | `GET` and `PUT .../datasets/:datasetId/mapping` | The edition's. |
 | `GET .../datasets/:datasetId/harmonized.csv` / `.parquet` | The edition's. |
-| `GET .../datasets/:datasetId/original.csv` | The edition's. |
+| `GET .../datasets/:datasetId/original.csv` | The edition's, only when the file has to be rebuilt (editions without a kept original, see [Original file](#original-file)). |
 | `GET .../surveys/:surveyId/harmonized.csv` / `.parquet` | Every edition of the survey added up, whatever `variables` asks for, because they are all loaded. |
 
 Over the limit, the response is `422 harmonizer_too_many_rows` with `params: { operation, edition | survey, rowCount, maxRows }`. `operation` is `mapping`, `export`, `original` or `survey_export`. `edition` is the edition's name and `survey` the survey's name. A missing edition or survey still returns `404` first, an unsupported export format `404 export_format_not_supported` and, for `PUT .../mapping`, a user who cannot edit the survey `403 survey_not_editable`.
 
-Uploads, the paged JSON views, the saved mapping (`GET .../mapping/saved`), dictionaries, comparisons and recoding are not limited.
+Uploads with tus, the paged JSON views, the saved mapping (`GET .../mapping/saved`), dictionaries, comparisons and recoding are not limited.
 
 ### Surveys
 
@@ -455,7 +463,25 @@ Uploads, the paged JSON views, the saved mapping (`GET .../mapping/saved`), dict
 
 ### Upload
 
-Fields: `file`, `name` (edition name, required), `year` (1900–2100), `surveyId`, `newSurvey`, and `encoding` (DBF only, see [DBF files](#dbf-files)).
+There are two ways to upload an edition. Both read the file with the same rules and answer with the same error codes, described in this section.
+
+- **tus** (`POST /harmonizer/uploads`, used by the web app): a resumable upload protocol ([tus 1.0](https://tus.io/protocols/resumable-upload)). The file arrives in chunks (the web app sends 50 MB per request) and a chunk that fails is sent again, so files of several gigabytes can be uploaded. The server writes the file to disk as it arrives and never holds it in memory. When it is complete, the worker process reads it and creates the edition in the background; the client follows it with `GET /harmonizer/imports/:importId` (see [Imports](#imports)). Up to `UPLOAD_MAX_BYTES` (10 GiB by default).
+- **One request** (`POST /harmonizer/upload`, multipart): the file is read in memory and the response is the new edition. Up to 200 MB. Kept for scripts; large files can take the server down (see [Temporary row limit](#temporary-row-limit)).
+
+Fields: `file`, `name` (edition name, required), `year` (1900–2100), `surveyId`, `newSurvey`, `organizationId` (with `__new__`), and `encoding` (DBF only, see [DBF files](#dbf-files)).
+
+With tus, the fields go in the `Upload-Metadata` header of the `POST`, with the same names, except that the edition name is `editionName` (tus clients such as Uppy use `name` for the file name) and the file name is `filename`. Every request needs the session token (`Authorization: Bearer …`). The `POST` checks, before any byte is sent and in this order, everything that does not need the file's content, with the same codes as the one-request upload:
+
+1. The fields (`400 validation_error`, with `details` naming `name`, `year`, …, or `filename`), and the file size (`400 upload_length_required` if the client does not send it).
+2. Permissions: `400 survey_organization_required`, `404 organization_not_found`, `403 survey_org_role_required`, `404 survey_not_found`, `403 survey_not_editable`.
+3. Size: `413 upload_too_large` (over `UPLOAD_MAX_BYTES`) or `413 dbf_too_large` (a `.dbf` over `DBF_MAX_BYTES`), with `params: { maxBytes, size }`.
+4. Names: `400 new_survey_name_required`, `409 survey_name_taken`, `409 dataset_name_taken`.
+
+Errors are JSON with the usual shape (`{ statusCode, code, message, params? }`). The `Location` of the new upload is `/harmonizer/uploads/<importId>`: its last part is the import id. Only the user who started an upload (or the sysadmin) can continue, check or cancel it (`404 upload_not_found` for anyone else). After the last byte, `PATCH` and `DELETE` answer `409 upload_finished`.
+
+Errors that need the file's content (encoding, CSV structure, DBF problems, empty files) cannot be known before it arrives, so with tus they are reported by the import, with the same body.
+
+File formats, by name: `.dbf` is a DBF table, `.gz` a gzip-compressed CSV (`.csv.gz`, tus only; a broken one fails with `400 gzip_invalid`), anything else a CSV.
 
 - `surveyId` is an existing survey ID, or `__new__` to create a survey named `newSurvey` in the same request.
   - With `__new__`, `newSurvey` is required (`400 new_survey_name_required`) and must not be taken (`409 survey_name_taken`).
@@ -474,6 +500,40 @@ Fields: `file`, `name` (edition name, required), `year` (1900–2100), `surveyId
 - All columns are stored, including those that are never mapped.
 - The edition name, after trimming, must be unique within its survey, because it is the `_dataset` of the survey view. A repeated name returns `409 dataset_name_taken` and nothing is written. Names are compared exactly (case and accents matter).
 - Uploading never changes other editions. Uploading the same file twice under two names creates two editions.
+
+### Imports
+
+Each tus upload has an import, with the same id, that records what happened to it. `GET /harmonizer/imports/:importId` returns it to the user who started it (or the sysadmin); anyone else gets `404 harmonizer_import_not_found`.
+
+`status` is one of:
+
+| Status | Meaning |
+| --- | --- |
+| `UPLOADING` | Bytes are still arriving. |
+| `PENDING` | The file is complete and waits for the worker. |
+| `PROCESSING` | The worker is reading it. `phase` is `checking` (the whole file must be UTF-8), `reading` (rows; `rowsRead` grows every few seconds) or `saving`. |
+| `COMPLETED` | The edition exists. `result` is what `POST /harmonizer/upload` answers: `{ datasetId, dataset, renamedColumns, source }`. |
+| `FAILED` | `error` is the body `POST /harmonizer/upload` would have answered, for example `{ statusCode: 400, code: "csv_not_utf8", message, params: { line: 7 } }`. |
+
+The response also has `fileName`, `fileSize`, `format` (`csv`, `csv_gz` or `dbf`), `name`, `year`, `surveyId`, `newSurveyName`, `datasetId`, `createdAt`, `uploadedAt`, `startedAt` and `finishedAt`.
+
+How the worker imports a CSV (see [Background jobs](#background-jobs)):
+
+1. It reads the whole file once to check that it is UTF-8 (`csv_not_utf8` with the line of the first bad byte), before parsing anything, as the one-request upload does. In the same pass it keeps the original, gzip-compressed (see [Original file](#original-file)).
+2. It reads it again, row by row, with the same parser and options as the one-request upload, and writes the edition's Parquet through a DuckDB database file in `DUCKDB_TEMP_DIR`, so a file larger than `DUCKDB_MEMORY_LIMIT` spills to disk. Values, quotes, blank lines, headers (trimmed, repeated, empty) and every CSV error are the same as in the one-request upload.
+3. It checks the names again (another upload may have taken them meanwhile) and creates the survey (with `__new__`) and the edition in one transaction, so a failure leaves neither.
+4. It computes the value profiles of every column. If that fails, they are computed later when needed; the import does not fail for it.
+
+A DBF is read whole in memory, as in the one-request upload. When the import ends, either way, the uploaded file is deleted from `UPLOAD_DIR`; a rejected file has to be fixed and uploaded again.
+
+Measured on a Mac (24 GB) with the national 2020 census (`Personas00.CSV`, 3.1 GB, 15,015,683 rows, 91 columns): the upload added 25 MB to the API's memory; the worker took about 4 min 35 s with `DUCKDB_MEMORY_LIMIT=4GB` and peaked at 4.1 GB.
+
+Recovery:
+
+- If the job cannot be queued when the upload ends (Redis down), or a queued job is lost, the API queues again, every minute, imports that have been `PENDING` or `PROCESSING` for over a minute without a waiting or running job.
+- An import that the worker started 3 times without finishing (the worker crashed or was killed, for example for memory) fails with `500 import_interrupted`.
+- An upload cancelled with `DELETE` fails with `upload_cancelled`. One not finished within `UPLOAD_EXPIRATION_HOURS` is deleted (checked every hour) and fails with `410 upload_expired`.
+- An unexpected error fails the import with `500 internal_error`; the details are in the worker's log.
 
 ### DBF files
 
@@ -687,7 +747,11 @@ Each variable's `status` is `single` (fewer than two editions map it), `ok` (no 
 
 ### Original file
 
-`GET /harmonizer/datasets/:datasetId/original.csv` returns the uploaded file rebuilt from the edition's stored Parquet. The bytes of the upload are not kept, so this is the same data, not the same file:
+`GET /harmonizer/datasets/:datasetId/original.csv` returns the uploaded file.
+
+For a CSV uploaded with tus (plain or `.csv.gz`), the original is kept gzip-compressed and this returns it byte for byte as it was uploaded (decompressed when it was a `.csv.gz`): same encoding marks, separators, line endings and quoting. It is streamed, so it has no row limit.
+
+For editions uploaded in one request or as DBF, the bytes of the upload are not kept, and the file is rebuilt from the edition's stored Parquet. It is the same data, not the same file:
 
 - Every column of the file, mapped or not, in header order, with every data row in file order.
 - Values exactly as read: no mapping, no `missingCodes` (codes such as `9` stay `9`), no type conversion, and no formula neutralization (a value `=1+1` is downloaded as `=1+1`, as it was uploaded).
@@ -695,6 +759,7 @@ Each variable's `status` is `single` (fewer than two editions map it), `ok` (no 
 - Differences from the uploaded bytes: UTF-8 with a BOM, comma separator, `\n` line endings, values quoted only when needed, and blank lines dropped.
 - The filename is `original_<edition>_<year>.csv`, with accents and symbols removed. The name of the uploaded file is not stored.
 - An unknown edition returns `404 harmonizer_dataset_not_found`.
+- A rebuilt file is subject to the [temporary row limit](#temporary-row-limit).
 
 ## File storage
 
@@ -704,13 +769,17 @@ Files are written to `storage/` under the directory the server is started from. 
 | --- | --- |
 | `storage/<datasetId>/<uuid>-<filename>` | Uploaded resources. Unsafe characters in the name become `_`. |
 | `storage/analyses/<analysisId>.parquet` | Analysis results. |
+| `storage/harmonizer/originals/<datasetId>.csv.gz` | The CSV of a harmonizer edition as it was uploaded with tus, gzip-compressed. |
+| `storage/uploads/<importId>` and `<importId>.json` | A tus upload and its tus metadata, until the worker imports it (`UPLOAD_DIR`). |
 | `storage/harmonizer/<datasetId>.parquet` | Rows of a harmonizer edition, all text, in file order. Columns are positional (`c0`, `c1`, …); their names are the edition's stored headers. Uploads are never empty now (see [Upload](#upload)), but an edition uploaded from an empty file before that rule (report H-08) has no headers and no Parquet, and reads as 0 rows. |
 
 Column profiles (see [Codes between editions](#codes-between-editions)) and dictionaries are stored in the database, not in `storage/`. Deleting an edition deletes its profiles.
 
 Deleting through the API removes the related files. A file deleted by hand makes its resource return `404 resource_file_missing`, and makes the views and exports of its harmonizer edition return `404 harmonizer_dataset_file_missing`.
 
-When the server starts, it cleans `storage/harmonizer/` (report SDI-100). It deletes every `<id>.parquet` or `<id>.parquet.deleting` whose edition no longer exists. Those are files whose removal failed after the edition was deleted, files left by an interrupted upload, or files orphaned before SDI-100. A `.deleting` file whose edition still exists is renamed back. Other files in the folder are not touched. `storage/` is shared by `start:dev` and `start:local`, which use different databases, so if no file in the folder belongs to an edition of the current database, the cleanup assumes the folder belongs to the other database: it keeps everything and logs a warning. A failed cleanup is logged and never stops the server from starting.
+Deleting an edition also deletes its kept original, with the same rules as its Parquet.
+
+When the server starts, it cleans `storage/harmonizer/` (report SDI-100). It deletes every `<id>.parquet` or `<id>.parquet.deleting`, and every `originals/<id>.csv.gz(.deleting)`, whose edition no longer exists and that is more than an hour old (the worker writes an edition's files before it creates the edition). Those are files whose removal failed after the edition was deleted, files left by an interrupted upload, or files orphaned before SDI-100. A `.deleting` file whose edition still exists is renamed back. Other files in the folder are not touched. `storage/` is shared by `start:dev` and `start:local`, which use different databases, so if no file in the folder belongs to an edition of the current database, the cleanup assumes the folder belongs to the other database: it keeps everything and logs a warning. A failed cleanup is logged and never stops the server from starting.
 
 ---
 

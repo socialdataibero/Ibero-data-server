@@ -78,6 +78,11 @@ export class JobsService implements OnModuleDestroy {
     };
   }
 
+  /** Removes a job that is not running, so it can be added again with the same id. */
+  async remove(id: string): Promise<void> {
+    await this.queue.remove(id);
+  }
+
   /** Worker processes connected to the queue right now. */
   async workerCount(): Promise<number> {
     return (await this.queue.getWorkers()).length;

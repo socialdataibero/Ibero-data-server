@@ -10,7 +10,10 @@ import { Prisma } from '@prisma/client';
 import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
 import { randomUUID } from 'node:crypto';
-import { access, readFile, rm } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { access, readFile, rm, stat } from 'node:fs/promises';
+import type { Readable } from 'node:stream';
+import { createGunzip } from 'node:zlib';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -21,6 +24,7 @@ import {
 import { LocalStorageService } from '../storage/local-storage.service.js';
 import { asciiFold, matchByName, parseVariables } from './matching.js';
 import { assertFullReadAllowed } from './full-read-guard.js';
+import { csvError, csvNotUtf8Body } from './csv-errors.js';
 import {
   buildDatasetView,
   buildSurveyView,
@@ -233,7 +237,7 @@ export interface CanonicalVariableInfo {
 }
 
 /** Valores distintos que se guardan por columna en su perfil. */
-const PROFILE_MAX_VALUES = 200;
+export const PROFILE_MAX_VALUES = 200;
 
 /** Diccionarios: tamaño máximo del archivo y extensiones aceptadas. */
 export const MAX_CODEBOOK_BYTES = 20 * 1024 * 1024;
@@ -293,7 +297,8 @@ export type ExportFormat = 'csv' | 'parquet';
 export interface ExportFile {
   filename: string;
   contentType: string;
-  body: Buffer;
+  /** The whole file, or a stream for files too large to hold in memory. */
+  body: Buffer | Readable;
 }
 
 function safeFileBase(name: string, fallback: string): string {
@@ -306,12 +311,23 @@ function safeFileBase(name: string, fallback: string): string {
 
 // Cada edición se guarda una sola vez como Parquet todo-VARCHAR. Guardarla como
 // un JSON por fila repetía el nombre de cada columna en cada fila (H-31).
-function rawStorageKey(datasetId: string): string {
+export function rawStorageKey(datasetId: string): string {
   return `harmonizer/${datasetId}.parquet`;
+}
+
+// El CSV tal como se subió, comprimido con gzip. Solo existe para ediciones importadas
+// por el worker (subida por tus); las demás regeneran «Descargar original» del Parquet.
+export function originalStorageKey(datasetId: string): string {
+  return `harmonizer/originals/${datasetId}.csv.gz`;
 }
 
 // `<id>.parquet` y, apartado para borrarse, `<id>.parquet.deleting`.
 const RAW_FILE = /^([0-9a-f-]{36})\.parquet(\.deleting)?$/;
+// Lo mismo para los originales: `originals/<id>.csv.gz(.deleting)`.
+const ORIGINAL_FILE = /^([0-9a-f-]{36})\.csv\.gz(\.deleting)?$/;
+// El worker escribe los archivos de una edición antes de crearla en la base. La limpieza
+// no toca archivos tan recientes, para no borrar los de una importación en curso.
+const SWEEP_MIN_AGE_MS = 3600_000;
 
 // Las columnas del Parquet crudo son posicionales (`c0`, `c1`, …) y los nombres
 // reales viven en `HarmonizerDataset.columns`. DuckDB no distingue mayúsculas en
@@ -362,7 +378,7 @@ export type UploadSource =
       deletedRecords: number;
     };
 
-interface ParsedUpload {
+export interface ParsedUpload {
   columns: string[];
   rows: RawData[];
   renamed: RenamedColumn[];
@@ -415,7 +431,7 @@ function normalizeMissingCodes(codes: string[] | undefined): string[] {
   ];
 }
 
-function datasetNameTaken(name: string, surveyName: string) {
+export function datasetNameTaken(name: string, surveyName: string) {
   return new ConflictException({
     code: 'dataset_name_taken',
     message: `Survey "${surveyName}" already has an edition named "${name}".`,
@@ -431,52 +447,43 @@ function decodeUtf8(buffer: Buffer): string {
   } catch {
     const lossy = new TextDecoder('utf-8').decode(buffer);
     const line = lossy.slice(0, lossy.indexOf('\uFFFD')).split('\n').length;
-    throw new BadRequestException({
-      code: 'csv_not_utf8',
-      message: `The file is not UTF-8 and its accents would be lost (the first unreadable character is on line ${line}). Save it as "CSV UTF-8" and upload it again.`,
-      params: { line },
-    });
+    throw new BadRequestException(csvNotUtf8Body(line));
   }
 }
 
-/**
- * Explains a CSV that could not be parsed (H-07): the line and what to check, instead of the
- * parser's internal rule ("Invalid Opening Quote"). `lastRecordLine` is the line where the
- * last good row ended.
- */
-function csvError(err: unknown, lastRecordLine: number): { message: string; params: Record<string, unknown> } {
-  const info = (err ?? {}) as {
-    code?: string;
-    lines?: number;
-    record?: unknown[];
-    columns?: unknown[];
-  };
-  switch (info.code) {
-    case 'CSV_QUOTE_NOT_CLOSED': {
-      const line = lastRecordLine + 1;
-      return {
-        message: `A value opens a quote (") and never closes it, starting at line ${line}.`,
-        params: { problem: 'quote_not_closed', line },
-      };
+/** Reads an uploaded DBF into rows. Shared by the synchronous upload and the import worker. */
+export function parseDbfUpload(
+  buffer: Buffer,
+  encoding: UploadEncoding | undefined,
+): ParsedUpload {
+  let table;
+  try {
+    table = readDbf(buffer, encoding === 'auto' ? undefined : encoding);
+  } catch (err) {
+    if (err instanceof DbfError) {
+      throw new BadRequestException({ code: err.code, message: err.message, params: err.params });
     }
-    case 'CSV_RECORD_INCONSISTENT_COLUMNS':
-      if (info.record && info.columns) {
-        return {
-          message: `The row on line ${info.lines} has ${info.record.length} columns and the header has ${info.columns.length}.`,
-          params: {
-            problem: 'inconsistent_columns',
-            line: info.lines,
-            rowColumns: info.record.length,
-            headerColumns: info.columns.length,
-          },
-        };
-      }
-      break;
+    throw err;
   }
-  const where = info.lines ? ` near line ${info.lines}` : '';
+  if (table.rows.length === 0) {
+    throw new BadRequestException({
+      code: 'dbf_no_rows',
+      message: 'The DBF file has no records, or all of them are marked as deleted.',
+    });
+  }
+  const { columns, renamed } = dedupeHeaders(table.headers);
   return {
-    message: `The file could not be read as CSV${where}.`,
-    params: { problem: 'unreadable', ...(info.lines ? { line: info.lines } : {}) },
+    columns,
+    rows: table.rows.map((values) =>
+      Object.fromEntries(columns.map((col, i) => [col, values[i]])),
+    ),
+    renamed,
+    source: {
+      format: 'dbf',
+      encoding: table.encoding,
+      encodingSource: table.encodingSource,
+      deletedRecords: table.deletedRecords,
+    },
   };
 }
 
@@ -602,18 +609,24 @@ export class HarmonizerService implements OnApplicationBootstrap {
   ): Promise<string[]> {
     const aside: string[] = [];
     for (const dataset of datasets) {
-      try {
-        const key = await this.storage.setAside(rawStorageKey(dataset.id));
-        if (key) aside.push(key);
-      } catch (err) {
-        this.logger.warn(
-          `Could not set aside "${rawStorageKey(dataset.id)}": ${(err as Error).message}`,
-        );
-        await this.restoreRawFiles(aside);
-        throw new ConflictException({
-          code: 'harmonizer_file_in_use',
-          message: lockedMessage(dataset.name),
-        });
+      // El original comprimido solo existe en ediciones importadas por el worker.
+      for (const storageKey of [
+        rawStorageKey(dataset.id),
+        originalStorageKey(dataset.id),
+      ]) {
+        try {
+          const key = await this.storage.setAside(storageKey);
+          if (key) aside.push(key);
+        } catch (err) {
+          this.logger.warn(
+            `Could not set aside "${storageKey}": ${(err as Error).message}`,
+          );
+          await this.restoreRawFiles(aside);
+          throw new ConflictException({
+            code: 'harmonizer_file_in_use',
+            message: lockedMessage(dataset.name),
+          });
+        }
       }
     }
     return aside;
@@ -650,19 +663,24 @@ export class HarmonizerService implements OnApplicationBootstrap {
   }
 
   private async sweepRawFiles(): Promise<void> {
-    const files = (await this.storage.list('harmonizer'))
-      .map((name) => ({ name, match: RAW_FILE.exec(name) }))
-      .filter((f) => f.match !== null)
-      .map((f) => ({
-        name: f.name,
-        id: f.match![1],
-        aside: f.match![2] !== undefined,
-      }));
-    if (files.length === 0) return;
+    const listed = async (dir: string, pattern: RegExp) =>
+      (await this.storage.list(dir))
+        .map((name) => ({ name, match: pattern.exec(name) }))
+        .filter((f) => f.match !== null)
+        .map((f) => ({
+          key: `${dir}/${f.name}`,
+          id: f.match![1],
+          aside: f.match![2] !== undefined,
+        }));
+    const found = [
+      ...(await listed('harmonizer', RAW_FILE)),
+      ...(await listed('harmonizer/originals', ORIGINAL_FILE)),
+    ];
+    if (found.length === 0) return;
     const live = new Set(
       (
         await this.prisma.harmonizerDataset.findMany({
-          where: { id: { in: files.map((f) => f.id) } },
+          where: { id: { in: found.map((f) => f.id) } },
           select: { id: true },
         })
       ).map((d) => d.id),
@@ -671,22 +689,31 @@ export class HarmonizerService implements OnApplicationBootstrap {
     // archivo es de esta base, la carpeta es de la otra y no se toca.
     if (live.size === 0) {
       this.logger.warn(
-        `No file in storage/harmonizer belongs to an edition in this database; ${files.length} file(s) kept.`,
+        `No file in storage/harmonizer belongs to an edition in this database; ${found.length} file(s) kept.`,
       );
       return;
     }
     let removed = 0;
-    for (const f of files) {
-      const key = `harmonizer/${f.name}`;
+    for (const f of found) {
       if (!live.has(f.id)) {
-        await this.storage.remove(key);
+        if (await this.isRecent(f.key)) continue;
+        await this.storage.remove(f.key);
         removed++;
       } else if (f.aside) {
-        await this.restoreRawFiles([key]);
+        await this.restoreRawFiles([f.key]);
       }
     }
     if (removed > 0) {
       this.logger.log(`Removed ${removed} harmonizer file(s) with no edition.`);
+    }
+  }
+
+  private async isRecent(key: string): Promise<boolean> {
+    try {
+      const { mtimeMs } = await stat(this.storage.resolvePath(key));
+      return Date.now() - mtimeMs < SWEEP_MIN_AGE_MS;
+    } catch {
+      return false;
     }
   }
 
@@ -1315,39 +1342,8 @@ export class HarmonizerService implements OnApplicationBootstrap {
     return this.createSurvey({ name, organizationId: dto.organizationId! }, userId);
   }
 
-  private parseDbf(
-    buffer: Buffer,
-    encoding: UploadEncoding | undefined,
-  ): ParsedUpload {
-    let table;
-    try {
-      table = readDbf(buffer, encoding === 'auto' ? undefined : encoding);
-    } catch (err) {
-      if (err instanceof DbfError) {
-        throw new BadRequestException({ code: err.code, message: err.message, params: err.params });
-      }
-      throw err;
-    }
-    if (table.rows.length === 0) {
-      throw new BadRequestException({
-        code: 'dbf_no_rows',
-        message: 'The DBF file has no records, or all of them are marked as deleted.',
-      });
-    }
-    const { columns, renamed } = dedupeHeaders(table.headers);
-    return {
-      columns,
-      rows: table.rows.map((values) =>
-        Object.fromEntries(columns.map((col, i) => [col, values[i]])),
-      ),
-      renamed,
-      source: {
-        format: 'dbf',
-        encoding: table.encoding,
-        encodingSource: table.encodingSource,
-        deletedRecords: table.deletedRecords,
-      },
-    };
+  private parseDbf(buffer: Buffer, encoding: UploadEncoding | undefined): ParsedUpload {
+    return parseDbfUpload(buffer, encoding);
   }
 
   private parseCsv(buffer: Buffer): {
@@ -2566,6 +2562,25 @@ export class HarmonizerService implements OnApplicationBootstrap {
    */
   async exportOriginal(datasetId: string): Promise<ExportFile> {
     const dataset = await this.getDataset(datasetId);
+    const filename = `${safeFileBase(`original_${dataset.name}_${dataset.year}`, 'original')}.csv`;
+    // Ediciones importadas por el worker: el archivo que se subió, byte por byte,
+    // descomprimido mientras se envía. No pasa por memoria, así que no tiene límite de filas.
+    const kept = this.storage.resolvePath(originalStorageKey(dataset.id));
+    if (
+      await access(kept).then(
+        () => true,
+        () => false,
+      )
+    ) {
+      const gunzip = createGunzip();
+      const file = createReadStream(kept);
+      file.on('error', (err) => gunzip.destroy(err));
+      return {
+        filename,
+        contentType: EXPORT_CONTENT_TYPE.csv,
+        body: file.pipe(gunzip),
+      };
+    }
     assertFullReadAllowed(
       'original',
       { edition: dataset.name },
@@ -2578,7 +2593,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
       ...rows.map((row) => dataset.columns.map((column) => row[column])),
     ]);
     return {
-      filename: `${safeFileBase(`original_${dataset.name}_${dataset.year}`, 'original')}.csv`,
+      filename,
       contentType: EXPORT_CONTENT_TYPE.csv,
       body: Buffer.from(`\ufeff${csv}`, 'utf8'),
     };

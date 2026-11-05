@@ -18,6 +18,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
+import { pipeline } from 'node:stream/promises';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../../shared/guards/jwt-auth.guard.js';
 import { CurrentUser } from '../../shared/decorators/current-user.decorator.js';
@@ -346,6 +347,14 @@ export class HarmonizerController {
       'Content-Disposition',
       `attachment; filename="${file.filename}"`,
     );
-    res.send(file.body);
+    if (Buffer.isBuffer(file.body)) {
+      res.send(file.body);
+      return;
+    }
+    // A stream that fails half way can only cut the response: the headers are already sent.
+    pipeline(file.body, res).catch((err: Error) => {
+      if (!res.headersSent) res.status(500).end();
+      else res.destroy(err);
+    });
   }
 }

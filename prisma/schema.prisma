@@ -67,6 +67,7 @@ model User {
   ownedDatasets     Dataset[]
   analyses          Analysis[]
   harmonizerSurveys HarmonizerSurvey[]
+  harmonizerImports HarmonizerImport[]
 
   @@map("users")
 }
@@ -217,6 +218,7 @@ model HarmonizerSurvey {
   datasets           HarmonizerDataset[]
   canonicalVariables HarmonizerCanonicalVariable[]
   codebooks          HarmonizerCodebook[]
+  imports            HarmonizerImport[]
 
   @@map("harmonizer_surveys")
 }
@@ -363,4 +365,58 @@ model HarmonizerColumnProfile {
 
   @@unique([datasetId, sourceColumn])
   @@map("harmonizer_column_profiles")
+}
+
+enum HarmonizerImportStatus {
+  /// The file is still arriving through tus.
+  UPLOADING
+  /// The file arrived and the job is queued.
+  PENDING
+  /// The worker is reading and converting it.
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+/// One upload of an edition through tus, from its first byte until the worker turns it into an
+/// edition (or rejects it). Its id is also the tus upload id and the job id.
+model HarmonizerImport {
+  id             String                 @id
+  status         HarmonizerImportStatus @default(UPLOADING)
+  /// What the worker is doing: `checking` (encoding), `reading` (rows), `saving`.
+  phase          String?
+  /// Data rows read so far, updated while the worker reads.
+  rowsRead       Int                    @default(0)
+  /// Times the worker started it. A file that keeps stopping the worker fails after a few.
+  attempts       Int                    @default(0)
+  fileName       String
+  fileSize       BigInt
+  /// `csv`, `csv_gz` or `dbf`, from the file name.
+  format         String
+  /// Edition fields, as sent with the upload.
+  name           String
+  year           Int
+  /// Existing survey; null when the upload creates one (`newSurveyName`, `organizationId`).
+  surveyId       String?
+  newSurveyName  String?
+  organizationId String?
+  /// DBF encoding choice (`auto`, …); null for CSV.
+  encoding       String?
+  createdById    String
+  /// Set when the edition is created.
+  datasetId      String?
+  /// `{ datasetId, dataset, renamedColumns, source }`, as the upload response used to be.
+  result         Json?
+  /// `{ statusCode, code, message, params? }`, the same body a synchronous upload would answer.
+  error          Json?
+  createdAt      DateTime               @default(now())
+  uploadedAt     DateTime?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+
+  survey    HarmonizerSurvey? @relation(fields: [surveyId], references: [id], onDelete: SetNull)
+  createdBy User              @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("harmonizer_imports")
 }

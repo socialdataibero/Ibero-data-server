@@ -3,6 +3,14 @@
  * through `JobsService.add`, typed by this map; the worker registers one handler per name.
  */
 export interface JobTypes {
+  /**
+   * Turns a finished harmonizer upload into an edition. Added by the API when the tus upload
+   * ends, with the import id as job id (so adding it twice is harmless).
+   */
+  harmonizerImport: {
+    data: { importId: string };
+    result: { status: string };
+  };
   /** Checks the worker end to end: Redis, the separate process and the DuckDB settings. */
   diagnostic: {
     data: { requestedBy: string };
