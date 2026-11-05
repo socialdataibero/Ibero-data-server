@@ -76,6 +76,7 @@ To use a PostgreSQL you already run, point `DATABASE_URL` at it and use `npm run
 | `SEED_ADMIN_EMAIL` | No | `admin@ibero.mx` | Sysadmin created by the seed. |
 | `SEED_ADMIN_PASSWORD` | No | `password123` | Sysadmin password. Change it outside local development. |
 | `SEED_ADMIN_NAME` | No | `Admin Ibero` | Sysadmin display name. |
+| `HARMONIZER_FULL_READ_MAX_ROWS` | No | `400000` | Temporary. Largest edition or survey, in rows, that the harmonizer mapping and downloads accept. See [Temporary row limit](#temporary-row-limit). |
 
 CORS is open to every origin. The `Content-Disposition` header is exposed so the web app can read download filenames.
 
@@ -389,6 +390,21 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 | `GET` | `/harmonizer/surveys/:surveyId/harmonized` | Harmonized view of all editions, one page at a time (`limit`, `offset`). Optional `variables`. |
 | `GET` | `/harmonizer/surveys/:surveyId/harmonized.csv` | Same, as CSV. Also `.parquet`. |
 
+### Temporary row limit
+
+Mapping, saving a mapping and the downloads still load every row into the server's memory, and from about 500,000 rows they can crash the whole server. Until they are rewritten, they are refused above a row limit: `HARMONIZER_FULL_READ_MAX_ROWS`, 400,000 by default (a value that is not a positive integer uses the default). The limit is checked against the stored `rowCount`, before any data is read:
+
+| Endpoint | Rows compared |
+| --- | --- |
+| `GET` and `PUT .../datasets/:datasetId/mapping` | The edition's. |
+| `GET .../datasets/:datasetId/harmonized.csv` / `.parquet` | The edition's. |
+| `GET .../datasets/:datasetId/original.csv` | The edition's. |
+| `GET .../surveys/:surveyId/harmonized.csv` / `.parquet` | Every edition of the survey added up, whatever `variables` asks for, because they are all loaded. |
+
+Over the limit, the response is `422 harmonizer_too_many_rows` with `params: { operation, edition | survey, rowCount, maxRows }`. `operation` is `mapping`, `export`, `original` or `survey_export`. `edition` is the edition's name and `survey` the survey's name. A missing edition or survey still returns `404` first, an unsupported export format `404 export_format_not_supported` and, for `PUT .../mapping`, a user who cannot edit the survey `403 survey_not_editable`.
+
+Uploads, the paged JSON views, the saved mapping (`GET .../mapping/saved`), dictionaries, comparisons and recoding are not limited.
+
 ### Surveys
 
 - The name is trimmed and cannot be empty (`400 survey_name_required`).
@@ -533,7 +549,7 @@ Paging:
 - The response adds `total` (rows of the whole view), `limit` and `offset`. An `offset` past the end returns no rows and the same `total`.
 - Only the rows of the page and the mapped columns are read from the stored Parquet (DuckDB `LIMIT`/`OFFSET`, which keeps file order). `total` comes from the stored `rowCount` of each edition, so nothing is counted.
 - In the survey view, editions are stacked in the same order as the export, so a page can end in one edition and continue in the next. Row `n` of the view is the same row in every page size and in the CSV export.
-- Exports (`.csv`, `.parquet`) are not paged: they still build the whole view in memory.
+- Exports (`.csv`, `.parquet`) are not paged: they still build the whole view in memory, so they are refused above the [temporary row limit](#temporary-row-limit).
 
 Edition view:
 

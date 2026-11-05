@@ -20,6 +20,7 @@ import {
 } from '../analysis/analysis.service.js';
 import { LocalStorageService } from '../storage/local-storage.service.js';
 import { asciiFold, matchByName, parseVariables } from './matching.js';
+import { assertFullReadAllowed } from './full-read-guard.js';
 import {
   buildDatasetView,
   buildSurveyView,
@@ -1756,6 +1757,11 @@ export class HarmonizerService implements OnApplicationBootstrap {
     otherEditions: { id: string; name: string; year: number; mappedColumns: number }[];
   }> {
     const dataset = await this.getDataset(datasetId);
+    assertFullReadAllowed(
+      'mapping',
+      { edition: dataset.name },
+      dataset.rowCount,
+    );
 
     const [canonicals, saved, historical, rawRows, codebookVars, codebooks, others] = await Promise.all([
       this.prisma.harmonizerCanonicalVariable.findMany({
@@ -1923,6 +1929,11 @@ export class HarmonizerService implements OnApplicationBootstrap {
     dto: SaveMappingDto,
   ): Promise<{ ok: true; datasetId: string }> {
     const dataset = await this.getDataset(datasetId);
+    assertFullReadAllowed(
+      'mapping',
+      { edition: dataset.name },
+      dataset.rowCount,
+    );
     const choiceByColumn = new Map(dto.columns.map((c) => [c.column, c]));
 
     await this.assertNewCanonicalNames(dataset, choiceByColumn);
@@ -2413,6 +2424,12 @@ export class HarmonizerService implements OnApplicationBootstrap {
       where: { surveyId },
       orderBy: [{ year: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
     });
+    // Se cargan todas las ediciones, sin importar las variables pedidas.
+    assertFullReadAllowed(
+      'survey_export',
+      { survey: survey.name },
+      datasets.reduce((sum, d) => sum + d.rowCount, 0),
+    );
     const editions: DatasetEdition[] = [];
     for (const dataset of datasets) {
       editions.push(await this.loadEdition(dataset));
@@ -2511,6 +2528,11 @@ export class HarmonizerService implements OnApplicationBootstrap {
   async exportDataset(datasetId: string, fmt: string): Promise<ExportFile> {
     const format = this.assertExportFormat(fmt);
     const dataset = await this.getDataset(datasetId);
+    assertFullReadAllowed(
+      'export',
+      { edition: dataset.name },
+      dataset.rowCount,
+    );
     const view = buildDatasetView(await this.loadEdition(dataset));
     return this.exportView(
       `harmonized_${dataset.name}_${dataset.year}`,
@@ -2544,6 +2566,11 @@ export class HarmonizerService implements OnApplicationBootstrap {
    */
   async exportOriginal(datasetId: string): Promise<ExportFile> {
     const dataset = await this.getDataset(datasetId);
+    assertFullReadAllowed(
+      'original',
+      { edition: dataset.name },
+      dataset.rowCount,
+    );
     const rows = await this.readRawRows(dataset);
     // Filas como arreglos: con objetos, csv-stringify leería `EDAD.1` como ruta anidada.
     const csv = stringify([
