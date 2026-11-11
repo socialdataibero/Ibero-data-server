@@ -396,7 +396,7 @@ Concepts:
 - **Mapping**: "column `edad1` of this edition is canonical `edad`".
 - **Dictionary** (called `codebook` in the API): what each column of a file means and what each of its codes means, for example an INEGI census descriptor. It belongs to a survey and can describe many editions.
 
-Every harmonizer endpoint needs a session, and any logged-in user can read and change every survey. Surveys do not belong to organizations.
+Every harmonizer endpoint needs a session, and any logged-in user can read and change every survey. Surveys do not belong to organizations. The one exception to the session is `GET /harmonizer/downloads/:token` (see [Direct downloads](#direct-downloads)).
 
 | Method | Path | Description |
 | --- | --- | --- |
@@ -421,6 +421,7 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 | `GET` | `/harmonizer/datasets/:datasetId/harmonized` | Harmonized view of one edition, one page at a time (`limit`, `offset`). |
 | `GET` | `/harmonizer/datasets/:datasetId/harmonized.csv` | Same, as CSV. Also `.parquet`. |
 | `GET` | `/harmonizer/datasets/:datasetId/original.csv` | The uploaded file, rebuilt from storage with every column. See [Original file](#original-file). |
+| `POST` | `/harmonizer/datasets/:datasetId/harmonized.csv/download` | Prepare the edition's CSV for a direct download. Also `.parquet`, and `original.csv/download`. See [Direct downloads](#direct-downloads). |
 | `GET` | `/harmonizer/surveys/:surveyId/variables` | Canonical variables of the survey and where each one is mapped. |
 | `PATCH` | `/harmonizer/surveys/:surveyId/variables/:variableId` | Rename a canonical variable: `{ name }`. |
 | `DELETE` | `/harmonizer/surveys/:surveyId/variables/:variableId` | Delete a canonical variable that no edition maps. Returns `204`. |
@@ -431,6 +432,8 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 | `GET` | `/harmonizer/surveys/:surveyId/catalog.csv` | Catalog of categories of every variable that has one. |
 | `GET` | `/harmonizer/surveys/:surveyId/harmonized` | Harmonized view of all editions, one page at a time (`limit`, `offset`). Optional `variables`. |
 | `GET` | `/harmonizer/surveys/:surveyId/harmonized.csv` | Same, as CSV. Also `.parquet`. |
+| `POST` | `/harmonizer/surveys/:surveyId/harmonized.csv/download` | Prepare the survey's CSV for a direct download. Also `.parquet`. Optional `variables`. |
+| `GET` | `/harmonizer/downloads/:token` | A prepared download. No session. |
 
 ### Surveys
 
@@ -749,6 +752,19 @@ For editions uploaded in one request or as DBF, the bytes of the upload are not 
 - An unknown edition returns `404 harmonizer_dataset_not_found`.
 - A value that starts with a BOM character (U+FEFF) loses it, because the DuckDB client for Node removes it when it reads text. The same happens in the harmonized views and downloads; the stored data keeps it, and so does the kept original of a tus upload.
 - The file is rebuilt without loading the rows into the server: DuckDB hands them over in blocks and they are written to a temporary file, which is sent and then deleted, so it has no row limit.
+
+### Direct downloads
+
+A browser can only save a file as it arrives when it opens a link, and a link cannot carry the session (`Authorization: Bearer …`). With `fetch`, the whole file has to fit in the browser's memory first, which a census file of several GB does not. So a download takes two steps:
+
+1. `POST` to the download's path plus `/download`, with the session: `.../datasets/:datasetId/harmonized.csv/download` (or `.parquet`), `.../datasets/:datasetId/original.csv/download`, or `.../surveys/:surveyId/harmonized.csv/download` (or `.parquet`, with the same `variables` query as the `GET`). The server prepares the same file as the `GET` and answers `201 { url, filename, size, expiresAt }`. Every error of the `GET` comes back here, as a normal JSON response, before anything is downloaded.
+2. The browser opens `url` (`/harmonizer/downloads/<token>`, relative to the API), which needs no session: the token is the permission. It answers the file as an attachment, with `Content-Length` when `size` is known (`size` is `null` for a kept original of a tus upload, which is unzipped as it is sent), `Cache-Control: no-store` and `Referrer-Policy: no-referrer`.
+
+- The token is random (256 bits) and works **once**: the second request, or one after `expiresAt` (15 minutes), returns `404 download_not_found`. A download cut half way cannot be resumed; prepare it again.
+- A prepared file waits in the server's temporary folder (`ibero-harmonized-<id>.<ext>`) and is deleted once it is sent or when it expires. If the server stops first, its token is lost and the file stays; the next start deletes such files once they are older than 75 minutes.
+- Prepared downloads are kept in the API's memory, so they only work with one API process.
+- Preparing takes as long as generating the file: about 20 seconds for the national census edition as Parquet. A proxy in front of the API must allow requests that long.
+- The `GET` endpoints still send the file directly, with the session, for scripts.
 
 ## File storage
 

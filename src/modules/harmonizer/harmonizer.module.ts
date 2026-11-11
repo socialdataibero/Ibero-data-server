@@ -7,6 +7,8 @@ import { HarmonizerController } from './harmonizer.controller.js';
 import { SurveyAccessService } from './survey-access.service.js';
 import { HarmonizerUploadsController } from './import/harmonizer-uploads.controller.js';
 import { HarmonizerUploadsService } from './import/harmonizer-uploads.service.js';
+import { HarmonizerDownloadsController } from './downloads/harmonizer-downloads.controller.js';
+import { HarmonizerDownloadsService } from './downloads/harmonizer-downloads.service.js';
 import {
   UPLOAD_STORAGE,
   createUploadStorage,
@@ -14,11 +16,16 @@ import {
 
 @Module({
   imports: [AuthModule, AnalysisModule, JobsModule],
-  controllers: [HarmonizerController, HarmonizerUploadsController],
+  controllers: [
+    HarmonizerController,
+    HarmonizerUploadsController,
+    HarmonizerDownloadsController,
+  ],
   providers: [
     HarmonizerService,
     SurveyAccessService,
     HarmonizerUploadsService,
+    HarmonizerDownloadsService,
     { provide: UPLOAD_STORAGE, useFactory: () => createUploadStorage() },
   ],
   exports: [HarmonizerService],

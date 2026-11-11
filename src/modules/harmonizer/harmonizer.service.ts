@@ -347,9 +347,17 @@ export type ExportFormat = 'csv' | 'parquet';
 export interface ExportFile {
   filename: string;
   contentType: string;
-  /** The whole file, or a stream for files too large to hold in memory. */
+  /**
+   * The whole file, or a stream for files too large to hold in memory. A stream over a temporary
+   * file deletes it when it closes, also when it is destroyed without being read.
+   */
   body: Buffer | Readable;
+  /** Size in bytes, when it is known before sending. */
+  size?: number;
 }
+
+/** Temporary files of the downloads: `ibero-harmonized-<uuid>.<csv|parquet>`. */
+export const EXPORT_TEMP_FILE = /^ibero-harmonized-[0-9a-f-]{36}\.(csv|parquet)/;
 
 function safeFileBase(name: string, fallback: string): string {
   return (
@@ -2565,7 +2573,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
     if (format === 'csv') {
       return {
         ...file,
-        body: await this.csvExportFile(headers, this.editionRows(edition, edition.columns, false)),
+        ...(await this.csvExportFile(headers, this.editionRows(edition, edition.columns, false))),
       };
     }
     if (headers.length === 0 || !edition.path) {
@@ -2577,10 +2585,10 @@ export class HarmonizerService implements OnApplicationBootstrap {
     const types = await this.exportTypes(dataset.surveyId, [edition], headers);
     return {
       ...file,
-      body: await this.parquetExportFile(
+      ...(await this.parquetExportFile(
         [{ alias: 'e0', path: edition.path }],
         [editionParquetSql('e0', edition.columns, types)],
-      ),
+      )),
     };
   }
 
@@ -2619,14 +2627,14 @@ export class HarmonizerService implements OnApplicationBootstrap {
       const editionRows = this.editionRows.bind(this);
       return {
         ...file,
-        body: await this.csvExportFile(
+        ...(await this.csvExportFile(
           ['_dataset', '_year', '_row', ...wanted],
           (async function* () {
             for (const { edition, columns } of included) {
               yield* editionRows(edition, columns, true);
             }
           })(),
-        ),
+        )),
       };
     }
 
@@ -2638,7 +2646,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
     const sources = included.map((i, n) => ({ alias: `e${n}`, path: i.edition.path! }));
     return {
       ...file,
-      body: await this.parquetExportFile(
+      ...(await this.parquetExportFile(
         sources,
         surveyParquetSql(
           included.map((i, n) => ({
@@ -2650,7 +2658,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
           wanted,
           types,
         ),
-      ),
+      )),
     };
   }
 
@@ -2674,6 +2682,8 @@ export class HarmonizerService implements OnApplicationBootstrap {
       const gunzip = createGunzip();
       const file = createReadStream(kept);
       file.on('error', (err) => gunzip.destroy(err));
+      // Descartado sin leerse (una descarga preparada que vence): suelta el archivo.
+      gunzip.once('close', () => file.destroy());
       return {
         filename,
         contentType: EXPORT_CONTENT_TYPE.csv,
@@ -2695,9 +2705,9 @@ export class HarmonizerService implements OnApplicationBootstrap {
     return {
       filename,
       contentType: EXPORT_CONTENT_TYPE.csv,
-      body: await this.exportTempFile('csv', (dest) =>
+      ...(await this.exportTempFile('csv', (dest) =>
         pipeline(Readable.from(records()), csvStringifier({ bom: true }), createWriteStream(dest)),
-      ),
+      )),
     };
   }
 
@@ -2852,7 +2862,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
   private csvExportFile(
     columns: string[],
     rows: AsyncIterable<HarmonizedRow>,
-  ): Promise<Readable> {
+  ): Promise<Pick<ExportFile, 'body' | 'size'>> {
     return this.exportTempFile('csv', (path) =>
       pipeline(
         Readable.from(rows),
@@ -2867,21 +2877,24 @@ export class HarmonizerService implements OnApplicationBootstrap {
     );
   }
 
-  private parquetExportFile(sources: NamedSource[], parts: string[]): Promise<Readable> {
+  private parquetExportFile(
+    sources: NamedSource[],
+    parts: string[],
+  ): Promise<Pick<ExportFile, 'body' | 'size'>> {
     return this.exportTempFile('parquet', (path) =>
       this.analysisService.copyInternalQueryToParquet(sources, parts, path),
     );
   }
 
   /**
-   * Escribe la descarga completa en un archivo temporal y la devuelve como stream, que borra
-   * el archivo al cerrarse (también si el cliente corta). Un error al escribir llega antes de
-   * mandar nada, con su código.
+   * Escribe la descarga completa en un archivo temporal y la devuelve como stream, con su
+   * tamaño. El stream borra el archivo al cerrarse (también si el cliente corta o si se
+   * descarta sin leerlo). Un error al escribir llega antes de mandar nada, con su código.
    */
   private async exportTempFile(
     ext: ExportFormat,
     write: (path: string) => Promise<unknown>,
-  ): Promise<Readable> {
+  ): Promise<Pick<ExportFile, 'body' | 'size'>> {
     const path = join(tmpdir(), `ibero-harmonized-${randomUUID()}.${ext}`);
     try {
       await write(path);
@@ -2889,8 +2902,9 @@ export class HarmonizerService implements OnApplicationBootstrap {
       await rm(path, { force: true });
       throw err;
     }
+    const { size } = await stat(path);
     const body = createReadStream(path);
     body.once('close', () => void rm(path, { force: true }));
-    return body;
+    return { body, size };
   }
 }
