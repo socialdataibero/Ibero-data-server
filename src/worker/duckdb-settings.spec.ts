@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  API_DUCKDB_ENV,
   DuckDbSettingsError,
   checkDuckDbSettings,
   duckDbSettings,
@@ -29,6 +30,23 @@ describe('duckDbSettings', () => {
       threads: 2,
       tempDirectory: resolve('storage/tmp'),
     });
+  });
+
+  it('reads API_DUCKDB_* for the API, with its own defaults', () => {
+    expect(duckDbSettings({ DUCKDB_MEMORY_LIMIT: '8GB' }, API_DUCKDB_ENV)).toEqual({
+      memoryLimit: '2GB',
+      threads: 4,
+      tempDirectory: join(tmpdir(), 'ibero-duckdb-api'),
+    });
+    expect(
+      duckDbSettings(
+        { API_DUCKDB_MEMORY_LIMIT: '1GB', API_DUCKDB_THREADS: '2', API_DUCKDB_TEMP_DIR: 'tmp/api' },
+        API_DUCKDB_ENV,
+      ),
+    ).toEqual({ memoryLimit: '1GB', threads: 2, tempDirectory: resolve('tmp/api') });
+    expect(() => duckDbSettings({ API_DUCKDB_THREADS: '0' }, API_DUCKDB_ENV)).toThrow(
+      'API_DUCKDB_THREADS must be a positive integer',
+    );
   });
 
   it('rejects threads that are not a positive integer', () => {

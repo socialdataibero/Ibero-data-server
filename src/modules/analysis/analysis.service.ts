@@ -6,6 +6,9 @@ import {
   Optional,
 } from '@nestjs/common';
 import { DuckDBConnection, DuckDBInstance } from '@duckdb/node-api';
+import { randomUUID } from 'node:crypto';
+import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import { describeDuckDbError } from './duckdb-error.js';
 import { assertReadOnlySelect } from './sql-sanitizer.js';
 import { buildRecipeSql, quoteIdent, type Recipe } from './recipe.js';
@@ -55,9 +58,9 @@ function safeDuckDbError(
 }
 
 /**
- * Options for every DuckDB this service opens (`memory_limit`, `threads`, …). The worker
- * process provides its `DUCKDB_*` settings here; the API provides nothing, so its queries
- * use DuckDB's defaults as before.
+ * Options for every DuckDB this service opens (`memory_limit`, `threads`, `temp_directory`).
+ * The API provides its `API_DUCKDB_*` settings (`ApiDuckDbModule`) and the worker its
+ * `DUCKDB_*` ones (worker.module.ts). Without them (unit tests), DuckDB's defaults apply.
  */
 export const ANALYSIS_DUCKDB_OPTIONS = Symbol('ANALYSIS_DUCKDB_OPTIONS');
 
@@ -69,16 +72,44 @@ export class AnalysisService {
     private readonly duckdbOptions?: Record<string, string>,
   ) {}
 
-  private createInstance(): Promise<DuckDBInstance> {
-    return DuckDBInstance.create(':memory:', this.duckdbOptions);
+  /**
+   * A fresh in-memory DuckDB. With a `temp_directory`, it gets its own folder inside it: two
+   * DuckDBs spilling to disk in the same folder at once overwrite each other's files ("Could
+   * not read enough bytes from file …duckdb_temp_storage…"). `close` closes it and deletes
+   * that folder.
+   */
+  private async openInstance(): Promise<{
+    instance: DuckDBInstance;
+    close(): Promise<void>;
+  }> {
+    const base = this.duckdbOptions?.temp_directory;
+    if (!base) {
+      const instance = await DuckDBInstance.create(':memory:', this.duckdbOptions);
+      return { instance, close: () => Promise.resolve(instance.closeSync()) };
+    }
+    const tempDirectory = join(base, randomUUID());
+    const instance = await DuckDBInstance.create(':memory:', {
+      ...this.duckdbOptions,
+      temp_directory: tempDirectory,
+    });
+    return {
+      instance,
+      close: async () => {
+        try {
+          instance.closeSync();
+        } finally {
+          await rm(tempDirectory, { recursive: true, force: true });
+        }
+      },
+    };
   }
 
   private async withViews<T>(
     sources: NamedSource[],
     fn: (connection: DuckDBConnection) => Promise<T>,
   ): Promise<T> {
-    const instance = await this.createInstance();
-    const connection = await instance.connect();
+    const duckdb = await this.openInstance();
+    const connection = await duckdb.instance.connect();
     try {
       for (const source of sources) {
         await connection.run(
@@ -88,6 +119,7 @@ export class AnalysisService {
       return await fn(connection);
     } finally {
       connection.closeSync();
+      await duckdb.close();
     }
   }
 
@@ -126,6 +158,35 @@ export class AnalysisService {
     } catch (err) {
       if (err instanceof BadRequestException) throw err;
       throw safeDuckDbError(err, [parquetPath]);
+    }
+  }
+
+  /**
+   * Runs SELECTs built by the server (never user SQL) over one Parquet, seen as the view `data`
+   * with its columns plus `file_row_number` (the row's position in the file, from 0). All the
+   * queries share one DuckDB. Returns the rows of each query, in order.
+   */
+  async runInternalQueries(
+    parquetPath: string,
+    queries: string[],
+  ): Promise<unknown[][][]> {
+    if (queries.length === 0) return [];
+    const duckdb = await this.openInstance();
+    const connection = await duckdb.instance.connect();
+    try {
+      await connection.run(
+        `CREATE TEMP VIEW data AS SELECT * FROM read_parquet('${escapeSqlLiteral(parquetPath)}', file_row_number = true)`,
+      );
+      const out: unknown[][][] = [];
+      for (const sql of queries) {
+        out.push((await connection.runAndReadAll(sql)).getRowsJson() as unknown[][]);
+      }
+      return out;
+    } catch (err) {
+      throw safeDuckDbError(err, [parquetPath], 'parquet_read_failed');
+    } finally {
+      connection.closeSync();
+      await duckdb.close();
     }
   }
 
@@ -201,8 +262,8 @@ export class AnalysisService {
         message: 'Cannot write a Parquet file without columns.',
       });
     }
-    const instance = await this.createInstance();
-    const connection = await instance.connect();
+    const duckdb = await this.openInstance();
+    const connection = await duckdb.instance.connect();
     try {
       const columnDefs = columns
         .map((c) => `${quoteIdent(c)} VARCHAR`)
@@ -236,6 +297,7 @@ export class AnalysisService {
       throw safeDuckDbError(err, [destPath], 'parquet_write_failed');
     } finally {
       connection.closeSync();
+      await duckdb.close();
     }
   }
 

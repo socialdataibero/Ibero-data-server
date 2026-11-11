@@ -39,10 +39,10 @@ describe('fullReadMaxRows', () => {
 describe('assertFullReadAllowed', () => {
   it('allows up to the limit, inclusive', () => {
     expect(() =>
-      assertFullReadAllowed('mapping', { edition: 'E' }, 100, 100),
+      assertFullReadAllowed('export', { edition: 'E' }, 100, 100),
     ).not.toThrow();
     expect(() =>
-      assertFullReadAllowed('mapping', { edition: 'E' }, 0, 100),
+      assertFullReadAllowed('export', { edition: 'E' }, 0, 100),
     ).not.toThrow();
   });
 

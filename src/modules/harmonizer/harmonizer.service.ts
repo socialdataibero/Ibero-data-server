@@ -24,14 +24,24 @@ import {
 import { LocalStorageService } from '../storage/local-storage.service.js';
 import { asciiFold, matchByName, parseVariables } from './matching.js';
 import { assertFullReadAllowed } from './full-read-guard.js';
+import { cachedColumnChecks } from './column-check-store.js';
+import {
+  allFit,
+  columnTypeQuery,
+  inferredType as inferredTypeOf,
+  notFittingQuery,
+  readColumnTypeResult,
+  readNotFitting,
+  type ColumnTypeCheck,
+  type ColumnTypeResult,
+  type TypeFacts,
+} from './column-checks.js';
 import { csvError, csvNotUtf8Body } from './csv-errors.js';
 import {
   buildDatasetView,
   buildSurveyView,
-  columnValues,
   inferValueType,
   neutralizeCsvFormula,
-  sourceColumnValues,
   valuesNotFitting,
   type ColumnValues,
   type DatasetEdition,
@@ -251,20 +261,41 @@ interface CodebookDatasetRef {
   codebookTable: string | null;
 }
 
-/** Tipo sugerido para una columna con diccionario, ya sin sus códigos de no especificado. */
+/**
+ * Tipo sugerido para una columna con diccionario, a partir de sus valores ya sin sus códigos de
+ * no especificado (`facts`, ver column-checks.ts).
+ */
 function codebookSuggestedType(
   info: CodebookVariableInfo,
-  values: (string | null)[],
+  facts: TypeFacts,
 ): ValueType {
   if (info.declaredType === 'text') return 'text';
   if (info.declaredType === null) {
     // Una variable con categorías es un código: se guarda como texto para no perder ceros.
     if (info.categories.filter((c) => c.kind === 'value').length >= 2) return 'text';
-    return inferValueType(values);
+    return inferredTypeOf(facts);
   }
-  if (valuesNotFitting(values, 'integer', 1).length === 0) return 'integer';
-  if (valuesNotFitting(values, 'decimal', 1).length === 0) return 'decimal';
+  if (allFit(facts, 'integer')) return 'integer';
+  if (allFit(facts, 'decimal')) return 'decimal';
   return 'text';
+}
+
+/** Valores más frecuentes que muestra la pantalla de mapeo por columna. */
+const MAPPING_TOP_VALUES = 5;
+
+/**
+ * Resumen de los valores de una columna para el mapeo, desde su perfil guardado: los más
+ * frecuentes (en un empate, en orden alfabético) y cuántos distintos hay, contando hasta
+ * `PROFILE_MAX_VALUES`.
+ */
+function profileColumnValues(profile: ColumnProfile | undefined): ColumnValues {
+  if (!profile) return { top: [], distinct: 0, distinctCapped: false, empty: 0 };
+  return {
+    top: profile.values.slice(0, MAPPING_TOP_VALUES),
+    distinct: profile.values.length,
+    distinctCapped: profile.distinctCapped,
+    empty: profile.empty,
+  };
 }
 
 function toCodebookInfo(v: {
@@ -966,11 +997,14 @@ export class HarmonizerService implements OnApplicationBootstrap {
     if (dataType === 'integer' || dataType === 'decimal') {
       for (const [datasetId, map] of valueMaps) {
         const mapping = byDataset.get(datasetId)!;
-        const rows = await this.readRawColumns(mapping.dataset, [mapping.sourceColumn]);
-        const bad = valuesNotFitting(
-          sourceColumnValues(rows, mapping.sourceColumn, new Set(mapping.missingCodes), map),
-          dataType,
-        );
+        const [bad] = await this.valuesNotFittingIn(mapping.dataset, [
+          {
+            column: mapping.sourceColumn,
+            type: dataType,
+            missingCodes: mapping.missingCodes,
+            valueMap: map,
+          },
+        ]);
         if (bad.length > 0) {
           throw new BadRequestException({
             code: 'value_type_mismatch',
@@ -1753,13 +1787,8 @@ export class HarmonizerService implements OnApplicationBootstrap {
     otherEditions: { id: string; name: string; year: number; mappedColumns: number }[];
   }> {
     const dataset = await this.getDataset(datasetId);
-    assertFullReadAllowed(
-      'mapping',
-      { edition: dataset.name },
-      dataset.rowCount,
-    );
 
-    const [canonicals, saved, historical, rawRows, codebookVars, codebooks, others] = await Promise.all([
+    const [canonicals, saved, historical, codebookVars, codebooks, others] = await Promise.all([
       this.prisma.harmonizerCanonicalVariable.findMany({
         where: { surveyId: dataset.surveyId },
         orderBy: { name: 'asc' },
@@ -1773,7 +1802,6 @@ export class HarmonizerService implements OnApplicationBootstrap {
           dataset: { surveyId: dataset.surveyId },
         },
       }),
-      this.readRawRows(dataset),
       this.codebookByColumn([dataset]),
       this.prisma.harmonizerCodebook.findMany({
         where: { surveyId: dataset.surveyId },
@@ -1806,6 +1834,26 @@ export class HarmonizerService implements OnApplicationBootstrap {
         historicalByColumn.set(m.sourceColumn, m.canonicalVariableId);
     }
 
+    // Las filas no se cargan: los valores frecuentes salen de los perfiles guardados y los
+    // tipos, de una consulta de DuckDB por columna sobre el Parquet.
+    const [profiles, typeResults] = await Promise.all([
+      this.columnProfiles([{ dataset, column: null }]),
+      this.columnTypeResults(
+        dataset,
+        dataset.columns.map((name, i): ColumnTypeCheck => {
+          const info = columnCodebook.get(name);
+          return {
+            rawColumn: `c${i}`,
+            missingCodes: savedCodesByColumn.get(name) ?? [],
+            codebookMissing: info
+              ? info.categories.filter((c) => c.kind === 'missing').map((c) => c.code)
+              : null,
+          };
+        }),
+      ),
+    ]);
+    const profileByColumn = profiles.get(dataset.id);
+
     // Una canónica ya asignada (o ya sugerida) a otra columna de este archivo
     // no se vuelve a sugerir: dos columnas a la misma canónica colisionan.
     const usedIds = new Set(savedByColumn.values());
@@ -1833,28 +1881,17 @@ export class HarmonizerService implements OnApplicationBootstrap {
       return null;
     };
 
-    const columns = dataset.columns.map((name): MappingColumn => {
-      const inferredType = inferValueType(
-        sourceColumnValues(
-          rawRows,
-          name,
-          new Set(savedCodesByColumn.get(name) ?? []),
-        ),
-      );
-      const values = columnValues(rawRows, name);
+    const columns = dataset.columns.map((name, i): MappingColumn => {
+      const types = typeResults[i];
+      const inferredType = inferredTypeOf(types.saved);
+      const values = profileColumnValues(profileByColumn?.get(name));
       const info = columnCodebook.get(name);
       let codebook: ColumnCodebook | null = null;
-      if (info) {
-        const distinct = new Set(rawRows.map((r) => (r[name] ?? '').trim()));
-        distinct.delete('');
-        const missingCodes = codebookMissingCodes(info.categories, distinct);
+      if (info && types.codebook) {
         codebook = {
           ...info,
-          missingCodes,
-          suggestedType: codebookSuggestedType(
-            info,
-            sourceColumnValues(rawRows, name, new Set(missingCodes)),
-          ),
+          missingCodes: codebookMissingCodes(info.categories, types.codebook.codeValues),
+          suggestedType: codebookSuggestedType(info, types.codebook.facts),
         };
       }
       const base = { name, missingCodes: [] as string[], inferredType, values, codebook };
@@ -1925,11 +1962,6 @@ export class HarmonizerService implements OnApplicationBootstrap {
     dto: SaveMappingDto,
   ): Promise<{ ok: true; datasetId: string }> {
     const dataset = await this.getDataset(datasetId);
-    assertFullReadAllowed(
-      'mapping',
-      { edition: dataset.name },
-      dataset.rowCount,
-    );
     const choiceByColumn = new Map(dto.columns.map((c) => [c.column, c]));
 
     await this.assertNewCanonicalNames(dataset, choiceByColumn);
@@ -2193,26 +2225,24 @@ export class HarmonizerService implements OnApplicationBootstrap {
       );
     });
     if (changed.length > 0) {
-      const rows = await this.readRawColumns(
+      const badByChoice = await this.valuesNotFittingIn(
         dataset,
-        changed.map((c) => c.column),
+        changed.map((choice) => {
+          // La recodificación guardada sigue aplicando si la columna mantiene su variable.
+          const saved = savedByColumn.get(choice.column);
+          const keepsVariable =
+            saved !== undefined &&
+            choice.choice === `${CANONICAL_PREFIX}${saved.canonicalVariableId}`;
+          return {
+            column: choice.column,
+            type: choice.dataType,
+            missingCodes: normalizeMissingCodes(choice.missingCodes),
+            valueMap: keepsVariable ? toValueMap(saved.valueMap) : undefined,
+          };
+        }),
       );
-      for (const choice of changed) {
-        const codes = new Set(normalizeMissingCodes(choice.missingCodes));
-        // La recodificación guardada sigue aplicando si la columna mantiene su variable.
-        const saved = savedByColumn.get(choice.column);
-        const keepsVariable =
-          saved !== undefined &&
-          choice.choice === `${CANONICAL_PREFIX}${saved.canonicalVariableId}`;
-        const bad = valuesNotFitting(
-          sourceColumnValues(
-            rows,
-            choice.column,
-            codes,
-            keepsVariable ? toValueMap(saved.valueMap) : undefined,
-          ),
-          choice.dataType,
-        );
+      for (const [i, choice] of changed.entries()) {
+        const bad = badByChoice[i];
         if (bad.length > 0) {
           throw new BadRequestException({
             code: 'value_type_mismatch',
@@ -2243,17 +2273,15 @@ export class HarmonizerService implements OnApplicationBootstrap {
       orderBy: { dataset: { year: 'asc' } },
     });
     for (const m of others) {
-      const otherRows = await this.readRawColumns(m.dataset, [m.sourceColumn]);
       const type = wanted.get(m.canonicalVariableId)!;
-      const bad = valuesNotFitting(
-        sourceColumnValues(
-          otherRows,
-          m.sourceColumn,
-          new Set(m.missingCodes),
-          toValueMap(m.valueMap),
-        ),
-        type,
-      );
+      const [bad] = await this.valuesNotFittingIn(m.dataset, [
+        {
+          column: m.sourceColumn,
+          type,
+          missingCodes: m.missingCodes,
+          valueMap: toValueMap(m.valueMap),
+        },
+      ]);
       if (bad.length > 0) {
         throw new BadRequestException({
           code: 'value_type_mismatch',
@@ -2271,22 +2299,65 @@ export class HarmonizerService implements OnApplicationBootstrap {
     }
   }
 
-  /** Todas las filas de una edición, pero solo con las columnas pedidas (validación de tipos). */
-  private async readRawColumns(
+  /**
+   * Para cada revisión, los valores de la columna (sin los códigos de no especificado y ya
+   * recodificados) que no caben en el tipo: como mucho 5, en orden de aparición. DuckDB los
+   * busca en el Parquet; las filas no se cargan. Una columna que la edición no tiene no da
+   * ninguno.
+   */
+  private async valuesNotFittingIn(
     dataset: { id: string; columns: string[]; rowCount: number },
-    columns: string[],
-  ): Promise<RawData[]> {
-    const wanted = columns.filter((c) => dataset.columns.includes(c));
-    if (wanted.length === 0 || dataset.rowCount === 0) return [];
-    const rows = await this.analysisService.readParquetSlice(
+    checks: {
+      column: string;
+      type: ValueType;
+      missingCodes: string[];
+      valueMap?: Map<string, string>;
+    }[],
+  ): Promise<string[][]> {
+    const out: string[][] = checks.map(() => []);
+    const queried: number[] = [];
+    const queries: string[] = [];
+    for (const [i, check] of checks.entries()) {
+      const position = dataset.columns.indexOf(check.column);
+      if (position < 0 || dataset.rowCount === 0 || check.type === 'text') continue;
+      queried.push(i);
+      queries.push(
+        notFittingQuery({
+          rawColumn: `c${position}`,
+          type: check.type,
+          missingCodes: check.missingCodes,
+          valueMap: check.valueMap,
+        }),
+      );
+    }
+    if (queries.length === 0) return out;
+    const rows = await this.analysisService.runInternalQueries(
       await this.rawPath(dataset),
-      wanted.map((c) => `c${dataset.columns.indexOf(c)}`),
-      0,
-      dataset.rowCount,
+      queries,
     );
-    return rows.map((values) =>
-      Object.fromEntries(wanted.map((c, i) => [c, String(values[i] ?? '')])),
+    queried.forEach((checkIndex, q) => {
+      out[checkIndex] = readNotFitting(rows[q]);
+    });
+    return out;
+  }
+
+  /**
+   * Tipos de varias columnas de una edición (ver column-checks.ts), en el mismo orden. Cada
+   * resultado se guarda la primera vez (`HarmonizerColumnCheck`): los datos no cambian.
+   */
+  private async columnTypeResults(
+    dataset: { id: string; columns: string[] },
+    checks: ColumnTypeCheck[],
+  ): Promise<ColumnTypeResult[]> {
+    if (checks.length === 0) return [];
+    const rows = await cachedColumnChecks(
+      this.prisma,
+      this.analysisService,
+      dataset.id,
+      await this.rawPath(dataset),
+      checks.map(columnTypeQuery),
     );
+    return checks.map((check, i) => readColumnTypeResult(check, rows[i]));
   }
 
   /** Edición con todas sus filas (descargas y validación de tipos). */

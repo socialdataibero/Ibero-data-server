@@ -19,7 +19,8 @@ function escapeSqlLiteral(value: string): string {
  * Writes an edition's rows to its raw Parquet (all VARCHAR, positional columns `c0…cN`, file
  * order), the same file the synchronous upload writes with `writeRowsToParquet`. Rows go
  * through a DuckDB database file in the temp directory, so a file larger than the memory limit
- * spills to disk instead of failing.
+ * spills to disk instead of failing. Each writer works in its own folder there: two DuckDBs
+ * spilling to the same folder at once overwrite each other's files (`WORKER_CONCURRENCY` > 1).
  */
 export class RawParquetWriter {
   private closed = false;
@@ -28,7 +29,7 @@ export class RawParquetWriter {
     private readonly instance: DuckDBInstance,
     private readonly connection: DuckDBConnection,
     private readonly appender: DuckDBAppender,
-    private readonly dbPath: string,
+    private readonly dir: string,
     private readonly width: number,
   ) {}
 
@@ -36,11 +37,11 @@ export class RawParquetWriter {
     settings: DuckDbSettings,
     columnCount: number,
   ): Promise<RawParquetWriter> {
-    const dbPath = join(
-      settings.tempDirectory,
-      `import-${randomUUID()}.duckdb`,
+    const dir = join(settings.tempDirectory, `import-${randomUUID()}`);
+    const instance = await createWorkerDuckDb(
+      { ...settings, tempDirectory: dir },
+      join(dir, 'rows.duckdb'),
     );
-    const instance = await createWorkerDuckDb(settings, dbPath);
     try {
       const connection = await instance.connect();
       const columns = Array.from(
@@ -53,12 +54,12 @@ export class RawParquetWriter {
         instance,
         connection,
         appender,
-        dbPath,
+        dir,
         columnCount,
       );
     } catch (err) {
       instance.closeSync();
-      await removeDbFiles(dbPath);
+      await rm(dir, { recursive: true, force: true });
       throw err;
     }
   }
@@ -89,12 +90,7 @@ export class RawParquetWriter {
       this.connection.closeSync();
       this.instance.closeSync();
     } finally {
-      await removeDbFiles(this.dbPath);
+      await rm(this.dir, { recursive: true, force: true });
     }
   }
-}
-
-async function removeDbFiles(dbPath: string): Promise<void> {
-  await rm(dbPath, { force: true });
-  await rm(`${dbPath}.wal`, { force: true });
 }

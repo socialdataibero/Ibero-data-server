@@ -22,6 +22,8 @@ import {
 } from '../harmonizer.service.js';
 import type { UploadEncoding } from '../dto/upload-dataset.dto.js';
 import { importCsvFile, type ImportPhase } from './csv-file.js';
+import { cachedColumnChecks } from '../column-check-store.js';
+import { columnTypeQuery } from '../column-checks.js';
 import {
   ImportError,
   importErrorBody,
@@ -370,10 +372,27 @@ export class HarmonizerImportProcessor {
   }
 
   /**
-   * Value profiles of every column, as the synchronous upload computes them. If this fails, the
-   * API computes them the first time they are needed, so the import does not fail for it.
+   * Value profiles of every column, as the synchronous upload computes them, and the suggested
+   * type of each column as the mapping screen first asks for it (no codes, no dictionary). If
+   * this fails, the API computes them the first time they are needed, so the import does not
+   * fail for it.
    */
   private async profile(datasetId: string, columns: string[]): Promise<void> {
+    try {
+      await cachedColumnChecks(
+        this.prisma,
+        this.analysis,
+        datasetId,
+        this.storage.resolvePath(rawStorageKey(datasetId)),
+        columns.map((_, i) =>
+          columnTypeQuery({ rawColumn: `c${i}`, missingCodes: [], codebookMissing: null }),
+        ),
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Could not check the column types of edition ${datasetId}: ${(err as Error).message}`,
+      );
+    }
     try {
       const counts = await this.analysis.columnValueCounts(
         this.storage.resolvePath(rawStorageKey(datasetId)),

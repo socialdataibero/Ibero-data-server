@@ -243,6 +243,7 @@ model HarmonizerDataset {
   codebook HarmonizerCodebook?       @relation(fields: [codebookId], references: [id], onDelete: SetNull)
   mappings HarmonizerMapping[]
   profiles HarmonizerColumnProfile[]
+  columnChecks HarmonizerColumnCheck[]
 
   /// El nombre es `_dataset` en la vista por encuesta: debe ser único en ella.
   @@unique([surveyId, name])
@@ -365,6 +366,22 @@ model HarmonizerColumnProfile {
 
   @@unique([datasetId, sourceColumn])
   @@map("harmonizer_column_profiles")
+}
+
+/// Result of one value check of an edition's column (`column-checks.ts`: suggested type, codes of
+/// the dictionary), kept because an edition's data never changes. `key` is the SHA-256 of the
+/// check's query, so different codes, or a change in the query itself, compute a new one.
+model HarmonizerColumnCheck {
+  datasetId String
+  key       String
+  /// The query's single row.
+  result    Json
+  createdAt DateTime @default(now())
+
+  dataset HarmonizerDataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+
+  @@id([datasetId, key])
+  @@map("harmonizer_column_checks")
 }
 
 enum HarmonizerImportStatus {

@@ -1,18 +1,16 @@
 import { UnprocessableEntityException } from '@nestjs/common';
 
 /**
- * Temporary guard. Mapping, saving a mapping and the downloads still load every row of an
- * edition into Node memory, and past ~500k rows that kills the whole server (measured
- * 2026-11-03, see planes-pendientes/escala-censo-nacional.md). Until those paths run on
- * DuckDB, they are refused above a row limit. Remove this file and its calls then.
+ * Temporary guard. The downloads still load every row of an edition into Node memory, and
+ * past ~500k rows that kills the whole server (measured 2026-11-03, see
+ * planes-pendientes/escala-censo-nacional.md). Until they run on DuckDB, they are refused
+ * above a row limit. Remove this file and its calls then. (Mapping no longer loads the rows.)
  */
 export const DEFAULT_FULL_READ_MAX_ROWS = 400_000;
 
-export type FullReadOperation =
-  'mapping' | 'export' | 'original' | 'survey_export';
+export type FullReadOperation = 'export' | 'original' | 'survey_export';
 
 const OPERATION_TEXT: Record<FullReadOperation, string> = {
-  mapping: 'Mapping',
   export: 'Downloading',
   original: 'Downloading the original file of',
   survey_export: 'Downloading',

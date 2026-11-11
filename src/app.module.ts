@@ -11,10 +11,12 @@ import { DatasetsModule } from './modules/datasets/datasets.module.js';
 import { AnalysesModule } from './modules/analyses/analyses.module.js';
 import { PublicModule } from './modules/public/public.module.js';
 import { HarmonizerModule } from './modules/harmonizer/harmonizer.module.js';
+import { ApiDuckDbModule } from './modules/analysis/api-duckdb.module.js';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ApiDuckDbModule,
     PrismaModule,
     StorageModule,
     AuthModule,
