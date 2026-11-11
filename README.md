@@ -2,7 +2,7 @@
 
 REST API for Ibero Data. It stores organizations, datasets and Parquet files, runs analyses over them with DuckDB, publishes a public catalog, hands data off to vistrace, and hosts the survey harmonizer.
 
-Built with NestJS 12, Prisma 7 on PostgreSQL 16, and DuckDB.
+Built with NestJS 12, Prisma 7 on PostgreSQL 16, DuckDB, and BullMQ on Redis for background jobs.
 
 Related projects:
 
@@ -20,6 +20,7 @@ This document describes what the code does today. Business rules are listed per 
 - [Configuration](#configuration)
 - [Scripts](#scripts)
 - [Conventions](#conventions)
+- [Background jobs](#background-jobs)
 - [Users and authentication](#users-and-authentication)
 - [Organizations and roles](#organizations-and-roles)
 - [Datasets](#datasets)
@@ -36,7 +37,8 @@ This document describes what the code does today. Business rules are listed per 
 ## Requirements
 
 - Node `^20.19`, `^22.12` or `>=24` (required by Prisma 7).
-- Docker, for the local PostgreSQL container. You can use your own PostgreSQL 16 instead (see `start:local`).
+- Docker, for the local PostgreSQL and Redis containers. You can use your own PostgreSQL 16 instead (see `start:local`).
+- Redis 6.2 or later for the background jobs (the container uses Redis 7.4). It must keep every key (`maxmemory-policy noeviction`), as BullMQ requires.
 
 ## Setup
 
@@ -55,7 +57,7 @@ npm run start:dev
 
 `start:dev` first runs `setup:dev`, which:
 
-1. Starts the `db` container from `docker-compose.yml` (PostgreSQL 16 on host port `5433`, user/password/db `ibero`/`ibero`/`ibero_data`).
+1. Starts the `db` and `redis` containers from `docker-compose.yml`: PostgreSQL 16 on host port `5433` (user/password/db `ibero`/`ibero`/`ibero_data`) and Redis 7.4 on host port `6380`, with `appendonly` on so queued jobs survive a restart.
 2. Generates the Prisma client.
 3. Applies migrations (`prisma migrate deploy`).
 4. Runs the seed, which creates the sysadmin from `SEED_ADMIN_*` if that email does not exist yet. An existing user is left untouched.
@@ -63,6 +65,14 @@ npm run start:dev
 The API listens on `http://localhost:3000`. `GET /` returns `Hello World!` and works as a health check.
 
 To use a PostgreSQL you already run, point `DATABASE_URL` at it and use `npm run start:local`, which skips Docker.
+
+Background jobs run in a separate process, the worker (see [Background jobs](#background-jobs)). Start it in a second terminal:
+
+```bash
+npm run start:worker
+```
+
+`npm run jobs:check` checks that the queue and the worker work: it adds a test job, waits for the worker to run it and prints the worker's pid and DuckDB settings.
 
 ## Configuration
 
@@ -76,6 +86,18 @@ To use a PostgreSQL you already run, point `DATABASE_URL` at it and use `npm run
 | `SEED_ADMIN_EMAIL` | No | `admin@ibero.mx` | Sysadmin created by the seed. |
 | `SEED_ADMIN_PASSWORD` | No | `password123` | Sysadmin password. Change it outside local development. |
 | `SEED_ADMIN_NAME` | No | `Admin Ibero` | Sysadmin display name. |
+| `REDIS_URL` | No | `redis://localhost:6380` | Redis for the background jobs (`redis://` or `rediss://`). |
+| `WORKER_CONCURRENCY` | No | `1` | Jobs a worker process runs at once. |
+| `DUCKDB_MEMORY_LIMIT` | No | `4GB` | DuckDB memory limit in the worker, in any unit DuckDB accepts (`4GB`, `512MiB`). |
+| `DUCKDB_THREADS` | No | `4` | DuckDB threads in the worker. |
+| `DUCKDB_TEMP_DIR` | No | empty (`<OS temp>/ibero-duckdb`) | Where DuckDB in the worker spills to disk when a job does not fit in memory. Created if missing. |
+| `API_DUCKDB_MEMORY_LIMIT` | No | `2GB` | DuckDB memory limit in the API, **per query**: each query (mapping checks, views, analyses, exports) opens its own DuckDB, so this caps each one, not the API as a whole. A query that needs more spills to `API_DUCKDB_TEMP_DIR`; if it still does not fit, it fails with `400` instead of taking the server's memory. A value DuckDB rejects stops the API at startup. |
+| `API_DUCKDB_THREADS` | No | `4` | DuckDB threads per query in the API. |
+| `API_DUCKDB_TEMP_DIR` | No | empty (`<OS temp>/ibero-duckdb-api`) | Where DuckDB in the API spills to disk. Created if missing; each query uses its own folder inside it and deletes it when done. |
+| `UPLOAD_DIR` | No | empty (`storage/uploads`) | Where harmonizer uploads arrive through tus, until the worker imports them. |
+| `UPLOAD_MAX_BYTES` | No | `10737418240` (10 GiB) | Largest harmonizer upload through tus. |
+| `DBF_MAX_BYTES` | No | `209715200` (200 MiB) | Largest DBF upload: a DBF is read whole into the worker's memory. |
+| `UPLOAD_EXPIRATION_HOURS` | No | `24` | An unfinished upload is deleted this long after it started. |
 
 CORS is open to every origin. The `Content-Disposition` header is exposed so the web app can read download filenames.
 
@@ -87,6 +109,9 @@ CORS is open to every origin. The `Content-Disposition` header is exposed so the
 | `start:local` | `setup:local` (no Docker), then the server in watch mode. |
 | `start:once` | Start once, without watch and without setup. |
 | `start:prod` | Run the compiled build (`node dist/main`). Run `build` first. |
+| `start:worker` | The worker process in watch mode. It compiles to `dist-worker/`, because the API's watch mode deletes `dist/` on every rebuild. |
+| `start:worker:prod` | Run the compiled worker (`node dist/worker`). Run `build` first. |
+| `jobs:check` | Add a test job and wait for a worker to run it. Uses `dist/` (built by `start:dev` or `build`). |
 | `build` | Compile to `dist/`. |
 | `test` | Unit tests with Vitest. |
 | `test:e2e` | End-to-end tests. Needs a running database. |
@@ -120,6 +145,21 @@ CORS is open to every origin. The `Content-Disposition` header is exposed so the
 **Identifiers.** All IDs are UUIDs. Slugs accept only lowercase letters, numbers and hyphens (`^[a-z0-9-]+$`).
 
 ---
+
+## Background jobs
+
+Heavy work runs outside the API, in a worker process (`src/worker.ts`), so a job that runs out of memory cannot take the API down. The API adds jobs to a queue in Redis with BullMQ, and the worker takes them from there.
+
+- There is one queue, `ibero-jobs`, for every kind of job. A worker runs `WORKER_CONCURRENCY` jobs at once (1 by default), whatever their kind, so it never runs two heavy DuckDB jobs at the same time unless told to.
+- Jobs and their payloads are typed in `src/modules/jobs/job-types.ts`. The API adds them with `JobsService` (`src/modules/jobs/`); each name has a handler in `src/worker/job-handlers.ts`, and a name without a handler does not compile.
+- Each job runs once (`attempts: 1`): a job that fails because of its input would fail again. A job with no handler fails without retrying. If the worker dies while running a job, BullMQ hands the job to a worker again once.
+- Completed jobs are kept 7 days and failed jobs 30 days (at most 1,000 of each), so their status can still be read; then Redis removes them.
+- A job added while no worker is running waits in Redis and runs when a worker starts. Redis keeps it across a restart.
+- DuckDB in the worker uses `DUCKDB_MEMORY_LIMIT`, `DUCKDB_THREADS` and `DUCKDB_TEMP_DIR`. The worker opens DuckDB with them when it starts and exits with an error if DuckDB rejects a value, instead of failing every job. Invalid `WORKER_CONCURRENCY`, `DUCKDB_THREADS` or `REDIS_URL` values also stop it at startup. The `AnalysisService` used inside the worker (column profiles and column type checks) uses them too. The API's own DuckDB queries (analyses, harmonizer views and mapping) use `API_DUCKDB_*` instead. In both processes every DuckDB spills to its own folder inside the temp directory, because two DuckDBs spilling to the same folder at once overwrite each other's files.
+- If Redis is down, the worker waits and connects when it comes back. Redis errors are logged at most once every 30 seconds.
+- On `SIGTERM` or `SIGINT` the worker stops taking jobs and waits for the running ones to finish before exiting.
+- Jobs: `harmonizerImport` (see [Imports](#imports); its job id is the import id) and `diagnostic`, used by `npm run jobs:check`.
+- The API connects to Redis to add jobs. Without the worker running, uploads arrive but stay `PENDING` until it starts.
 
 ## Users and authentication
 
@@ -219,6 +259,7 @@ Rules:
 | --- | --- | --- | --- |
 | `GET` | `.../datasets/:datasetId/resources` | any user | List, newest first. |
 | `POST` | `.../datasets/:datasetId/resources` | `ADMIN`, `EDITOR` | Upload a file (multipart, field `file`). |
+| `POST` | `.../datasets/:datasetId/resources/from-harmonizer` | `ADMIN`, `EDITOR` | Save a harmonized view of the survey harmonizer as a resource. See [From the harmonizer](#from-the-harmonizer). |
 | `POST` | `.../resources/:resourceId/query` | any role | Run a SQL query: `{ sql }`. |
 | `GET` | `.../resources/:resourceId/download` | any role, download token | Download the file. |
 | `GET` | `.../resources/:resourceId/vistrace-handoff` | any role | Get a vistrace link. See [handoff](#vistrace-handoff). |
@@ -230,6 +271,16 @@ Upload rules:
 - Only Parquet is accepted. The name must end in `.parquet` (`400 invalid_file_extension`), and the file must start and end with the `PAR1` marker (`400 invalid_parquet_format`).
 - Maximum size: 500 MB.
 - The column schema (`[{ name, type }]`) is read at upload and stored. If it cannot be read, the upload still succeeds and `columns` is `null`; analyses then skip column validation.
+
+### From the harmonizer
+
+`POST .../resources/from-harmonizer` takes `{ editionId }` (one edition) or `{ surveyId, variables? }` (the survey view, `variables` as in its download) and saves that harmonized view as a Parquet resource of the dataset. Anything else returns `400 harmonized_source_invalid`.
+
+- The file is exactly the Parquet of `GET /harmonizer/datasets/:editionId/harmonized.parquet` or `GET /harmonizer/surveys/:surveyId/harmonized.parquet`, with the same filename (see [Harmonized views](#harmonized-views)). Its errors come back as they are (`404 harmonizer_dataset_not_found`, `400 harmonized_view_empty`, `409 value_type_mismatch`, …).
+- The server writes it straight to storage, so it never goes through the browser and the 500 MB upload limit does not apply. The national census edition (383 MB, 15 million rows) takes about 20 seconds. Before, the web app downloaded the view and uploaded it again, which did not work for files that large.
+- A resource records its size as a 32-bit number, so a file over 2,147,483,647 bytes returns `422 resource_too_large` with `params: { size, maxBytes }`, and nothing is saved.
+- The schema is read and stored as in an upload. The response is the new resource.
+- Same roles as an upload: `ADMIN` or `EDITOR` of the dataset's organization. Any logged-in user can read every survey of the harmonizer, so no permission on the survey is needed.
 
 Query rules:
 
@@ -267,7 +318,7 @@ Fields (create and `PATCH` take the same body; `PATCH` replaces everything):
 | `slug` | Required, slug format, unique across all analyses (`409 analysis_slug_taken`). |
 | `folder` | Required, free text used to group analyses. |
 | `description` | Optional. |
-| `visibility` | `PUBLIC` or `PRIVATE`. Defaults to `PRIVATE`. Stored but not used by the public catalog (see [open questions](#open-questions)). |
+| `visibility` | `PUBLIC` or `PRIVATE`. Defaults to `PRIVATE`. The analysis appears in the [public catalog](#public-catalog) only when it and its dataset are both `PUBLIC`. |
 | `steps` | Required, at least one. Each step is `{ op, params }`. |
 | `roundDecimals` | Optional, 0–15. Rounds numbers in the response. |
 
@@ -306,7 +357,7 @@ Rules:
 
 These endpoints need no login. The catalog lists **analyses**, not datasets.
 
-An analysis is public when **its status is `DONE` and its dataset's visibility is `PUBLIC`**. The analysis' own `visibility` field is not checked.
+An analysis is public when **its status is `DONE`, its own `visibility` is `PUBLIC` and its dataset's visibility is `PUBLIC`**. Making a dataset public does not publish its private analyses.
 
 | Method | Path | Description |
 | --- | --- | --- |
@@ -356,7 +407,7 @@ Concepts:
 - **Mapping**: "column `edad1` of this edition is canonical `edad`".
 - **Dictionary** (called `codebook` in the API): what each column of a file means and what each of its codes means, for example an INEGI census descriptor. It belongs to a survey and can describe many editions.
 
-Every harmonizer endpoint needs a session, and any logged-in user can read and change every survey. Surveys do not belong to organizations.
+Every harmonizer endpoint needs a session, and any logged-in user can read and change every survey. Surveys do not belong to organizations. The one exception to the session is `GET /harmonizer/downloads/:token` (see [Direct downloads](#direct-downloads)).
 
 | Method | Path | Description |
 | --- | --- | --- |
@@ -365,7 +416,10 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 | `GET` | `/harmonizer/surveys/:surveyId` | One survey. |
 | `PATCH` | `/harmonizer/surveys/:surveyId` | Change `name` and/or `description`. |
 | `DELETE` | `/harmonizer/surveys/:surveyId` | Delete the survey and everything in it, including the stored files of its editions. Returns `204`. |
-| `POST` | `/harmonizer/upload` | Upload an edition (multipart), as CSV or DBF. |
+| `POST` | `/harmonizer/uploads` | Start an upload of an edition with tus (CSV, `.csv.gz` or DBF). See [Upload](#upload). |
+| `HEAD`, `PATCH`, `DELETE` | `/harmonizer/uploads/:importId` | Continue (tus `PATCH`), check (`HEAD`) or cancel (`DELETE`) an upload. |
+| `GET` | `/harmonizer/imports/:importId` | Status of an upload and of its import. See [Imports](#imports). |
+| `POST` | `/harmonizer/upload` | Upload an edition in one request (multipart), as CSV or DBF. Up to 200 MB, read in memory. The web app uses tus instead. |
 | `DELETE` | `/harmonizer/datasets/:datasetId` | Delete one edition, its mapping and its stored file. Returns `204`. |
 | `GET` | `/harmonizer/datasets/:datasetId/mapping` | Columns of an edition with saved or suggested mappings. |
 | `PUT` | `/harmonizer/datasets/:datasetId/mapping` | Save the mapping of an edition. |
@@ -378,6 +432,7 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 | `GET` | `/harmonizer/datasets/:datasetId/harmonized` | Harmonized view of one edition, one page at a time (`limit`, `offset`). |
 | `GET` | `/harmonizer/datasets/:datasetId/harmonized.csv` | Same, as CSV. Also `.parquet`. |
 | `GET` | `/harmonizer/datasets/:datasetId/original.csv` | The uploaded file, rebuilt from storage with every column. See [Original file](#original-file). |
+| `POST` | `/harmonizer/datasets/:datasetId/harmonized.csv/download` | Prepare the edition's CSV for a direct download. Also `.parquet`, and `original.csv/download`. See [Direct downloads](#direct-downloads). |
 | `GET` | `/harmonizer/surveys/:surveyId/variables` | Canonical variables of the survey and where each one is mapped. |
 | `PATCH` | `/harmonizer/surveys/:surveyId/variables/:variableId` | Rename a canonical variable: `{ name }`. |
 | `DELETE` | `/harmonizer/surveys/:surveyId/variables/:variableId` | Delete a canonical variable that no edition maps. Returns `204`. |
@@ -388,6 +443,8 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 | `GET` | `/harmonizer/surveys/:surveyId/catalog.csv` | Catalog of categories of every variable that has one. |
 | `GET` | `/harmonizer/surveys/:surveyId/harmonized` | Harmonized view of all editions, one page at a time (`limit`, `offset`). Optional `variables`. |
 | `GET` | `/harmonizer/surveys/:surveyId/harmonized.csv` | Same, as CSV. Also `.parquet`. |
+| `POST` | `/harmonizer/surveys/:surveyId/harmonized.csv/download` | Prepare the survey's CSV for a direct download. Also `.parquet`. Optional `variables`. |
+| `GET` | `/harmonizer/downloads/:token` | A prepared download. No session. |
 
 ### Surveys
 
@@ -407,7 +464,25 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 
 ### Upload
 
-Fields: `file`, `name` (edition name, required), `year` (1900–2100), `surveyId`, `newSurvey`, and `encoding` (DBF only, see [DBF files](#dbf-files)).
+There are two ways to upload an edition. Both read the file with the same rules and answer with the same error codes, described in this section.
+
+- **tus** (`POST /harmonizer/uploads`, used by the web app): a resumable upload protocol ([tus 1.0](https://tus.io/protocols/resumable-upload)). The file arrives in chunks (the web app sends 50 MB per request) and a chunk that fails is sent again, so files of several gigabytes can be uploaded. The server writes the file to disk as it arrives and never holds it in memory. When it is complete, the worker process reads it and creates the edition in the background; the client follows it with `GET /harmonizer/imports/:importId` (see [Imports](#imports)). Up to `UPLOAD_MAX_BYTES` (10 GiB by default).
+- **One request** (`POST /harmonizer/upload`, multipart): the file is read in memory and the response is the new edition. Up to 200 MB. Kept for scripts; large files can take the server down.
+
+Fields: `file`, `name` (edition name, required), `year` (1900–2100), `surveyId`, `newSurvey`, `organizationId` (with `__new__`), and `encoding` (DBF only, see [DBF files](#dbf-files)).
+
+With tus, the fields go in the `Upload-Metadata` header of the `POST`, with the same names, except that the edition name is `editionName` (tus clients such as Uppy use `name` for the file name) and the file name is `filename`. Every request needs the session token (`Authorization: Bearer …`). The `POST` checks, before any byte is sent and in this order, everything that does not need the file's content, with the same codes as the one-request upload:
+
+1. The fields (`400 validation_error`, with `details` naming `name`, `year`, …, or `filename`), and the file size (`400 upload_length_required` if the client does not send it).
+2. Permissions: `400 survey_organization_required`, `404 organization_not_found`, `403 survey_org_role_required`, `404 survey_not_found`, `403 survey_not_editable`.
+3. Size: `413 upload_too_large` (over `UPLOAD_MAX_BYTES`) or `413 dbf_too_large` (a `.dbf` over `DBF_MAX_BYTES`), with `params: { maxBytes, size }`.
+4. Names: `400 new_survey_name_required`, `409 survey_name_taken`, `409 dataset_name_taken`.
+
+Errors are JSON with the usual shape (`{ statusCode, code, message, params? }`). The `Location` of the new upload is `/harmonizer/uploads/<importId>`: its last part is the import id. Only the user who started an upload (or the sysadmin) can continue, check or cancel it (`404 upload_not_found` for anyone else). After the last byte, `PATCH` and `DELETE` answer `409 upload_finished`.
+
+Errors that need the file's content (encoding, CSV structure, DBF problems, empty files) cannot be known before it arrives, so with tus they are reported by the import, with the same body.
+
+File formats, by name: `.dbf` is a DBF table, `.gz` a gzip-compressed CSV (`.csv.gz`, tus only; a broken one fails with `400 gzip_invalid`), anything else a CSV.
 
 - `surveyId` is an existing survey ID, or `__new__` to create a survey named `newSurvey` in the same request.
   - With `__new__`, `newSurvey` is required (`400 new_survey_name_required`) and must not be taken (`409 survey_name_taken`).
@@ -426,6 +501,40 @@ Fields: `file`, `name` (edition name, required), `year` (1900–2100), `surveyId
 - All columns are stored, including those that are never mapped.
 - The edition name, after trimming, must be unique within its survey, because it is the `_dataset` of the survey view. A repeated name returns `409 dataset_name_taken` and nothing is written. Names are compared exactly (case and accents matter).
 - Uploading never changes other editions. Uploading the same file twice under two names creates two editions.
+
+### Imports
+
+Each tus upload has an import, with the same id, that records what happened to it. `GET /harmonizer/imports/:importId` returns it to the user who started it (or the sysadmin); anyone else gets `404 harmonizer_import_not_found`.
+
+`status` is one of:
+
+| Status | Meaning |
+| --- | --- |
+| `UPLOADING` | Bytes are still arriving. |
+| `PENDING` | The file is complete and waits for the worker. |
+| `PROCESSING` | The worker is reading it. `phase` is `checking` (the whole file must be UTF-8), `reading` (rows; `rowsRead` grows every few seconds) or `saving`. |
+| `COMPLETED` | The edition exists. `result` is what `POST /harmonizer/upload` answers: `{ datasetId, dataset, renamedColumns, source }`. |
+| `FAILED` | `error` is the body `POST /harmonizer/upload` would have answered, for example `{ statusCode: 400, code: "csv_not_utf8", message, params: { line: 7 } }`. |
+
+The response also has `fileName`, `fileSize`, `format` (`csv`, `csv_gz` or `dbf`), `name`, `year`, `surveyId`, `newSurveyName`, `datasetId`, `createdAt`, `uploadedAt`, `startedAt` and `finishedAt`.
+
+How the worker imports a CSV (see [Background jobs](#background-jobs)):
+
+1. It reads the whole file once to check that it is UTF-8 (`csv_not_utf8` with the line of the first bad byte), before parsing anything, as the one-request upload does. In the same pass it keeps the original, gzip-compressed (see [Original file](#original-file)).
+2. It reads it again, row by row, with the same parser and options as the one-request upload, and writes the edition's Parquet through a DuckDB database file in `DUCKDB_TEMP_DIR`, so a file larger than `DUCKDB_MEMORY_LIMIT` spills to disk. Values, quotes, blank lines, headers (trimmed, repeated, empty) and every CSV error are the same as in the one-request upload.
+3. It checks the names again (another upload may have taken them meanwhile) and creates the survey (with `__new__`) and the edition in one transaction, so a failure leaves neither.
+4. It computes the value profiles of every column and the suggested type of each one (as `GET .../mapping` first asks for it, see [Variable types](#variable-types)). If that fails, they are computed later when needed; the import does not fail for it.
+
+A DBF is read whole in memory, as in the one-request upload. When the import ends, either way, the uploaded file is deleted from `UPLOAD_DIR`; a rejected file has to be fixed and uploaded again.
+
+Measured on a Mac (24 GB) with the national 2020 census (`Personas00.CSV`, 3.1 GB, 15,015,683 rows, 91 columns): the upload added 25 MB to the API's memory; the worker took about 4 min 35 s with `DUCKDB_MEMORY_LIMIT=4GB` and peaked at 4.1 GB.
+
+Recovery:
+
+- If the job cannot be queued when the upload ends (Redis down), or a queued job is lost, the API queues again, every minute, imports that have been `PENDING` or `PROCESSING` for over a minute without a waiting or running job.
+- An import that the worker started 3 times without finishing (the worker crashed or was killed, for example for memory) fails with `500 import_interrupted`.
+- An upload cancelled with `DELETE` fails with `upload_cancelled`. One not finished within `UPLOAD_EXPIRATION_HOURS` is deleted (checked every hour) and fails with `410 upload_expired`.
+- An unexpected error fails the import with `500 internal_error`; the details are in the worker's log.
 
 ### DBF files
 
@@ -455,10 +564,10 @@ History and name suggestions never reuse a canonical variable that another colum
 
 Each column also has `values`, a summary of its values in this edition so they can be seen before mapping: `{ top, distinct, distinctCapped, empty }`.
 
-- `top` has up to 5 `{ value, count }`, most frequent first; on a tie, the value that appears first in the file goes first.
+- It comes from the column's stored **profile** (see [Codes between editions](#codes-between-editions)): its 200 most frequent distinct values over the whole file, with their counts, and its empty cells. The rows are not read again.
+- `top` has up to 5 `{ value, count }`, most frequent first; on a tie, in alphabetical order.
 - Values are trimmed and counted as they are in the file. Missing-value codes are not removed, so a `9` or `99` shows up before it is marked as missing. Empty or blank cells are not values: they are counted in `empty`.
-- `distinct` is the number of different values. To bound memory, at most 1,000 different values are counted per column. When a column has more, `distinct` is `1000`, `distinctCapped` is `true`, values first seen after that are left out, and `top` may miss a frequent value that only starts appearing late in the file.
-- It is computed on each request from the stored edition, not saved.
+- `distinct` is the number of different values, counted up to 200. When a column has more, `distinct` is `200` and `distinctCapped` is `true`.
 
 The response also has:
 
@@ -519,9 +628,9 @@ For these three endpoints, an unknown survey returns `404 survey_not_found` and 
 
 Each canonical variable has one type, used for its column in the Parquet export: `text`, `integer` or `decimal`. CSV is always text.
 
-- **Inferred.** `inferredType` comes from the column's values in this edition, after the saved missing codes turn into `null`. It is `integer` when every value is a whole number (sign and surrounding spaces allowed), `decimal` when every value is a number and at least one is not whole (`2.5`, `.5`, `1e3`), and `text` otherwise. A value with a leading zero (`01`, a state code) makes the column `text` so the zero is kept, and so does a number too large for a double (`1e309`). So does a whole number of more than 15 digits, which is usually an identifier. A column with no values is `text`.
+- **Inferred.** `inferredType` comes from all the column's values in this edition, after the saved missing codes turn into `null`. DuckDB checks the distinct values over the stored Parquet, so the rows are not loaded into the server; the checks follow exactly the rules below (`column-checks.spec.ts` compares them with the JavaScript rules). Since the data never changes, each result is stored in the database (`harmonizer_column_checks`, keyed by the check's query) and reused: changing the saved codes of a column, or attaching a dictionary, only computes the new checks. The worker computes them for every column right after an import; for older editions the first `GET .../mapping` computes them, which on the national census (15 million rows) takes about 5 seconds. It is `integer` when every value is a whole number (sign and surrounding spaces allowed), `decimal` when every value is a number and at least one is not whole (`2.5`, `.5`, `1e3`), and `text` otherwise. A value with a leading zero (`01`, a state code) makes the column `text` so the zero is kept, and so does a number too large for a double (`1e309`). So does a whole number of more than 15 digits, which is usually an identifier. A column with no values is `text`.
 - **Confirmed.** `dataType` on a `PUT` entry sets the type of the column's canonical variable, which confirms it. Leaving it out keeps the current type. The type belongs to the variable, so it applies to every edition that maps it. A canonical created before this change, or never sent a `dataType`, has `dataType: null` (not confirmed).
-- **Validation.** For `integer` (a whole number that fits in 64 bits; leading zeros allowed) or `decimal` (a finite number), every non-missing value of the column must fit, using the `missingCodes` of the same request and the column's saved recoding. Otherwise the request returns `400 value_type_mismatch`, its `params` has `source` (`column`, `other_edition`, `confirmed_type` or `recoding`), `expectedType` and up to 5 offending `values`, and nothing is saved. When the request changes the type of an existing canonical, the other editions that map it are checked too, with their own saved codes and recoding. Validation reads only the columns it checks from the stored files, before the save transaction starts. A column already saved with the same canonical, the same codes and the canonical's confirmed type is not read again.
+- **Validation.** For `integer` (a whole number that fits in 64 bits; leading zeros allowed) or `decimal` (a finite number), every non-missing value of the column must fit, using the `missingCodes` of the same request and the column's saved recoding. Otherwise the request returns `400 value_type_mismatch`, its `params` has `source` (`column`, `other_edition`, `confirmed_type` or `recoding`), `expectedType` and up to 5 offending `values`, and nothing is saved. When the request changes the type of an existing canonical, the other editions that map it are checked too, with their own saved codes and recoding. Validation asks DuckDB, over the stored files and before the save transaction starts, for the offending values of only the columns it checks (in order of first appearance); the rows are not loaded into the server. A column already saved with the same canonical, the same codes and the canonical's confirmed type is not read again.
 
 ### Harmonized views
 
@@ -533,7 +642,7 @@ Paging:
 - The response adds `total` (rows of the whole view), `limit` and `offset`. An `offset` past the end returns no rows and the same `total`.
 - Only the rows of the page and the mapped columns are read from the stored Parquet (DuckDB `LIMIT`/`OFFSET`, which keeps file order). `total` comes from the stored `rowCount` of each edition, so nothing is counted.
 - In the survey view, editions are stacked in the same order as the export, so a page can end in one edition and continue in the next. Row `n` of the view is the same row in every page size and in the CSV export.
-- Exports (`.csv`, `.parquet`) are not paged: they still build the whole view in memory.
+- Exports (`.csv`, `.parquet`) are not paged: they contain the whole view. They do not load it into the server's memory either (see Exports below).
 
 Edition view:
 
@@ -564,6 +673,7 @@ Exports:
 - Parquet columns take the canonical variable's confirmed type, or the type inferred from the exported values when it is not confirmed (the same rules as `inferredType`, applied to all exported editions together): `text` → `VARCHAR`, `integer` → `BIGINT`, `decimal` → `DOUBLE`. Numbers are converted from the trimmed text. `_dataset` is `VARCHAR`, and `_year` and `_row` are `BIGINT`. Missing values are `NULL`, so they are distinct from any value. This lets analyses sum, average, multiply and compare these columns (before, every column was text and `SUM` failed).
 - If a confirmed numeric variable has a value that does not fit (possible only for an edition saved without `dataType`), the Parquet export returns `409 value_type_mismatch` with the variable and the offending values.
 - Exporting an edition with no mappings as Parquet returns `400 harmonized_view_empty`.
+- How the file is made: DuckDB reads the editions' stored Parquet and applies the missing codes, the recoding and the types, so the rows are never loaded into the server whole (`harmonized-export.ts`). The Parquet is written by DuckDB, one edition after another. For the CSV, DuckDB also writes the rows: each line is built in SQL with the quoting of the CSV writer the server used before (`csv-stringify`: a value is quoted when it has a `"`, a `,` or a line feed, and its quotes are doubled) and with the formula neutralization; the BOM and the header line are written by that same CSV writer. A failure there returns `400 csv_write_failed`. Both are written to a temporary file first, so any error (`409 value_type_mismatch`, `404 harmonizer_dataset_file_missing`) comes back as a normal error response before anything is sent; then the file is sent and deleted, also when the client disconnects. The types are checked with the same stored column checks as the mapping (see [Variable types](#variable-types)). On the national census (15 million rows, 91 columns), the edition's Parquet takes about 20 seconds and its CSV (3.3 GB) about 15 seconds.
 
 ### Dictionaries
 
@@ -639,7 +749,11 @@ Each variable's `status` is `single` (fewer than two editions map it), `ok` (no 
 
 ### Original file
 
-`GET /harmonizer/datasets/:datasetId/original.csv` returns the uploaded file rebuilt from the edition's stored Parquet. The bytes of the upload are not kept, so this is the same data, not the same file:
+`GET /harmonizer/datasets/:datasetId/original.csv` returns the uploaded file.
+
+For a CSV uploaded with tus (plain or `.csv.gz`), the original is kept gzip-compressed and this returns it byte for byte as it was uploaded (decompressed when it was a `.csv.gz`): same encoding marks, separators, line endings and quoting. It is streamed, so it has no row limit.
+
+For editions uploaded in one request or as DBF, the bytes of the upload are not kept, and the file is rebuilt from the edition's stored Parquet. It is the same data, not the same file:
 
 - Every column of the file, mapped or not, in header order, with every data row in file order.
 - Values exactly as read: no mapping, no `missingCodes` (codes such as `9` stay `9`), no type conversion, and no formula neutralization (a value `=1+1` is downloaded as `=1+1`, as it was uploaded).
@@ -647,6 +761,21 @@ Each variable's `status` is `single` (fewer than two editions map it), `ok` (no 
 - Differences from the uploaded bytes: UTF-8 with a BOM, comma separator, `\n` line endings, values quoted only when needed, and blank lines dropped.
 - The filename is `original_<edition>_<year>.csv`, with accents and symbols removed. The name of the uploaded file is not stored.
 - An unknown edition returns `404 harmonizer_dataset_not_found`.
+- A value that starts with a BOM character (U+FEFF) keeps it: DuckDB writes the file. (The paged JSON views lose it, because the DuckDB client for Node removes it when it reads text; the downloads and the stored data keep it.)
+- The file is rebuilt without loading the rows into the server: the header line is written by the CSV writer and the rows by DuckDB, with the same quoting (see [Exports](#harmonized-views)), to a temporary file that is sent and then deleted, so it has no row limit.
+
+### Direct downloads
+
+A browser can only save a file as it arrives when it opens a link, and a link cannot carry the session (`Authorization: Bearer …`). With `fetch`, the whole file has to fit in the browser's memory first, which a census file of several GB does not. So a download takes two steps:
+
+1. `POST` to the download's path plus `/download`, with the session: `.../datasets/:datasetId/harmonized.csv/download` (or `.parquet`), `.../datasets/:datasetId/original.csv/download`, or `.../surveys/:surveyId/harmonized.csv/download` (or `.parquet`, with the same `variables` query as the `GET`). The server prepares the same file as the `GET` and answers `201 { url, filename, size, expiresAt }`. Every error of the `GET` comes back here, as a normal JSON response, before anything is downloaded.
+2. The browser opens `url` (`/harmonizer/downloads/<token>`, relative to the API), which needs no session: the token is the permission. It answers the file as an attachment, with `Content-Length` when `size` is known (`size` is `null` for a kept original of a tus upload, which is unzipped as it is sent), `Cache-Control: no-store` and `Referrer-Policy: no-referrer`.
+
+- The token is random (256 bits) and works **once**: the second request, or one after `expiresAt` (15 minutes), returns `404 download_not_found`. A download cut half way cannot be resumed; prepare it again.
+- A prepared file waits in the server's temporary folder (`ibero-harmonized-<id>.<ext>`) and is deleted once it is sent or when it expires. If the server stops first, its token is lost and the file stays; the next start deletes such files once they are older than 75 minutes.
+- Prepared downloads are kept in the API's memory, so they only work with one API process.
+- Preparing takes as long as generating the file: about 20 seconds for the national census edition as Parquet. A proxy in front of the API must allow requests that long.
+- The `GET` endpoints still send the file directly, with the session, for scripts.
 
 ## File storage
 
@@ -656,13 +785,17 @@ Files are written to `storage/` under the directory the server is started from. 
 | --- | --- |
 | `storage/<datasetId>/<uuid>-<filename>` | Uploaded resources. Unsafe characters in the name become `_`. |
 | `storage/analyses/<analysisId>.parquet` | Analysis results. |
+| `storage/harmonizer/originals/<datasetId>.csv.gz` | The CSV of a harmonizer edition as it was uploaded with tus, gzip-compressed. |
+| `storage/uploads/<importId>` and `<importId>.json` | A tus upload and its tus metadata, until the worker imports it (`UPLOAD_DIR`). |
 | `storage/harmonizer/<datasetId>.parquet` | Rows of a harmonizer edition, all text, in file order. Columns are positional (`c0`, `c1`, …); their names are the edition's stored headers. Uploads are never empty now (see [Upload](#upload)), but an edition uploaded from an empty file before that rule (report H-08) has no headers and no Parquet, and reads as 0 rows. |
 
-Column profiles (see [Codes between editions](#codes-between-editions)) and dictionaries are stored in the database, not in `storage/`. Deleting an edition deletes its profiles.
+Column profiles (see [Codes between editions](#codes-between-editions)), column type checks (see [Variable types](#variable-types)) and dictionaries are stored in the database, not in `storage/`. Deleting an edition deletes its profiles and checks.
 
 Deleting through the API removes the related files. A file deleted by hand makes its resource return `404 resource_file_missing`, and makes the views and exports of its harmonizer edition return `404 harmonizer_dataset_file_missing`.
 
-When the server starts, it cleans `storage/harmonizer/` (report SDI-100). It deletes every `<id>.parquet` or `<id>.parquet.deleting` whose edition no longer exists. Those are files whose removal failed after the edition was deleted, files left by an interrupted upload, or files orphaned before SDI-100. A `.deleting` file whose edition still exists is renamed back. Other files in the folder are not touched. `storage/` is shared by `start:dev` and `start:local`, which use different databases, so if no file in the folder belongs to an edition of the current database, the cleanup assumes the folder belongs to the other database: it keeps everything and logs a warning. A failed cleanup is logged and never stops the server from starting.
+Deleting an edition also deletes its kept original, with the same rules as its Parquet.
+
+When the server starts, it cleans `storage/harmonizer/` (report SDI-100). It deletes every `<id>.parquet` or `<id>.parquet.deleting`, and every `originals/<id>.csv.gz(.deleting)`, whose edition no longer exists and that is more than an hour old (the worker writes an edition's files before it creates the edition). Those are files whose removal failed after the edition was deleted, files left by an interrupted upload, or files orphaned before SDI-100. A `.deleting` file whose edition still exists is renamed back. Other files in the folder are not touched. `storage/` is shared by `start:dev` and `start:local`, which use different databases, so if no file in the folder belongs to an edition of the current database, the cleanup assumes the folder belongs to the other database: it keeps everything and logs a warning. A failed cleanup is logged and never stops the server from starting.
 
 ---
 
@@ -670,7 +803,6 @@ When the server starts, it cleans `storage/harmonizer/` (report SDI-100). It del
 
 The code currently behaves as described below. It is not yet decided whether each behavior is intended. When one is decided, update the relevant section and remove it from this list.
 
-- **Analysis visibility.** The public catalog ignores `Analysis.visibility` and uses only the dataset's visibility. A `PRIVATE` analysis in a `PUBLIC` dataset is public.
 - **Private datasets.** `PRIVATE` only hides a dataset from the public catalog. Any logged-in user can still list and read it.
 - **Harmonizer access.** Surveys are not tied to organizations, so every logged-in user can read and change all of them.
 - **Login errors.** Different codes for an unknown email and a wrong password reveal which emails are registered.

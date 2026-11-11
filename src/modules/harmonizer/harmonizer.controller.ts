@@ -25,8 +25,9 @@ import type { AuthenticatedUser } from '../auth/jwt-payload.interface.js';
 import {
   HarmonizerService,
   MAX_CODEBOOK_BYTES,
-  type ExportFile,
 } from './harmonizer.service.js';
+import { sendExportFile } from './export-response.js';
+import { HarmonizerDownloadsService } from './downloads/harmonizer-downloads.service.js';
 import { CreateSurveyDto } from './dto/create-survey.dto.js';
 import { SurveyAccessService } from './survey-access.service.js';
 import { NEW_SURVEY } from './dto/upload-dataset.dto.js';
@@ -53,6 +54,7 @@ export class HarmonizerController {
   constructor(
     private readonly harmonizerService: HarmonizerService,
     private readonly access: SurveyAccessService,
+    private readonly downloads: HarmonizerDownloadsService,
   ) {}
 
   @Get('surveys')
@@ -169,7 +171,7 @@ export class HarmonizerController {
 
   @Get('surveys/:surveyId/catalog.csv')
   async catalog(@Param('surveyId') surveyId: string, @Res() res: Response) {
-    this.sendFile(res, await this.harmonizerService.exportCatalog(surveyId));
+    sendExportFile(res, await this.harmonizerService.exportCatalog(surveyId));
   }
 
   @Get('surveys/:surveyId/codebooks')
@@ -233,8 +235,20 @@ export class HarmonizerController {
     @Query('variables') variables: string | string[] | undefined,
     @Res() res: Response,
   ) {
-    this.sendFile(
+    sendExportFile(
       res,
+      await this.harmonizerService.exportSurvey(surveyId, fmt, variables),
+    );
+  }
+
+  /** Prepares the same file for a direct download (see HarmonizerDownloadsController). */
+  @Post('surveys/:surveyId/harmonized.:fmt/download')
+  async prepareSurveyExport(
+    @Param('surveyId') surveyId: string,
+    @Param('fmt') fmt: string,
+    @Query('variables') variables: string | string[] | undefined,
+  ) {
+    return this.downloads.register(
       await this.harmonizerService.exportSurvey(surveyId, fmt, variables),
     );
   }
@@ -326,8 +340,18 @@ export class HarmonizerController {
     @Param('fmt') fmt: string,
     @Res() res: Response,
   ) {
-    this.sendFile(
+    sendExportFile(
       res,
+      await this.harmonizerService.exportDataset(datasetId, fmt),
+    );
+  }
+
+  @Post('datasets/:datasetId/harmonized.:fmt/download')
+  async prepareDatasetExport(
+    @Param('datasetId') datasetId: string,
+    @Param('fmt') fmt: string,
+  ) {
+    return this.downloads.register(
       await this.harmonizerService.exportDataset(datasetId, fmt),
     );
   }
@@ -337,15 +361,13 @@ export class HarmonizerController {
     @Param('datasetId') datasetId: string,
     @Res() res: Response,
   ) {
-    this.sendFile(res, await this.harmonizerService.exportOriginal(datasetId));
+    sendExportFile(res, await this.harmonizerService.exportOriginal(datasetId));
   }
 
-  private sendFile(res: Response, file: ExportFile): void {
-    res.setHeader('Content-Type', file.contentType);
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${file.filename}"`,
+  @Post('datasets/:datasetId/original.csv/download')
+  async prepareDatasetOriginal(@Param('datasetId') datasetId: string) {
+    return this.downloads.register(
+      await this.harmonizerService.exportOriginal(datasetId),
     );
-    res.send(file.body);
   }
 }

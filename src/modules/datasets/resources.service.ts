@@ -1,12 +1,24 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { access } from 'node:fs/promises';
+import { Readable } from 'node:stream';
 import { OrgRole } from '@prisma/client';
 import type { AuthenticatedUser } from '../auth/jwt-payload.interface.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { LocalStorageService } from '../storage/local-storage.service.js';
 import { AnalysisService } from '../analysis/analysis.service.js';
+import { HarmonizerService } from '../harmonizer/harmonizer.service.js';
+import { discardExportFile } from '../harmonizer/export-response.js';
+import type { AttachHarmonizedDto } from './dto/attach-harmonized.dto.js';
 
 const PARQUET_MAGIC = Buffer.from('PAR1', 'ascii');
+
+/** `Resource.sizeBytes` is a 32-bit integer. */
+export const MAX_RESOURCE_BYTES = 2_147_483_647;
 
 export function looksLikeParquet(buffer: Buffer): boolean {
   return (
@@ -22,6 +34,7 @@ export class ResourcesService {
     private readonly prisma: PrismaService,
     private readonly storage: LocalStorageService,
     private readonly analysisService: AnalysisService,
+    private readonly harmonizer: HarmonizerService,
   ) {}
 
   findAll(datasetId: string) {
@@ -75,11 +88,53 @@ export class ResourcesService {
     }
 
     const storageKey = await this.storage.save(datasetId, file.originalname, file.buffer);
-    const absolutePath = this.storage.resolvePath(storageKey);
+    return this.createStored(datasetId, file.originalname, file.size, storageKey);
+  }
 
+  /**
+   * Saves a harmonized view (the Parquet of `GET /harmonizer/.../harmonized.parquet`) as a
+   * resource of the dataset. The server writes it straight to storage: it never goes through
+   * the browser, memory, or the 500 MB upload limit. Errors of the export come back as they are.
+   */
+  async attachHarmonized(datasetId: string, dto: AttachHarmonizedDto) {
+    if (Boolean(dto.editionId) === Boolean(dto.surveyId) || (dto.editionId && dto.variables)) {
+      throw new BadRequestException({
+        code: 'harmonized_source_invalid',
+        message: 'Send editionId, or surveyId with optional variables.',
+      });
+    }
+    const file = dto.editionId
+      ? await this.harmonizer.exportDataset(dto.editionId, 'parquet')
+      : await this.harmonizer.exportSurvey(dto.surveyId!, 'parquet', dto.variables);
+    const size = file.size ?? (Buffer.isBuffer(file.body) ? file.body.length : 0);
+    if (size > MAX_RESOURCE_BYTES) {
+      discardExportFile(file);
+      throw new UnprocessableEntityException({
+        code: 'resource_too_large',
+        message: `The file is ${size} bytes and a resource can be at most ${MAX_RESOURCE_BYTES}.`,
+        params: { size, maxBytes: MAX_RESOURCE_BYTES },
+      });
+    }
+    const body = Buffer.isBuffer(file.body) ? Readable.from([file.body]) : file.body;
+    const storageKey = await this.storage.saveStream(datasetId, file.filename, body);
+    try {
+      return await this.createStored(datasetId, file.filename, size, storageKey);
+    } catch (err) {
+      await this.storage.remove(storageKey);
+      throw err;
+    }
+  }
+
+  /** The resource of a Parquet already in storage, with its column schema when it can be read. */
+  private async createStored(
+    datasetId: string,
+    filename: string,
+    sizeBytes: number,
+    storageKey: string,
+  ) {
     let columns: unknown = null;
     try {
-      columns = await this.analysisService.describeSchema(absolutePath);
+      columns = await this.analysisService.describeSchema(this.storage.resolvePath(storageKey));
     } catch {
       columns = null;
     }
@@ -87,9 +142,9 @@ export class ResourcesService {
     return this.prisma.resource.create({
       data: {
         datasetId,
-        filename: file.originalname,
+        filename,
         format: 'parquet',
-        sizeBytes: file.size,
+        sizeBytes,
         storageKey,
         columns: columns as any,
       },

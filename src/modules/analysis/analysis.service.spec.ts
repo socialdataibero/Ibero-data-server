@@ -228,7 +228,7 @@ describe('AnalysisService: Parquet crudo del armonizador (DuckDB real)', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('readParquetRows devuelve las filas tal como se escribieron, en orden y como texto', async () => {
+  it('streamInternalRows devuelve las filas tal como se escribieron, en orden y como texto', async () => {
     const path = join(dir, 'raw.parquet');
     const rows = Array.from({ length: 12_000 }, (_, i) => ({
       c0: String(i).padStart(5, '0'),
@@ -236,9 +236,15 @@ describe('AnalysisService: Parquet crudo del armonizador (DuckDB real)', () => {
     }));
 
     await service.writeRowsToParquet(['c0', 'c1'], rows, path);
-    const read = await service.readParquetRows(path);
+    const read: unknown[][] = [];
+    let chunks = 0;
+    for await (const chunk of service.streamInternalRows(path, 'SELECT c0, c1 FROM data')) {
+      read.push(...chunk);
+      chunks++;
+    }
 
-    // Más filas que MAX_ROWS: la lectura cruda no se trunca.
+    // Más filas que MAX_ROWS, en varios bloques: la lectura no se trunca.
+    expect(chunks).toBeGreaterThan(1);
     expect(read).toHaveLength(12_000);
     expect(read[0]).toEqual(['00000', 'Hñähñu']);
     expect(read[11_999]).toEqual(['11999', '']);
