@@ -7,7 +7,9 @@ import {
 } from '@nestjs/common';
 import { DuckDBConnection, DuckDBInstance } from '@duckdb/node-api';
 import { randomUUID } from 'node:crypto';
+import { createReadStream, createWriteStream } from 'node:fs';
 import { rm } from 'node:fs/promises';
+import { finished, pipeline } from 'node:stream/promises';
 import { join } from 'node:path';
 import { describeDuckDbError } from './duckdb-error.js';
 import { assertReadOnlySelect } from './sql-sanitizer.js';
@@ -260,6 +262,63 @@ export class AnalysisService {
     } finally {
       connection.closeSync();
       await duckdb.close();
+      await Promise.all(partPaths.map((p) => rm(p, { force: true })));
+    }
+  }
+
+  /**
+   * Writes a text file: `prefix`, then the rows of `parts` one after another. Each part is a
+   * SELECT built by the server with one VARCHAR column, a whole line without its line break
+   * (for example a CSV line already quoted, see harmonized-export.ts). DuckDB writes each line as
+   * it is plus `\n`, with no quoting of its own, so the rows never pass through JavaScript.
+   * Sources are views as in `copyInternalQueryToParquet`.
+   */
+  async writeInternalLines(
+    sources: NamedSource[],
+    parts: string[],
+    destPath: string,
+    prefix: string,
+  ): Promise<void> {
+    const partPaths = parts.map((_, i) => `${destPath}.part${i}.txt`);
+    const duckdb = await this.openInstance();
+    const connection = await duckdb.instance.connect();
+    try {
+      for (const source of sources) {
+        await connection.run(
+          `CREATE TEMP VIEW ${quoteIdent(source.alias)} AS SELECT * FROM read_parquet('${escapeSqlLiteral(source.path)}', file_row_number = true)`,
+        );
+      }
+      for (const [i, sql] of parts.entries()) {
+        await connection.run(
+          `COPY (${sql}) TO '${escapeSqlLiteral(partPaths[i])}' (FORMAT CSV, HEADER false, QUOTE '', ESCAPE '')`,
+        );
+      }
+    } catch (err) {
+      await Promise.all(partPaths.map((p) => rm(p, { force: true })));
+      throw safeDuckDbError(
+        err,
+        [...sources.map((s) => s.path), destPath, ...partPaths],
+        'csv_write_failed',
+      );
+    } finally {
+      connection.closeSync();
+      await duckdb.close();
+    }
+    const out = createWriteStream(destPath);
+    const done = finished(out);
+    // Awaited below; this only keeps an early write error from being an unhandled rejection.
+    done.catch(() => undefined);
+    try {
+      out.write(prefix);
+      for (const part of partPaths) {
+        await pipeline(createReadStream(part), out, { end: false });
+      }
+      out.end();
+      await done;
+    } catch (err) {
+      out.destroy();
+      throw err;
+    } finally {
       await Promise.all(partPaths.map((p) => rm(p, { force: true })));
     }
   }

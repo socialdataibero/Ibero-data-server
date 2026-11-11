@@ -8,13 +8,11 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { parse } from 'csv-parse/sync';
-import { stringify as csvStringifier } from 'csv-stringify';
 import { stringify } from 'csv-stringify/sync';
 import { randomUUID } from 'node:crypto';
-import { createReadStream, createWriteStream } from 'node:fs';
+import { createReadStream } from 'node:fs';
 import { access, rm, stat } from 'node:fs/promises';
-import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
+import type { Readable } from 'node:stream';
 import { createGunzip } from 'node:zlib';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -43,10 +41,10 @@ import {
 } from './column-checks.js';
 import { csvError, csvNotUtf8Body } from './csv-errors.js';
 import {
+  editionCsvLinesSql,
   editionParquetSql,
-  editionSelectSql,
   exportColumns,
-  originalSelectSql,
+  originalCsvLinesSql,
   surveyParquetSql,
   type ExportColumn,
 } from './harmonized-export.js';
@@ -56,7 +54,6 @@ import {
   neutralizeCsvFormula,
   type ColumnValues,
   type DatasetEdition,
-  type HarmonizedRow,
   type RawData,
   type ValueType,
 } from './harmonized-view.js';
@@ -2573,7 +2570,13 @@ export class HarmonizerService implements OnApplicationBootstrap {
     if (format === 'csv') {
       return {
         ...file,
-        ...(await this.csvExportFile(headers, this.editionRows(edition, edition.columns, false))),
+        ...(await this.csvLinesFile(
+          headers,
+          edition.path ? [{ alias: 'e0', path: edition.path }] : [],
+          edition.path && headers.length > 0
+            ? [editionCsvLinesSql('e0', edition.columns, headers)]
+            : [],
+        )),
       };
     }
     if (headers.length === 0 || !edition.path) {
@@ -2624,16 +2627,17 @@ export class HarmonizerService implements OnApplicationBootstrap {
     };
 
     if (format === 'csv') {
-      const editionRows = this.editionRows.bind(this);
       return {
         ...file,
-        ...(await this.csvExportFile(
+        ...(await this.csvLinesFile(
           ['_dataset', '_year', '_row', ...wanted],
-          (async function* () {
-            for (const { edition, columns } of included) {
-              yield* editionRows(edition, columns, true);
-            }
-          })(),
+          included.map((i, n) => ({ alias: `e${n}`, path: i.edition.path! })),
+          included.map((i, n) =>
+            editionCsvLinesSql(`e${n}`, i.columns, wanted, {
+              name: i.edition.dataset.name,
+              year: i.edition.dataset.year,
+            }),
+          ),
         )),
       };
     }
@@ -2690,23 +2694,21 @@ export class HarmonizerService implements OnApplicationBootstrap {
         body: file.pipe(gunzip),
       };
     }
-    // Las demás se reconstruyen del Parquet: DuckDB entrega las filas por bloques y se
-    // escriben con el mismo csv-stringify de siempre. Un archivo vacío (H-08) no tiene Parquet.
+    // Las demás se reconstruyen del Parquet: DuckDB escribe las líneas (ver harmonized-export.ts)
+    // y el encabezado lo escribe csv-stringify. Un archivo vacío (H-08) no tiene Parquet.
     const path = dataset.columns.length > 0 ? await this.rawPath(dataset) : null;
-    const analysis = this.analysisService;
-    // Filas como arreglos: con objetos, csv-stringify leería `EDAD.1` como ruta anidada.
-    async function* records(): AsyncGenerator<unknown[]> {
-      yield dataset.columns;
-      if (!path) return;
-      for await (const chunk of analysis.streamInternalRows(path, originalSelectSql(dataset.columns))) {
-        yield* chunk;
-      }
-    }
+    // El encabezado como arreglo: con objetos, csv-stringify leería `EDAD.1` como ruta anidada.
+    const header = `\ufeff${stringify([dataset.columns])}`;
     return {
       filename,
       contentType: EXPORT_CONTENT_TYPE.csv,
       ...(await this.exportTempFile('csv', (dest) =>
-        pipeline(Readable.from(records()), csvStringifier({ bom: true }), createWriteStream(dest)),
+        this.analysisService.writeInternalLines(
+          path ? [{ alias: 'e0', path }] : [],
+          path ? [originalCsvLinesSql('e0', dataset.columns)] : [],
+          dest,
+          header,
+        ),
       )),
     };
   }
@@ -2749,36 +2751,6 @@ export class HarmonizerService implements OnApplicationBootstrap {
         })),
       ),
     };
-  }
-
-  /**
-   * Las filas de `columns` de una edición, en el orden del archivo, como las da la vista
-   * armonizada; con `origin`, también `_dataset`, `_year` y `_row`. DuckDB las entrega por
-   * bloques: nunca están todas en memoria.
-   */
-  private async *editionRows(
-    edition: ExportEdition,
-    columns: ExportColumn[],
-    origin: boolean,
-  ): AsyncGenerator<HarmonizedRow> {
-    if (columns.length === 0 || !edition.path) return;
-    const names = columns.map((c) => c.canon);
-    const sql = editionSelectSql('data', columns, names);
-    for await (const chunk of this.analysisService.streamInternalRows(edition.path, sql)) {
-      for (const values of chunk) {
-        const row: HarmonizedRow = {};
-        names.forEach((name, i) => {
-          row[name] = values[i + 1] as string | null;
-        });
-        if (origin) {
-          row['_dataset'] = edition.dataset.name;
-          row['_year'] = edition.dataset.year;
-          // Número de registro en el archivo (1 = primera fila de datos), H-05.
-          row['_row'] = Number(values[0]) + 1;
-        }
-        yield row;
-      }
-    }
   }
 
   /**
@@ -2859,21 +2831,23 @@ export class HarmonizerService implements OnApplicationBootstrap {
     return types;
   }
 
-  private csvExportFile(
+  /**
+   * El CSV de una vista armonizada: el BOM y el encabezado (con neutralización de fórmulas) los
+   * escribe csv-stringify, como antes; las filas las escribe DuckDB, ya como líneas de CSV, una
+   * parte (edición) tras otra. Las filas no pasan por JavaScript.
+   */
+  private csvLinesFile(
     columns: string[],
-    rows: AsyncIterable<HarmonizedRow>,
+    sources: NamedSource[],
+    parts: string[],
   ): Promise<Pick<ExportFile, 'body' | 'size'>> {
+    const header = `\ufeff${stringify([], {
+      header: true,
+      columns: columns.map((key) => ({ key, header: neutralizeCsvFormula(key) })),
+      cast: { number: (n) => String(n), string: neutralizeCsvFormula },
+    })}`;
     return this.exportTempFile('csv', (path) =>
-      pipeline(
-        Readable.from(rows),
-        csvStringifier({
-          bom: true,
-          header: true,
-          columns: columns.map((key) => ({ key, header: neutralizeCsvFormula(key) })),
-          cast: { number: (n) => String(n), string: neutralizeCsvFormula },
-        }),
-        createWriteStream(path),
-      ),
+      this.analysisService.writeInternalLines(sources, parts, path, header),
     );
   }
 

@@ -1,13 +1,16 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { stringify } from 'csv-stringify/sync';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DuckDBInstance } from '@duckdb/node-api';
 import { AnalysisService, type ParquetColumnType } from '../analysis/analysis.service.js';
 import { sqlString } from './column-checks.js';
 import {
+  editionCsvLinesSql,
   editionParquetSql,
   editionSelectSql,
   exportColumns,
+  originalCsvLinesSql,
   originalSelectSql,
   surveyParquetSql,
   type ExportColumn,
@@ -15,6 +18,7 @@ import {
 import {
   buildDatasetView,
   buildSurveyView,
+  neutralizeCsvFormula,
   type DatasetEdition,
   type RawData,
 } from './harmonized-view.js';
@@ -24,6 +28,8 @@ import {
 const VALUES = [
   '', ' ', '\t', '　', '﻿', '1', ' 2 ', '99', ' 99 ', '9', '007', 'H', ' M ', 'Si', 'No',
   "O'Brien", 'a"b', 'x\ny', 'é', '=1+1', '100 y mas', '1.5', ' 3 ', null,
+  // CSV quoting and formula neutralization (H-12).
+  'a,b', '\r', 'x\r\ny', '"', '""', '-1+1', '@SUM(1)', '+3.2', '-5', '1e-3', '\tx', ' =x', '﻿=x',
 ];
 
 function prng(seed: number) {
@@ -161,10 +167,13 @@ describe('harmonized-export: DuckDB gives what the harmonized view gives', () =>
       expect(columns.map((c) => c.canon), e.name).toEqual(expected.headers);
       const rows = await selectRows(e, columns);
       expect(rows.map((r) => Number(r[0])), e.name).toEqual(rows.map((_, i) => i));
+      // Read back through @duckdb/node-api, which drops a BOM at the start of a value.
+      const read = (v: string | number | null) =>
+        typeof v === 'string' && v.startsWith('\ufeff') ? v.slice(1) : v;
       expect(
         rows.map((r) => Object.fromEntries(expected.headers.map((h, i) => [h, r[i + 1]]))),
         e.name,
-      ).toEqual(expected.rows);
+      ).toEqual(expected.rows.map((row) => Object.fromEntries(Object.entries(row).map(([k, v]) => [k, read(v)]))));
     }
   });
 
@@ -278,5 +287,98 @@ describe('harmonized-export: DuckDB gives what the harmonized view gives', () =>
     await service.writeRowsToParquet(['_dataset', '_year', '_row'], [], oldPath, types);
     await service.copyInternalQueryToParquet([], surveyParquetSql([], [], types), newPath);
     await expectSameParquet(oldPath, newPath);
+  });
+
+  // What the CSV downloads wrote before B5: csv-stringify over the view's rows, with a BOM.
+  const csvOptions = (columns: string[]) => ({
+    header: true,
+    columns: columns.map((key) => ({ key, header: neutralizeCsvFormula(key) })),
+    cast: { number: (n: number) => String(n), string: neutralizeCsvFormula },
+  });
+
+  async function writeLines(sources: { alias: string; path: string }[], parts: string[], prefix: string) {
+    const out = join(dir, `lines-${Math.random().toString(36).slice(2)}.csv`);
+    await service.writeInternalLines(sources, parts, out, prefix);
+    return readFile(out, 'utf8');
+  }
+
+  it('edition CSV: the same bytes as csv-stringify (quotes, formulas, line breaks)', async () => {
+    for (const e of editions) {
+      const view = buildDatasetView(jsEdition(e));
+      const expected = `\ufeff${stringify(view.rows, csvOptions(view.headers))}`;
+      const actual = await writeLines(
+        [{ alias: 'e0', path: e.path }],
+        [editionCsvLinesSql('e0', columnsOf(e), view.headers)],
+        `\ufeff${stringify([], csvOptions(view.headers))}`,
+      );
+      expect(actual === expected, e.name).toBe(true);
+    }
+  });
+
+  it('survey CSV: editions in order, origin columns, absent variables empty, odd edition names', async () => {
+    const named = ['=ed,1', 'ed "2"', '-3', ...Array.from({ length: 9 }, (_, k) => `ed${k}`)];
+    const many = named.map((name, k) => ({ ...editions[k % 3], name }));
+    const wanted = ['dec', 'num', 'otra', 'solo2020', 'x', 'y', 'z'];
+    const view = buildSurveyView(many.map(jsEdition), wanted);
+    const columns = ['_dataset', '_year', '_row', ...wanted];
+    const expected = `\ufeff${stringify(view.rows, csvOptions(columns))}`;
+    const included = many
+      .map((e, n) => ({ e, n, columns: columnsOf(e).filter((c) => wanted.includes(c.canon)) }))
+      .filter((i) => i.columns.length > 0);
+    const actual = await writeLines(
+      included.map((i) => ({ alias: `e${i.n}`, path: i.e.path })),
+      included.map((i) =>
+        editionCsvLinesSql(`e${i.n}`, i.columns, wanted, { name: i.e.name, year: i.e.year }),
+      ),
+      `\ufeff${stringify([], csvOptions(columns))}`,
+    );
+    expect(actual.length).toBe(expected.length);
+    expect(actual === expected).toBe(true);
+  });
+
+  it('original CSV: the same bytes as csv-stringify over the stored rows', async () => {
+    for (const e of editions) {
+      const rows = jsEdition(e).rows.map((row) => e.columns.map((c) => row[c]));
+      const expected = `\ufeff${stringify([e.columns, ...rows])}`;
+      const actual = await writeLines(
+        [{ alias: 'e0', path: e.path }],
+        [originalCsvLinesSql('e0', e.columns)],
+        `\ufeff${stringify([e.columns])}`,
+      );
+      expect(actual === expected, e.name).toBe(true);
+    }
+  });
+
+  it('CSV of a file with 600 columns (one line per row, not too deep for DuckDB)', async () => {
+    const width = 600;
+    const columns = Array.from({ length: width }, (_, c) => `C${c}`);
+    const rows = Array.from({ length: 5 }, (_, r) => columns.map((_, c) => VALUES[(r * 7 + c) % VALUES.length]));
+    const path = join(dir, 'wide.parquet');
+    await writeRaw(path, width, rows);
+    const e: Edition = {
+      name: 'ancho',
+      year: 2020,
+      columns,
+      mappings: columns.map((c, i) => ({
+        sourceColumn: c,
+        canon: `v${i}`,
+        missingCodes: [],
+        valueMap: new Map<string, string>(),
+      })),
+      rows,
+      path,
+    };
+    const view = buildDatasetView(jsEdition(e));
+    expect(
+      await writeLines(
+        [{ alias: 'e0', path }],
+        [editionCsvLinesSql('e0', columnsOf(e), view.headers)],
+        `\ufeff${stringify([], csvOptions(view.headers))}`,
+      ),
+    ).toBe(`\ufeff${stringify(view.rows, csvOptions(view.headers))}`);
+    const stored = jsEdition(e).rows.map((row) => columns.map((c) => row[c]));
+    expect(
+      await writeLines([{ alias: 'e0', path }], [originalCsvLinesSql('e0', columns)], `\ufeff${stringify([columns])}`),
+    ).toBe(`\ufeff${stringify([columns, ...stored])}`);
   });
 });

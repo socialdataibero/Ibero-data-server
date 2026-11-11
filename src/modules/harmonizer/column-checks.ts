@@ -36,7 +36,8 @@ function sqlList(values: string[]): string {
 
 // The regular expressions of harmonized-view.ts. RE2's `[0-9]` is JavaScript's `\d` (no `u` flag).
 const INTEGER = `'[+-]?[0-9]+'`;
-const PLAIN_NUMBER = `'[+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)([eE][+-]?[0-9]+)?'`;
+/** `PLAIN_NUMBER` of harmonized-view.ts, as an SQL string for `regexp_full_match`. */
+export const PLAIN_NUMBER = `'[+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)([eE][+-]?[0-9]+)?'`;
 
 function isInteger(v: string): string {
   return `regexp_full_match(${v}, ${INTEGER})`;

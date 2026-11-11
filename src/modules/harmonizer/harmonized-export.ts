@@ -1,6 +1,8 @@
 import { quoteIdent } from '../analysis/recipe.js';
 import type { ParquetColumnType } from '../analysis/analysis.service.js';
-import { jsTrimSql, sqlString } from './column-checks.js';
+import { stringify } from 'csv-stringify/sync';
+import { PLAIN_NUMBER, jsTrimSql, sqlString } from './column-checks.js';
+import { neutralizeCsvFormula } from './harmonized-view.js';
 
 /**
  * The harmonized exports as DuckDB SQL over an edition's raw Parquet (positional columns
@@ -166,10 +168,80 @@ export function editionParquetSql(
  * header order, with its values as stored and a `NULL` cell as `''`. A repeated header (an
  * edition uploaded before headers were deduplicated, H-10) gives the values of its last column
  * in both positions, as the download did when it read each row into an object by header name.
- * Reads the view `data` (`AnalysisService.streamInternalRows`).
  */
-export function originalSelectSql(fileColumns: string[]): string {
+export function originalSelectSql(fileColumns: string[], source = 'data'): string {
   return `SELECT ${fileColumns
     .map((name, i) => `coalesce(${quoteIdent(`c${fileColumns.lastIndexOf(name)}`)}, '') AS _o${i}`)
-    .join(', ')} FROM data`;
+    .join(', ')} FROM ${quoteIdent(source)}`;
+}
+
+/*
+ * CSV lines built in SQL, so DuckDB writes the CSV itself (`AnalysisService.writeInternalLines`)
+ * instead of handing every row to JavaScript: on the census that took 259 s. The bytes are
+ * those `csv-stringify` writes with the options of the downloads (`harmonized-export.spec.ts`
+ * compares them).
+ */
+
+/**
+ * `neutralizeCsvFormula` (harmonized-view.ts): a leading `'` on a value that starts with `=`, `+`,
+ * `-`, `@`, a tab or a carriage return and is not a plain number.
+ */
+function neutralizeSql(v: string): string {
+  return `CASE WHEN regexp_matches(${v}, '^[=+\\-@\\t\\r]') AND NOT regexp_full_match(${v}, ${PLAIN_NUMBER}) THEN '''' || ${v} ELSE ${v} END`;
+}
+
+/**
+ * One field as `csv-stringify` writes it (delimiter `,`, quote and escape `"`, record delimiter
+ * `\n`): nothing for `NULL` or `''`; quoted, with its quotes doubled, when it has a quote, a
+ * comma or a line feed (a carriage return alone is not quoted); otherwise as it is.
+ */
+function csvFieldSql(v: string): string {
+  return `CASE WHEN ${v} IS NULL OR ${v} = '' THEN '' WHEN contains(${v}, '"') OR contains(${v}, ',') OR contains(${v}, chr(10)) THEN '"' || replace(${v}, '"', '""') || '"' ELSE ${v} END`;
+}
+
+/** A literal field, written by `csv-stringify` itself. */
+function csvLiteral(value: string): string {
+  return stringify([[value]]).slice(0, -1);
+}
+
+/**
+ * The fields of a line. One call, not a chain of `||`: with 500 columns the chain is deeper than
+ * DuckDB accepts. No field is `NULL`, so `concat_ws` keeps them all.
+ */
+function joinFields(fields: string[]): string {
+  return fields.length > 0 ? `concat_ws(',', ${fields.join(', ')})` : `''`;
+}
+
+/**
+ * The CSV lines of an edition's harmonized view, as the download writes its rows: values with
+ * formula neutralization, `output` as in `editionSelectSql` (a column the edition does not have
+ * is empty). With `origin`, each line starts with `_dataset`, `_year` and `_row`, as in the
+ * survey download. One column, `line`, without its line break.
+ */
+export function editionCsvLinesSql(
+  source: string,
+  columns: ExportColumn[],
+  output: string[],
+  origin?: { name: string; year: number },
+): string {
+  const values = output.map((_, i) => `_v${i}`);
+  const neutralized = output.map(
+    (canon, i) => `${neutralizeSql(quoteIdent(canon))} AS ${values[i]}`,
+  );
+  const fields = [
+    ...(origin
+      ? [
+          sqlString(csvLiteral(neutralizeCsvFormula(origin.name))),
+          sqlString(String(origin.year)),
+          'CAST(_ibero_rn + 1 AS VARCHAR)',
+        ]
+      : []),
+    ...values.map(csvFieldSql),
+  ];
+  return `SELECT ${joinFields(fields)} AS line FROM (SELECT ${['_ibero_rn', ...neutralized].join(', ')} FROM (${editionSelectSql(source, columns, output)}))`;
+}
+
+/** The CSV lines of the rebuilt original file: values as stored, no neutralization. */
+export function originalCsvLinesSql(source: string, fileColumns: string[]): string {
+  return `SELECT ${joinFields(fileColumns.map((_, i) => csvFieldSql(`_o${i}`)))} AS line FROM (${originalSelectSql(fileColumns, source)})`;
 }
