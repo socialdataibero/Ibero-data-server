@@ -259,6 +259,7 @@ Rules:
 | --- | --- | --- | --- |
 | `GET` | `.../datasets/:datasetId/resources` | any user | List, newest first. |
 | `POST` | `.../datasets/:datasetId/resources` | `ADMIN`, `EDITOR` | Upload a file (multipart, field `file`). |
+| `POST` | `.../datasets/:datasetId/resources/from-harmonizer` | `ADMIN`, `EDITOR` | Save a harmonized view of the survey harmonizer as a resource. See [From the harmonizer](#from-the-harmonizer). |
 | `POST` | `.../resources/:resourceId/query` | any role | Run a SQL query: `{ sql }`. |
 | `GET` | `.../resources/:resourceId/download` | any role, download token | Download the file. |
 | `GET` | `.../resources/:resourceId/vistrace-handoff` | any role | Get a vistrace link. See [handoff](#vistrace-handoff). |
@@ -270,6 +271,16 @@ Upload rules:
 - Only Parquet is accepted. The name must end in `.parquet` (`400 invalid_file_extension`), and the file must start and end with the `PAR1` marker (`400 invalid_parquet_format`).
 - Maximum size: 500 MB.
 - The column schema (`[{ name, type }]`) is read at upload and stored. If it cannot be read, the upload still succeeds and `columns` is `null`; analyses then skip column validation.
+
+### From the harmonizer
+
+`POST .../resources/from-harmonizer` takes `{ editionId }` (one edition) or `{ surveyId, variables? }` (the survey view, `variables` as in its download) and saves that harmonized view as a Parquet resource of the dataset. Anything else returns `400 harmonized_source_invalid`.
+
+- The file is exactly the Parquet of `GET /harmonizer/datasets/:editionId/harmonized.parquet` or `GET /harmonizer/surveys/:surveyId/harmonized.parquet`, with the same filename (see [Harmonized views](#harmonized-views)). Its errors come back as they are (`404 harmonizer_dataset_not_found`, `400 harmonized_view_empty`, `409 value_type_mismatch`, …).
+- The server writes it straight to storage, so it never goes through the browser and the 500 MB upload limit does not apply. The national census edition (383 MB, 15 million rows) takes about 20 seconds. Before, the web app downloaded the view and uploaded it again, which did not work for files that large.
+- A resource records its size as a 32-bit number, so a file over 2,147,483,647 bytes returns `422 resource_too_large` with `params: { size, maxBytes }`, and nothing is saved.
+- The schema is read and stored as in an upload. The response is the new resource.
+- Same roles as an upload: `ADMIN` or `EDITOR` of the dataset's organization. Any logged-in user can read every survey of the harmonizer, so no permission on the survey is needed.
 
 Query rules:
 

@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { createWriteStream } from 'node:fs';
 import { mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
+import type { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
 /** Sufijo de un archivo apartado para borrarse (ver `setAside`). */
 export const ASIDE_SUFFIX = '.deleting';
@@ -21,6 +24,21 @@ export class LocalStorageService {
 
     const key = `${datasetId}/${randomUUID()}-${sanitizeFilename(originalFilename)}`;
     await writeFile(join(this.root, key), buffer);
+    return key;
+  }
+
+  /** Like `save`, for a file too large to hold in memory: it is written as it is read. */
+  async saveStream(datasetId: string, originalFilename: string, stream: Readable): Promise<string> {
+    const dir = join(this.root, datasetId);
+    await mkdir(dir, { recursive: true });
+
+    const key = `${datasetId}/${randomUUID()}-${sanitizeFilename(originalFilename)}`;
+    try {
+      await pipeline(stream, createWriteStream(join(this.root, key)));
+    } catch (err) {
+      await rm(join(this.root, key), { force: true });
+      throw err;
+    }
     return key;
   }
 
