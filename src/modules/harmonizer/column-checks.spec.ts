@@ -9,11 +9,15 @@ import {
   allFit,
   columnTypeQuery,
   inferredType,
+  mergeFacts,
   notFittingQuery,
   readColumnTypeResult,
   readNotFitting,
+  readValueFacts,
   sqlString,
+  valueFactsQuery,
   type ColumnTypeCheck,
+  type ValueFactsCheck,
 } from './column-checks.js';
 import {
   inferValueType,
@@ -195,5 +199,40 @@ describe('column-checks: DuckDB gives what the JavaScript rules give', () => {
       );
       expect(readNotFitting(results[i]), `${column} ${JSON.stringify(check)}`).toEqual(expected);
     });
+  });
+
+  it('suggested type of the exported values (codes and recoding), alone and put together', async () => {
+    const maps = [
+      new Map<string, string>(),
+      new Map([['abc', '1'], ['1.5', 'x'], ['NE', '99']]),
+      new Map([['1e309', '5'], ['٣', '3'], ['0x10', ' 16 '], ['007', '7'], ['9', '']]),
+    ];
+    const checks: ValueFactsCheck[] = [];
+    for (let c = 0; c < COLUMNS; c++) {
+      for (const codes of codeSets) {
+        for (const valueMap of maps) {
+          checks.push({ rawColumn: `c${c}`, missingCodes: codes, valueMap });
+        }
+      }
+    }
+    const results = await service.runInternalQueries(path, checks.map(valueFactsQuery));
+    const valuesOf = (i: number) => {
+      const check = checks[i];
+      const column = name(Number(check.rawColumn.slice(1)));
+      return sourceColumnValues(raw, column, new Set(check.missingCodes), check.valueMap);
+    };
+    const facts = results.map((r) => readValueFacts(r[0]));
+    checks.forEach((check, i) => {
+      expect(inferredType(facts[i]), JSON.stringify([...Object.entries(check), [...check.valueMap]])).toBe(
+        inferValueType(valuesOf(i)),
+      );
+    });
+    // Several editions in one export: the type of all their values together.
+    for (let i = 0; i + 2 < checks.length; i += 7) {
+      const group = [i, i + 1, i + 2];
+      expect(inferredType(mergeFacts(group.map((g) => facts[g]))), `checks ${group}`).toBe(
+        inferValueType(group.flatMap(valuesOf)),
+      );
+    }
   });
 });

@@ -190,6 +190,80 @@ export class AnalysisService {
     }
   }
 
+  /**
+   * Runs one SELECT built by the server over one Parquet (the view `data`, as in
+   * `runInternalQueries`) and yields its rows chunk by chunk, in result order, so a large result
+   * never sits in memory whole.
+   */
+  async *streamInternalRows(
+    parquetPath: string,
+    sql: string,
+  ): AsyncGenerator<unknown[][]> {
+    const duckdb = await this.openInstance();
+    const connection = await duckdb.instance.connect();
+    try {
+      await connection.run(
+        `CREATE TEMP VIEW data AS SELECT * FROM read_parquet('${escapeSqlLiteral(parquetPath)}', file_row_number = true)`,
+      );
+      const result = await connection.stream(sql);
+      for await (const rows of result.yieldRowsJson()) {
+        yield rows as unknown[][];
+      }
+    } catch (err) {
+      throw safeDuckDbError(err, [parquetPath], 'parquet_read_failed');
+    } finally {
+      connection.closeSync();
+      await duckdb.close();
+    }
+  }
+
+  /**
+   * Writes the rows of `parts` (SELECTs built by the server, all with the same columns), one
+   * part after another, to a Parquet file. Each source is a view over one Parquet, with its
+   * columns plus `file_row_number`. DuckDB streams the rows to the file, spilling to disk when
+   * needed, so the result is never held in memory.
+   *
+   * A single SELECT keeps the order of its source, but `UNION ALL` does not keep the order of
+   * its parts (it mixed a small edition into a large one). So, with several parts, each one is
+   * written to its own file and the files are then read back in order, which DuckDB keeps.
+   */
+  async copyInternalQueryToParquet(
+    sources: NamedSource[],
+    parts: string[],
+    destPath: string,
+  ): Promise<void> {
+    const duckdb = await this.openInstance();
+    const connection = await duckdb.instance.connect();
+    const partPaths =
+      parts.length > 1 ? parts.map((_, i) => `${destPath}.part${i}.parquet`) : [];
+    const copy = (sql: string, path: string) =>
+      connection.run(`COPY (${sql}) TO '${escapeSqlLiteral(path)}' (FORMAT PARQUET)`);
+    try {
+      for (const source of sources) {
+        await connection.run(
+          `CREATE TEMP VIEW ${quoteIdent(source.alias)} AS SELECT * FROM read_parquet('${escapeSqlLiteral(source.path)}', file_row_number = true)`,
+        );
+      }
+      if (parts.length === 1) {
+        await copy(parts[0], destPath);
+      } else {
+        for (const [i, sql] of parts.entries()) await copy(sql, partPaths[i]);
+        const list = partPaths.map((p) => `'${escapeSqlLiteral(p)}'`).join(', ');
+        await copy(`SELECT * FROM read_parquet([${list}])`, destPath);
+      }
+    } catch (err) {
+      throw safeDuckDbError(
+        err,
+        [...sources.map((s) => s.path), destPath, ...partPaths],
+        'parquet_write_failed',
+      );
+    } finally {
+      connection.closeSync();
+      await duckdb.close();
+      await Promise.all(partPaths.map((p) => rm(p, { force: true })));
+    }
+  }
+
   async describeSchema(parquetPath: string): Promise<ColumnInfo[]> {
     try {
       return await this.withDataView(parquetPath, async (connection) => {

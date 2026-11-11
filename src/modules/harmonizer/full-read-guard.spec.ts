@@ -39,17 +39,17 @@ describe('fullReadMaxRows', () => {
 describe('assertFullReadAllowed', () => {
   it('allows up to the limit, inclusive', () => {
     expect(() =>
-      assertFullReadAllowed('export', { edition: 'E' }, 100, 100),
+      assertFullReadAllowed('original', { edition: 'E' }, 100, 100),
     ).not.toThrow();
     expect(() =>
-      assertFullReadAllowed('export', { edition: 'E' }, 0, 100),
+      assertFullReadAllowed('original', { edition: 'E' }, 0, 100),
     ).not.toThrow();
   });
 
   it('refuses above the limit with harmonizer_too_many_rows and params', () => {
     let error: unknown;
     try {
-      assertFullReadAllowed('survey_export', { survey: 'Censo' }, 101, 100);
+      assertFullReadAllowed('original', { edition: 'Censo' }, 101, 100);
     } catch (err) {
       error = err;
     }
@@ -58,10 +58,10 @@ describe('assertFullReadAllowed', () => {
     expect(response).toEqual({
       code: 'harmonizer_too_many_rows',
       message:
-        'Downloading survey "Censo" is temporarily disabled: it has 101 rows and the limit is 100. The paged views still work.',
+        'Downloading the original file of edition "Censo" is temporarily disabled: it has 101 rows and the limit is 100. The paged views still work.',
       params: {
-        operation: 'survey_export',
-        survey: 'Censo',
+        operation: 'original',
+        edition: 'Censo',
         rowCount: 101,
         maxRows: 100,
       },

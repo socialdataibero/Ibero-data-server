@@ -172,6 +172,52 @@ export function readColumnTypeResult(check: ColumnTypeCheck, row: unknown[]): Co
   };
 }
 
+export interface ValueFactsCheck {
+  rawColumn: string;
+  /** Trimmed codes of «No especificado»: those values are missing. */
+  missingCodes: string[];
+  /** Recoding applied to the other values: trimmed source value → code. */
+  valueMap: Map<string, string>;
+}
+
+/**
+ * Facts for `inferValueType(sourceColumnValues(rows, column, codes, valueMap))`: the column's
+ * values as the export gives them. Without a recoding it is `columnTypeQuery` (same query, so it
+ * shares its stored result). Read its single row with `readValueFacts`.
+ */
+export function valueFactsQuery(check: ValueFactsCheck): string {
+  if (check.valueMap.size === 0) {
+    return columnTypeQuery({
+      rawColumn: check.rawColumn,
+      missingCodes: check.missingCodes,
+      codebookMissing: null,
+    });
+  }
+  const keep =
+    check.missingCodes.length > 0 ? `WHERE v NOT IN (${sqlList(check.missingCodes)})` : '';
+  const recoded = `SELECT ${jsTrimSql('coalesce(m.dst, t.v)')} AS v FROM (SELECT * FROM (${trimmedValues(check.rawColumn, false)}) ${keep}) t LEFT JOIN (VALUES ${[
+    ...check.valueMap,
+  ]
+    .map(([src, dst]) => `(${sqlString(src)}, ${sqlString(dst)})`)
+    .join(', ')}) m(src, dst) ON m.src = t.v`;
+  return `SELECT ${factColumns('true', 's_').join(', ')} FROM (${recoded}) WHERE v <> ''`;
+}
+
+export function readValueFacts(row: unknown[]): TypeFacts {
+  return readFacts(row, 0);
+}
+
+/** The facts of several sets of values put together (`inferValueType` over all of them). */
+export function mergeFacts(all: TypeFacts[]): TypeFacts {
+  return {
+    any: all.some((f) => f.any),
+    makesText: all.some((f) => f.makesText),
+    nonInteger: all.some((f) => f.nonInteger),
+    notInteger: all.some((f) => f.notInteger),
+    notDecimal: all.some((f) => f.notDecimal),
+  };
+}
+
 export interface NotFittingCheck {
   rawColumn: string;
   type: ValueType;

@@ -8,17 +8,20 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { parse } from 'csv-parse/sync';
+import { stringify as csvStringifier } from 'csv-stringify';
 import { stringify } from 'csv-stringify/sync';
 import { randomUUID } from 'node:crypto';
-import { createReadStream } from 'node:fs';
-import { access, readFile, rm, stat } from 'node:fs/promises';
-import type { Readable } from 'node:stream';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { access, rm, stat } from 'node:fs/promises';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { createGunzip } from 'node:zlib';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
   AnalysisService,
+  type NamedSource,
   type ParquetColumnType,
 } from '../analysis/analysis.service.js';
 import { LocalStorageService } from '../storage/local-storage.service.js';
@@ -29,23 +32,31 @@ import {
   allFit,
   columnTypeQuery,
   inferredType as inferredTypeOf,
+  mergeFacts,
   notFittingQuery,
   readColumnTypeResult,
   readNotFitting,
+  readValueFacts,
+  valueFactsQuery,
   type ColumnTypeCheck,
   type ColumnTypeResult,
   type TypeFacts,
 } from './column-checks.js';
 import { csvError, csvNotUtf8Body } from './csv-errors.js';
 import {
+  editionParquetSql,
+  editionSelectSql,
+  exportColumns,
+  surveyParquetSql,
+  type ExportColumn,
+} from './harmonized-export.js';
+import {
   buildDatasetView,
   buildSurveyView,
-  inferValueType,
   neutralizeCsvFormula,
-  valuesNotFitting,
   type ColumnValues,
   type DatasetEdition,
-  type HarmonizedView,
+  type HarmonizedRow,
   type RawData,
   type ValueType,
 } from './harmonized-view.js';
@@ -175,6 +186,14 @@ interface EditionMapping {
   missingCodes: string[];
   valueMap: Prisma.JsonValue;
   canonicalVariable: { name: string };
+}
+
+/** Una edición lista para descargarse (ver `exportEdition`). */
+interface ExportEdition {
+  dataset: EditionRecord;
+  /** Su Parquet crudo; `null` si la edición no tiene columnas (H-08). */
+  path: string | null;
+  columns: ExportColumn[];
 }
 
 /** La recodificación guardada de un mapeo (`{ valor: código }`) como Map. */
@@ -2360,15 +2379,6 @@ export class HarmonizerService implements OnApplicationBootstrap {
     return checks.map((check, i) => readColumnTypeResult(check, rows[i]));
   }
 
-  /** Edición con todas sus filas (descargas y validación de tipos). */
-  private async loadEdition(dataset: EditionRecord): Promise<DatasetEdition> {
-    const [mappings, rawRows] = await Promise.all([
-      this.editionMappings(dataset.id),
-      this.readRawRows(dataset),
-    ]);
-    return toEdition(dataset, mappings, rawRows);
-  }
-
   /**
    * Edición con solo una página de filas y solo las columnas de `mappings` (vistas
    * en pantalla). DuckDB lee ese tramo del Parquet; el resto no se carga.
@@ -2477,39 +2487,6 @@ export class HarmonizerService implements OnApplicationBootstrap {
     return { available, selected, wanted };
   }
 
-  private async surveyView(
-    surveyId: string,
-    variables: string | string[] | undefined,
-  ) {
-    const survey = await this.getSurvey(surveyId);
-    const { available, selected, wanted } = await this.surveySelection(
-      surveyId,
-      variables,
-    );
-
-    const datasets = await this.prisma.harmonizerDataset.findMany({
-      where: { surveyId },
-      orderBy: [{ year: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
-    });
-    // Se cargan todas las ediciones, sin importar las variables pedidas.
-    assertFullReadAllowed(
-      'survey_export',
-      { survey: survey.name },
-      datasets.reduce((sum, d) => sum + d.rowCount, 0),
-    );
-    const editions: DatasetEdition[] = [];
-    for (const dataset of datasets) {
-      editions.push(await this.loadEdition(dataset));
-    }
-
-    return {
-      survey,
-      available,
-      selected,
-      view: buildSurveyView(editions, wanted),
-    };
-  }
-
   /**
    * Una página de la vista por encuesta. Las ediciones van apiladas en el
    * mismo orden que la descarga y se conoce el `rowCount` de cada una, así que solo
@@ -2595,19 +2572,32 @@ export class HarmonizerService implements OnApplicationBootstrap {
   async exportDataset(datasetId: string, fmt: string): Promise<ExportFile> {
     const format = this.assertExportFormat(fmt);
     const dataset = await this.getDataset(datasetId);
-    assertFullReadAllowed(
-      'export',
-      { edition: dataset.name },
-      dataset.rowCount,
-    );
-    const view = buildDatasetView(await this.loadEdition(dataset));
-    return this.exportView(
-      `harmonized_${dataset.name}_${dataset.year}`,
-      view.headers,
-      view,
-      format,
-      dataset.surveyId,
-    );
+    const edition = await this.exportEdition(dataset);
+    const file = {
+      filename: `${safeFileBase(`harmonized_${dataset.name}_${dataset.year}`, 'harmonized')}.${format}`,
+      contentType: EXPORT_CONTENT_TYPE[format],
+    };
+    const headers = edition.columns.map((c) => c.canon);
+    if (format === 'csv') {
+      return {
+        ...file,
+        body: await this.csvExportFile(headers, this.editionRows(edition, edition.columns, false)),
+      };
+    }
+    if (headers.length === 0 || !edition.path) {
+      throw new BadRequestException({
+        code: 'harmonized_view_empty',
+        message: 'There are no mapped variables to export as Parquet. Map at least one column.',
+      });
+    }
+    const types = await this.exportTypes(dataset.surveyId, [edition], headers);
+    return {
+      ...file,
+      body: await this.parquetExportFile(
+        [{ alias: 'e0', path: edition.path }],
+        [editionParquetSql('e0', edition.columns, types)],
+      ),
+    };
   }
 
   async exportSurvey(
@@ -2616,14 +2606,68 @@ export class HarmonizerService implements OnApplicationBootstrap {
     variables: string | string[] | undefined,
   ): Promise<ExportFile> {
     const format = this.assertExportFormat(fmt);
-    const { survey, view } = await this.surveyView(surveyId, variables);
-    return this.exportView(
-      `harmonized_${survey.name}`,
-      ['_dataset', '_year', '_row', ...view.headers],
-      view,
-      format,
+    const survey = await this.getSurvey(surveyId);
+    const { wanted } = await this.surveySelection(surveyId, variables);
+    const datasets = await this.prisma.harmonizerDataset.findMany({
+      where: { surveyId },
+      orderBy: [{ year: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+      include: {
+        mappings: {
+          include: { canonicalVariable: { select: { name: true } } },
+        },
+      },
+    });
+    // Se revisan todas las ediciones (un archivo que falta da 404 aunque no se pidan sus
+    // variables), pero solo aportan filas las que tienen alguna de las variables elegidas.
+    const wantedSet = new Set(wanted);
+    const included: { edition: ExportEdition; columns: ExportColumn[] }[] = [];
+    for (const { mappings, ...dataset } of datasets) {
+      const edition = await this.exportEdition(dataset, mappings);
+      const columns = edition.columns.filter((c) => wantedSet.has(c.canon));
+      if (columns.length > 0) included.push({ edition, columns });
+    }
+    const file = {
+      filename: `${safeFileBase(`harmonized_${survey.name}`, 'harmonized')}.${format}`,
+      contentType: EXPORT_CONTENT_TYPE[format],
+    };
+
+    if (format === 'csv') {
+      const editionRows = this.editionRows.bind(this);
+      return {
+        ...file,
+        body: await this.csvExportFile(
+          ['_dataset', '_year', '_row', ...wanted],
+          (async function* () {
+            for (const { edition, columns } of included) {
+              yield* editionRows(edition, columns, true);
+            }
+          })(),
+        ),
+      };
+    }
+
+    const types = await this.exportTypes(
       survey.id,
+      included.map((i) => ({ ...i.edition, columns: i.columns })),
+      wanted,
     );
+    const sources = included.map((i, n) => ({ alias: `e${n}`, path: i.edition.path! }));
+    return {
+      ...file,
+      body: await this.parquetExportFile(
+        sources,
+        surveyParquetSql(
+          included.map((i, n) => ({
+            source: sources[n].alias,
+            name: i.edition.dataset.name,
+            year: i.edition.dataset.year,
+            columns: i.columns,
+          })),
+          wanted,
+          types,
+        ),
+      ),
+    };
   }
 
   /**
@@ -2682,85 +2726,184 @@ export class HarmonizerService implements OnApplicationBootstrap {
     return format;
   }
 
-  private async exportView(
-    baseName: string,
-    columns: string[],
-    view: HarmonizedView,
-    format: ExportFormat,
-    surveyId: string,
-  ): Promise<ExportFile> {
-    const filename = `${safeFileBase(baseName, 'harmonized')}.${format}`;
-    const contentType = EXPORT_CONTENT_TYPE[format];
+  /**
+   * Las columnas de la vista de una edición (ver harmonized-export.ts) y su Parquet crudo, que
+   * debe existir (`404 harmonizer_dataset_file_missing`). Una edición sin columnas (subida vacía,
+   * H-08) no tiene Parquet: `path` es `null`.
+   */
+  private async exportEdition(
+    dataset: EditionRecord,
+    mappings?: EditionMapping[],
+  ): Promise<ExportEdition> {
+    const [used, path] = await Promise.all([
+      mappings ?? this.editionMappings(dataset.id),
+      dataset.columns.length > 0 ? this.rawPath(dataset) : null,
+    ]);
+    return {
+      dataset,
+      path,
+      columns: exportColumns(
+        dataset.columns,
+        used.map((m) => ({
+          sourceColumn: m.sourceColumn,
+          canon: m.canonicalVariable.name,
+          missingCodes: m.missingCodes,
+          valueMap: toValueMap(m.valueMap),
+        })),
+      ),
+    };
+  }
 
-    if (format === 'csv') {
-      const csv = stringify(view.rows, {
-        header: true,
-        columns: columns.map((key) => ({ key, header: neutralizeCsvFormula(key) })),
-        cast: { number: (n) => String(n), string: neutralizeCsvFormula },
-      });
-      return {
-        filename,
-        contentType,
-        body: Buffer.from(`\ufeff${csv}`, 'utf8'),
-      };
-    }
-
-    if (columns.length === 0) {
-      throw new BadRequestException({
-        code: 'harmonized_view_empty',
-        message: 'There are no mapped variables to export as Parquet. Map at least one column.',
-      });
-    }
-    const types = await this.parquetTypes(surveyId, view);
-    const tmpPath = join(tmpdir(), `ibero-harmonized-${randomUUID()}.parquet`);
-    try {
-      await this.analysisService.writeRowsToParquet(
-        columns,
-        view.rows,
-        tmpPath,
-        types,
-      );
-      return { filename, contentType, body: await readFile(tmpPath) };
-    } finally {
-      await rm(tmpPath, { force: true });
+  /**
+   * Las filas de `columns` de una edición, en el orden del archivo, como las da la vista
+   * armonizada; con `origin`, también `_dataset`, `_year` y `_row`. DuckDB las entrega por
+   * bloques: nunca están todas en memoria.
+   */
+  private async *editionRows(
+    edition: ExportEdition,
+    columns: ExportColumn[],
+    origin: boolean,
+  ): AsyncGenerator<HarmonizedRow> {
+    if (columns.length === 0 || !edition.path) return;
+    const names = columns.map((c) => c.canon);
+    const sql = editionSelectSql('data', columns, names);
+    for await (const chunk of this.analysisService.streamInternalRows(edition.path, sql)) {
+      for (const values of chunk) {
+        const row: HarmonizedRow = {};
+        names.forEach((name, i) => {
+          row[name] = values[i + 1] as string | null;
+        });
+        if (origin) {
+          row['_dataset'] = edition.dataset.name;
+          row['_year'] = edition.dataset.year;
+          // Número de registro en el archivo (1 = primera fila de datos), H-05.
+          row['_row'] = Number(values[0]) + 1;
+        }
+        yield row;
+      }
     }
   }
 
   /**
-   * Tipo de cada columna en el Parquet: el confirmado en la variable canónica o, si
-   * no hay, el que infieren los valores exportados. Las de origen son fijas.
+   * Tipo de cada columna en el Parquet: el confirmado en la variable canónica o, si no hay, el
+   * que infieren los valores exportados de todas las ediciones. DuckDB revisa los valores sobre
+   * cada Parquet (ver column-checks.ts); las filas no se cargan. Las de origen son fijas.
    */
-  private async parquetTypes(
+  private async exportTypes(
     surveyId: string,
-    view: HarmonizedView,
+    editions: ExportEdition[],
+    headers: string[],
   ): Promise<Record<string, ParquetColumnType>> {
     const confirmed = await this.prisma.harmonizerCanonicalVariable.findMany({
-      where: { surveyId, name: { in: view.headers } },
+      where: { surveyId, name: { in: headers } },
       select: { name: true, dataType: true },
     });
     const confirmedByName = new Map(
       confirmed.map((c) => [c.name, c.dataType as ValueType | null]),
     );
 
+    const headerSet = new Set(headers);
+    const facts = new Map<string, TypeFacts[]>();
+    const bad = new Map<string, string[]>();
+    for (const edition of editions) {
+      if (!edition.path) continue;
+      const columns = edition.columns.filter((c) => headerSet.has(c.canon));
+      const toInfer = columns.filter((c) => !confirmedByName.get(c.canon));
+      const toCheck = columns.filter((c) => {
+        const type = confirmedByName.get(c.canon);
+        return type === 'integer' || type === 'decimal';
+      });
+      const factRows = await cachedColumnChecks(
+        this.prisma,
+        this.analysisService,
+        edition.dataset.id,
+        edition.path,
+        toInfer.map(valueFactsQuery),
+      );
+      toInfer.forEach((c, i) => {
+        facts.set(c.canon, [...(facts.get(c.canon) ?? []), readValueFacts(factRows[i])]);
+      });
+      const badRows = await this.analysisService.runInternalQueries(
+        edition.path,
+        toCheck.map((c) =>
+          notFittingQuery({
+            rawColumn: c.rawColumn,
+            type: confirmedByName.get(c.canon)!,
+            missingCodes: c.missingCodes,
+            valueMap: c.valueMap,
+          }),
+        ),
+      );
+      // Ediciones en orden: los primeros valores de cada una son los primeros de la descarga.
+      toCheck.forEach((c, i) => {
+        bad.set(c.canon, [...(bad.get(c.canon) ?? []), ...readNotFitting(badRows[i])]);
+      });
+    }
+
     const types: Record<string, ParquetColumnType> = {
       _dataset: 'VARCHAR',
       _year: 'BIGINT',
       _row: 'BIGINT',
     };
-    for (const header of view.headers) {
-      const values = view.rows.map((r) => r[header] ?? null);
-      const type = confirmedByName.get(header) ?? inferValueType(values);
+    for (const header of headers) {
+      const type =
+        confirmedByName.get(header) ?? inferredTypeOf(mergeFacts(facts.get(header) ?? []));
       // El mapeo ya valida al guardar; esto cubre ediciones mapeadas sin enviar tipo.
-      const bad = valuesNotFitting(values, type);
-      if (bad.length > 0) {
+      const values = [...new Set(bad.get(header) ?? [])].slice(0, 5);
+      if (values.length > 0) {
         throw new ConflictException({
           code: 'value_type_mismatch',
-          message: `The confirmed type of variable "${header}" requires ${VALUE_TYPE_LABEL[type]}, but it has values that are not: ${quoteList(bad)}.`,
-          params: { source: 'confirmed_type', variable: header, expectedType: type, values: bad },
+          message: `The confirmed type of variable "${header}" requires ${VALUE_TYPE_LABEL[type]}, but it has values that are not: ${quoteList(values)}.`,
+          params: { source: 'confirmed_type', variable: header, expectedType: type, values },
         });
       }
       types[header] = PARQUET_TYPE[type];
     }
     return types;
+  }
+
+  private csvExportFile(
+    columns: string[],
+    rows: AsyncIterable<HarmonizedRow>,
+  ): Promise<Readable> {
+    return this.exportTempFile('csv', (path) =>
+      pipeline(
+        Readable.from(rows),
+        csvStringifier({
+          bom: true,
+          header: true,
+          columns: columns.map((key) => ({ key, header: neutralizeCsvFormula(key) })),
+          cast: { number: (n) => String(n), string: neutralizeCsvFormula },
+        }),
+        createWriteStream(path),
+      ),
+    );
+  }
+
+  private parquetExportFile(sources: NamedSource[], parts: string[]): Promise<Readable> {
+    return this.exportTempFile('parquet', (path) =>
+      this.analysisService.copyInternalQueryToParquet(sources, parts, path),
+    );
+  }
+
+  /**
+   * Escribe la descarga completa en un archivo temporal y la devuelve como stream, que borra
+   * el archivo al cerrarse (también si el cliente corta). Un error al escribir llega antes de
+   * mandar nada, con su código.
+   */
+  private async exportTempFile(
+    ext: ExportFormat,
+    write: (path: string) => Promise<unknown>,
+  ): Promise<Readable> {
+    const path = join(tmpdir(), `ibero-harmonized-${randomUUID()}.${ext}`);
+    try {
+      await write(path);
+    } catch (err) {
+      await rm(path, { force: true });
+      throw err;
+    }
+    const body = createReadStream(path);
+    body.once('close', () => void rm(path, { force: true }));
+    return body;
   }
 }

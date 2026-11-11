@@ -98,7 +98,7 @@ npm run start:worker
 | `UPLOAD_MAX_BYTES` | No | `10737418240` (10 GiB) | Largest harmonizer upload through tus. |
 | `DBF_MAX_BYTES` | No | `209715200` (200 MiB) | Largest DBF upload: a DBF is read whole into the worker's memory. |
 | `UPLOAD_EXPIRATION_HOURS` | No | `24` | An unfinished upload is deleted this long after it started. |
-| `HARMONIZER_FULL_READ_MAX_ROWS` | No | `400000` | Temporary. Largest edition or survey, in rows, that the harmonizer downloads accept. See [Temporary row limit](#temporary-row-limit). |
+| `HARMONIZER_FULL_READ_MAX_ROWS` | No | `400000` | Temporary. Largest edition, in rows, whose original file can be rebuilt for download. See [Temporary row limit](#temporary-row-limit). |
 
 CORS is open to every origin. The `Content-Disposition` header is exposed so the web app can read download filenames.
 
@@ -435,17 +435,11 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 
 ### Temporary row limit
 
-The downloads still load every row into the server's memory, and from about 500,000 rows they can crash the whole server. Until they are rewritten, they are refused above a row limit: `HARMONIZER_FULL_READ_MAX_ROWS`, 400,000 by default (a value that is not a positive integer uses the default). The limit is checked against the stored `rowCount`, before any data is read:
+Rebuilding the original file of an edition that has no kept original (`GET .../datasets/:datasetId/original.csv`, see [Original file](#original-file)) still loads every row into the server's memory, and from about 500,000 rows it can crash the whole server. Until it is rewritten, it is refused above a row limit: `HARMONIZER_FULL_READ_MAX_ROWS`, 400,000 by default (a value that is not a positive integer uses the default). The limit is checked against the edition's stored `rowCount`, before any data is read.
 
-| Endpoint | Rows compared |
-| --- | --- |
-| `GET .../datasets/:datasetId/harmonized.csv` / `.parquet` | The edition's. |
-| `GET .../datasets/:datasetId/original.csv` | The edition's, only when the file has to be rebuilt (editions without a kept original, see [Original file](#original-file)). |
-| `GET .../surveys/:surveyId/harmonized.csv` / `.parquet` | Every edition of the survey added up, whatever `variables` asks for, because they are all loaded. |
+Over the limit, the response is `422 harmonizer_too_many_rows` with `params: { operation: "original", edition, rowCount, maxRows }`, where `edition` is the edition's name. A missing edition still returns `404` first.
 
-Over the limit, the response is `422 harmonizer_too_many_rows` with `params: { operation, edition | survey, rowCount, maxRows }`. `operation` is `export`, `original` or `survey_export`. `edition` is the edition's name and `survey` the survey's name. A missing edition or survey still returns `404` first, and an unsupported export format `404 export_format_not_supported`.
-
-Uploads with tus, mapping (`GET` and `PUT .../mapping`, which no longer load the rows), the paged JSON views, the saved mapping (`GET .../mapping/saved`), dictionaries, comparisons and recoding are not limited.
+Everything else is not limited: uploads with tus, mapping (`GET` and `PUT .../mapping`), the paged JSON views, the harmonized downloads (`harmonized.csv` / `.parquet` of an edition or a survey, see [Exports](#harmonized-views)), the saved mapping (`GET .../mapping/saved`), dictionaries, comparisons and recoding. None of them load the rows into the server. Before 2026-11-10 the harmonized downloads were limited too (`operation` `export` and `survey_export`).
 
 ### Surveys
 
@@ -643,7 +637,7 @@ Paging:
 - The response adds `total` (rows of the whole view), `limit` and `offset`. An `offset` past the end returns no rows and the same `total`.
 - Only the rows of the page and the mapped columns are read from the stored Parquet (DuckDB `LIMIT`/`OFFSET`, which keeps file order). `total` comes from the stored `rowCount` of each edition, so nothing is counted.
 - In the survey view, editions are stacked in the same order as the export, so a page can end in one edition and continue in the next. Row `n` of the view is the same row in every page size and in the CSV export.
-- Exports (`.csv`, `.parquet`) are not paged: they still build the whole view in memory, so they are refused above the [temporary row limit](#temporary-row-limit).
+- Exports (`.csv`, `.parquet`) are not paged: they contain the whole view. They do not load it into the server's memory either (see Exports below).
 
 Edition view:
 
@@ -674,6 +668,7 @@ Exports:
 - Parquet columns take the canonical variable's confirmed type, or the type inferred from the exported values when it is not confirmed (the same rules as `inferredType`, applied to all exported editions together): `text` → `VARCHAR`, `integer` → `BIGINT`, `decimal` → `DOUBLE`. Numbers are converted from the trimmed text. `_dataset` is `VARCHAR`, and `_year` and `_row` are `BIGINT`. Missing values are `NULL`, so they are distinct from any value. This lets analyses sum, average, multiply and compare these columns (before, every column was text and `SUM` failed).
 - If a confirmed numeric variable has a value that does not fit (possible only for an edition saved without `dataType`), the Parquet export returns `409 value_type_mismatch` with the variable and the offending values.
 - Exporting an edition with no mappings as Parquet returns `400 harmonized_view_empty`.
+- How the file is made: DuckDB reads the editions' stored Parquet and applies the missing codes, the recoding and the types, so the rows are never loaded into the server whole (`harmonized-export.ts`). The Parquet is written by DuckDB, one edition after another. For the CSV, DuckDB hands the rows over in blocks and the server writes them with the same CSV writer as before (same quoting, BOM and formula neutralization). Both are written to a temporary file first, so any error (`409 value_type_mismatch`, `404 harmonizer_dataset_file_missing`) comes back as a normal error response before anything is sent; then the file is sent and deleted, also when the client disconnects. The types are checked with the same stored column checks as the mapping (see [Variable types](#variable-types)). On the national census (15 million rows, 91 columns), the edition's Parquet takes about 20 seconds.
 
 ### Dictionaries
 

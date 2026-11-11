@@ -1,19 +1,18 @@
 import { UnprocessableEntityException } from '@nestjs/common';
 
 /**
- * Temporary guard. The downloads still load every row of an edition into Node memory, and
- * past ~500k rows that kills the whole server (measured 2026-11-03, see
- * planes-pendientes/escala-censo-nacional.md). Until they run on DuckDB, they are refused
- * above a row limit. Remove this file and its calls then. (Mapping no longer loads the rows.)
+ * Temporary guard. Rebuilding the original CSV of an edition without a kept original still
+ * loads every row into Node memory, and past ~500k rows that kills the whole server (measured
+ * 2026-11-03, see planes-pendientes/escala-censo-nacional.md). Until it runs on DuckDB, it is
+ * refused above a row limit. Remove this file and its call then. (Mapping and the harmonized
+ * downloads no longer load the rows.)
  */
 export const DEFAULT_FULL_READ_MAX_ROWS = 400_000;
 
-export type FullReadOperation = 'export' | 'original' | 'survey_export';
+export type FullReadOperation = 'original';
 
 const OPERATION_TEXT: Record<FullReadOperation, string> = {
-  export: 'Downloading',
   original: 'Downloading the original file of',
-  survey_export: 'Downloading',
 };
 
 /** `HARMONIZER_FULL_READ_MAX_ROWS`, or the default when it is unset or not a positive integer. */
