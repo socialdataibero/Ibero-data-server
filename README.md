@@ -98,7 +98,6 @@ npm run start:worker
 | `UPLOAD_MAX_BYTES` | No | `10737418240` (10 GiB) | Largest harmonizer upload through tus. |
 | `DBF_MAX_BYTES` | No | `209715200` (200 MiB) | Largest DBF upload: a DBF is read whole into the worker's memory. |
 | `UPLOAD_EXPIRATION_HOURS` | No | `24` | An unfinished upload is deleted this long after it started. |
-| `HARMONIZER_FULL_READ_MAX_ROWS` | No | `400000` | Temporary. Largest edition, in rows, whose original file can be rebuilt for download. See [Temporary row limit](#temporary-row-limit). |
 
 CORS is open to every origin. The `Content-Disposition` header is exposed so the web app can read download filenames.
 
@@ -433,14 +432,6 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 | `GET` | `/harmonizer/surveys/:surveyId/harmonized` | Harmonized view of all editions, one page at a time (`limit`, `offset`). Optional `variables`. |
 | `GET` | `/harmonizer/surveys/:surveyId/harmonized.csv` | Same, as CSV. Also `.parquet`. |
 
-### Temporary row limit
-
-Rebuilding the original file of an edition that has no kept original (`GET .../datasets/:datasetId/original.csv`, see [Original file](#original-file)) still loads every row into the server's memory, and from about 500,000 rows it can crash the whole server. Until it is rewritten, it is refused above a row limit: `HARMONIZER_FULL_READ_MAX_ROWS`, 400,000 by default (a value that is not a positive integer uses the default). The limit is checked against the edition's stored `rowCount`, before any data is read.
-
-Over the limit, the response is `422 harmonizer_too_many_rows` with `params: { operation: "original", edition, rowCount, maxRows }`, where `edition` is the edition's name. A missing edition still returns `404` first.
-
-Everything else is not limited: uploads with tus, mapping (`GET` and `PUT .../mapping`), the paged JSON views, the harmonized downloads (`harmonized.csv` / `.parquet` of an edition or a survey, see [Exports](#harmonized-views)), the saved mapping (`GET .../mapping/saved`), dictionaries, comparisons and recoding. None of them load the rows into the server. Before 2026-11-10 the harmonized downloads were limited too (`operation` `export` and `survey_export`).
-
 ### Surveys
 
 - The name is trimmed and cannot be empty (`400 survey_name_required`).
@@ -462,7 +453,7 @@ Everything else is not limited: uploads with tus, mapping (`GET` and `PUT .../ma
 There are two ways to upload an edition. Both read the file with the same rules and answer with the same error codes, described in this section.
 
 - **tus** (`POST /harmonizer/uploads`, used by the web app): a resumable upload protocol ([tus 1.0](https://tus.io/protocols/resumable-upload)). The file arrives in chunks (the web app sends 50 MB per request) and a chunk that fails is sent again, so files of several gigabytes can be uploaded. The server writes the file to disk as it arrives and never holds it in memory. When it is complete, the worker process reads it and creates the edition in the background; the client follows it with `GET /harmonizer/imports/:importId` (see [Imports](#imports)). Up to `UPLOAD_MAX_BYTES` (10 GiB by default).
-- **One request** (`POST /harmonizer/upload`, multipart): the file is read in memory and the response is the new edition. Up to 200 MB. Kept for scripts; large files can take the server down (see [Temporary row limit](#temporary-row-limit)).
+- **One request** (`POST /harmonizer/upload`, multipart): the file is read in memory and the response is the new edition. Up to 200 MB. Kept for scripts; large files can take the server down.
 
 Fields: `file`, `name` (edition name, required), `year` (1900–2100), `surveyId`, `newSurvey`, `organizationId` (with `__new__`), and `encoding` (DBF only, see [DBF files](#dbf-files)).
 
@@ -756,7 +747,8 @@ For editions uploaded in one request or as DBF, the bytes of the upload are not 
 - Differences from the uploaded bytes: UTF-8 with a BOM, comma separator, `\n` line endings, values quoted only when needed, and blank lines dropped.
 - The filename is `original_<edition>_<year>.csv`, with accents and symbols removed. The name of the uploaded file is not stored.
 - An unknown edition returns `404 harmonizer_dataset_not_found`.
-- A rebuilt file is subject to the [temporary row limit](#temporary-row-limit).
+- A value that starts with a BOM character (U+FEFF) loses it, because the DuckDB client for Node removes it when it reads text. The same happens in the harmonized views and downloads; the stored data keeps it, and so does the kept original of a tus upload.
+- The file is rebuilt without loading the rows into the server: DuckDB hands them over in blocks and they are written to a temporary file, which is sent and then deleted, so it has no row limit.
 
 ## File storage
 

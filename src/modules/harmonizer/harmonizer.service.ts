@@ -26,7 +26,6 @@ import {
 } from '../analysis/analysis.service.js';
 import { LocalStorageService } from '../storage/local-storage.service.js';
 import { asciiFold, matchByName, parseVariables } from './matching.js';
-import { assertFullReadAllowed } from './full-read-guard.js';
 import { cachedColumnChecks } from './column-check-store.js';
 import {
   allFit,
@@ -47,6 +46,7 @@ import {
   editionParquetSql,
   editionSelectSql,
   exportColumns,
+  originalSelectSql,
   surveyParquetSql,
   type ExportColumn,
 } from './harmonized-export.js';
@@ -2428,22 +2428,6 @@ export class HarmonizerService implements OnApplicationBootstrap {
     return path;
   }
 
-  private async readRawRows(dataset: {
-    id: string;
-    columns: string[];
-  }): Promise<RawData[]> {
-    // Un archivo vacío no tiene encabezados y no se escribe Parquet.
-    if (dataset.columns.length === 0) return [];
-    const rows = await this.analysisService.readParquetRows(
-      await this.rawPath(dataset),
-    );
-    return rows.map((values) =>
-      Object.fromEntries(
-        dataset.columns.map((col, i) => [col, String(values[i] ?? '')]),
-      ),
-    );
-  }
-
   async getDatasetHarmonized(datasetId: string, params: ViewPageParams = {}) {
     const dataset = await this.getDataset(datasetId);
     const page = viewPage(params);
@@ -2696,21 +2680,24 @@ export class HarmonizerService implements OnApplicationBootstrap {
         body: file.pipe(gunzip),
       };
     }
-    assertFullReadAllowed(
-      'original',
-      { edition: dataset.name },
-      dataset.rowCount,
-    );
-    const rows = await this.readRawRows(dataset);
+    // Las demás se reconstruyen del Parquet: DuckDB entrega las filas por bloques y se
+    // escriben con el mismo csv-stringify de siempre. Un archivo vacío (H-08) no tiene Parquet.
+    const path = dataset.columns.length > 0 ? await this.rawPath(dataset) : null;
+    const analysis = this.analysisService;
     // Filas como arreglos: con objetos, csv-stringify leería `EDAD.1` como ruta anidada.
-    const csv = stringify([
-      dataset.columns,
-      ...rows.map((row) => dataset.columns.map((column) => row[column])),
-    ]);
+    async function* records(): AsyncGenerator<unknown[]> {
+      yield dataset.columns;
+      if (!path) return;
+      for await (const chunk of analysis.streamInternalRows(path, originalSelectSql(dataset.columns))) {
+        yield* chunk;
+      }
+    }
     return {
       filename,
       contentType: EXPORT_CONTENT_TYPE.csv,
-      body: Buffer.from(`\ufeff${csv}`, 'utf8'),
+      body: await this.exportTempFile('csv', (dest) =>
+        pipeline(Readable.from(records()), csvStringifier({ bom: true }), createWriteStream(dest)),
+      ),
     };
   }
 

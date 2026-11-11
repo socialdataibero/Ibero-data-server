@@ -376,21 +376,6 @@ export class AnalysisService {
   }
 
   /**
-   * Lee un Parquet completo como filas posicionales, sin el tope de MAX_ROWS
-   * (lo usa el armonizador para sus archivos crudos todo-VARCHAR).
-   */
-  async readParquetRows(parquetPath: string): Promise<unknown[][]> {
-    try {
-      return await this.withDataView(parquetPath, async (connection) => {
-        const reader = await connection.runAndReadAll('SELECT * FROM data');
-        return reader.getRowsJson() as unknown[][];
-      });
-    } catch (err) {
-      throw safeDuckDbError(err, [parquetPath], 'parquet_read_failed');
-    }
-  }
-
-  /**
    * Lee solo `limit` filas desde la `offset` (base 0), en el orden del archivo y solo
    * con las columnas pedidas (lo usa el armonizador para paginar sus vistas).
    * DuckDB conserva el orden de inserción por defecto, así que LIMIT/OFFSET sin

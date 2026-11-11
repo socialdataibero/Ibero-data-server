@@ -57,7 +57,7 @@ export function exportColumns(
 /**
  * `cellValue` of harmonized-view.ts: empty after trimming, or a missing code, is `NULL`; then a
  * recoded value becomes its code; anything else stays as stored (not trimmed). `r` is the raw
- * value (`''` for a `NULL` cell, as `readRawRows` reads it) and `t` its JavaScript trim.
+ * value (`''` for a `NULL` cell, as the paged view reads it) and `t` its JavaScript trim.
  */
 function cellSql(column: ExportColumn, r: string, t: string): string {
   const missing =
@@ -159,4 +159,17 @@ export function editionParquetSql(
 ): string {
   const names = columns.map((c) => quoteIdent(c.canon));
   return `SELECT ${names.join(', ')} FROM (${editionSelectSql(source, columns, columns.map((c) => c.canon), types)})`;
+}
+
+/**
+ * The rebuilt original file (editions without a kept original): every column of the file, in
+ * header order, with its values as stored and a `NULL` cell as `''`. A repeated header (an
+ * edition uploaded before headers were deduplicated, H-10) gives the values of its last column
+ * in both positions, as the download did when it read each row into an object by header name.
+ * Reads the view `data` (`AnalysisService.streamInternalRows`).
+ */
+export function originalSelectSql(fileColumns: string[]): string {
+  return `SELECT ${fileColumns
+    .map((name, i) => `coalesce(${quoteIdent(`c${fileColumns.lastIndexOf(name)}`)}, '') AS _o${i}`)
+    .join(', ')} FROM data`;
 }

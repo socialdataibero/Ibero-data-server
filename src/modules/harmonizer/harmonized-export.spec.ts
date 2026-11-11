@@ -8,6 +8,7 @@ import {
   editionParquetSql,
   editionSelectSql,
   exportColumns,
+  originalSelectSql,
   surveyParquetSql,
   type ExportColumn,
 } from './harmonized-export.js';
@@ -49,7 +50,7 @@ interface Edition {
   path: string;
 }
 
-/** The edition as `toEdition` builds it from `readRawRows` (a NULL cell reads as `''`). */
+/** The edition as `toEdition` builds it from the stored rows (a NULL cell reads as `''`). */
 function jsEdition(e: Edition): DatasetEdition {
   return {
     name: e.name,
@@ -164,6 +165,21 @@ describe('harmonized-export: DuckDB gives what the harmonized view gives', () =>
         rows.map((r) => Object.fromEntries(expected.headers.map((h, i) => [h, r[i + 1]]))),
         e.name,
       ).toEqual(expected.rows);
+    }
+  });
+
+  it('original: every column as stored, NULL as empty, a repeated header gives its last column', async () => {
+    for (const e of editions) {
+      // What the download did: each stored row as an object by header name, then the values
+      // of the headers in order. @duckdb/node-api drops a BOM at the start of a value when it
+      // hands text to JavaScript (DuckDB still has it), in the old reading as in the new one.
+      const read = (v: string) => (v.startsWith('\ufeff') ? v.slice(1) : v);
+      const expected = jsEdition(e).rows.map((row) => e.columns.map((c) => read(row[c])));
+      const rows: unknown[][] = [];
+      for await (const chunk of service.streamInternalRows(e.path, originalSelectSql(e.columns))) {
+        rows.push(...chunk);
+      }
+      expect(rows, e.name).toEqual(expected);
     }
   });
 
