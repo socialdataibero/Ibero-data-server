@@ -568,7 +568,7 @@ Each column also has `values`, a summary of its values in this edition so they c
 
 - It comes from the column's stored **profile** (see [Codes between editions](#codes-between-editions)): its 200 most frequent distinct values over the whole file, with their counts, and its empty cells. The rows are not read again.
 - `top` has up to 5 `{ value, count }`, most frequent first; on a tie, in alphabetical order.
-- Values are trimmed and counted as they are in the file. Missing-value codes are not removed, so a `9` or `99` shows up before it is marked as missing. Empty or blank cells are not values: they are counted in `empty`.
+- Values are trimmed and counted as they are in the file. Trimming, here and in the rest of the harmonizer (missing codes, recoding, views, type checks), removes what JavaScript's `trim()` removes: spaces, tabs, line breaks, no-break spaces and the BOM character (U+FEFF). So `1`, ` 1` and `\ufeff1` are the same value, counted together. Missing-value codes are not removed, so a `9` or `99` shows up before it is marked as missing. Empty or blank cells are not values: they are counted in `empty`.
 - `distinct` is the number of different values, counted up to 200. When a column has more, `distinct` is `200` and `distinctCapped` is `true`.
 
 The response also has:
@@ -763,7 +763,7 @@ For editions uploaded in one request or as DBF, the bytes of the upload are not 
 - Differences from the uploaded bytes: UTF-8 with a BOM, comma separator, `\n` line endings, values quoted only when needed, and blank lines dropped.
 - The filename is `original_<edition>_<year>.csv`, with accents and symbols removed. The name of the uploaded file is not stored.
 - An unknown edition returns `404 harmonizer_dataset_not_found`.
-- A value that starts with a BOM character (U+FEFF) keeps it: DuckDB writes the file. (The paged JSON views lose it, because the DuckDB client for Node removes it when it reads text; the downloads and the stored data keep it.)
+- A value that starts with a BOM character (U+FEFF) keeps it, as everywhere else: the paged JSON views and the downloads return text exactly as stored. (Before 2026-11-12 the DuckDB client for Node removed a leading BOM from every text it read, so the JSON views, the value profiles and column names read through DuckDB lost it; the server now keeps it, see `src/modules/analysis/duckdb-text.ts`.)
 - The file is rebuilt without loading the rows into the server: the header line is written by the CSV writer and the rows by DuckDB, with the same quoting (see [Exports](#harmonized-views)), to a temporary file that is sent and then deleted, so it has no row limit.
 
 ### Direct downloads

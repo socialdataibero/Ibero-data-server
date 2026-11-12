@@ -23,7 +23,7 @@ import {
 import type { UploadEncoding } from '../dto/upload-dataset.dto.js';
 import { importCsvFile, type ImportPhase } from './csv-file.js';
 import { cachedColumnChecks } from '../column-check-store.js';
-import { columnTypeQuery } from '../column-checks.js';
+import { columnTypeQuery, jsTrimSql } from '../column-checks.js';
 import {
   ImportError,
   importErrorBody,
@@ -398,6 +398,7 @@ export class HarmonizerImportProcessor {
         this.storage.resolvePath(rawStorageKey(datasetId)),
         columns.map((_, i) => `c${i}`),
         PROFILE_MAX_VALUES,
+        jsTrimSql,
       );
       await this.prisma.harmonizerColumnProfile.createMany({
         data: columns.map((column, i) => ({

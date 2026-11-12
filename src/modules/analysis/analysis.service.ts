@@ -12,6 +12,7 @@ import { rm } from 'node:fs/promises';
 import { finished, pipeline } from 'node:stream/promises';
 import { join } from 'node:path';
 import { describeDuckDbError } from './duckdb-error.js';
+import './duckdb-text.js';
 import { assertReadOnlySelect } from './sql-sanitizer.js';
 import { buildRecipeSql, quoteIdent, type Recipe } from './recipe.js';
 
@@ -464,15 +465,18 @@ export class AnalysisService {
    * menos y, en un empate, en orden alfabético. Devuelve como mucho `limit` valores por
    * columna y avisa con `capped` si hay más. Las celdas vacías no son valores: se cuentan en
    * `empty`. Lo usa el armonizador para comparar los códigos de una variable entre ediciones.
+   * `trimSql` recorta un valor en SQL (NULL → `''`); el armonizador pasa `jsTrimSql`, el mismo
+   * recorte de sus vistas, recodificaciones y revisiones, para que `'\ufeff1'` cuente como `1`.
    */
   async columnValueCounts(
     parquetPath: string,
     columns: string[],
     limit: number,
+    trimSql: (expr: string) => string,
   ): Promise<{ values: { value: string; count: number }[]; capped: boolean; empty: number }[]> {
     if (columns.length === 0) return [];
     const max = Math.max(Math.trunc(limit), 1);
-    const trimmed = (c: string) => `coalesce(trim(${quoteIdent(c)}), '')`;
+    const trimmed = (c: string) => trimSql(quoteIdent(c));
     try {
       return await this.withDataView(parquetPath, async (connection) => {
         const empties = (

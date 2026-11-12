@@ -29,6 +29,7 @@ import {
   allFit,
   columnTypeQuery,
   inferredType as inferredTypeOf,
+  jsTrimSql,
   mergeFacts,
   notFittingQuery,
   readColumnTypeResult,
@@ -1351,6 +1352,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
         await this.rawPath({ id: datasetId }),
         missing.map((c) => `c${columns.indexOf(c)}`),
         PROFILE_MAX_VALUES,
+        jsTrimSql,
       );
       const rows = missing.map((column, i) => ({
         datasetId,

@@ -167,23 +167,18 @@ describe('harmonized-export: DuckDB gives what the harmonized view gives', () =>
       expect(columns.map((c) => c.canon), e.name).toEqual(expected.headers);
       const rows = await selectRows(e, columns);
       expect(rows.map((r) => Number(r[0])), e.name).toEqual(rows.map((_, i) => i));
-      // Read back through @duckdb/node-api, which drops a BOM at the start of a value.
-      const read = (v: string | number | null) =>
-        typeof v === 'string' && v.startsWith('\ufeff') ? v.slice(1) : v;
       expect(
         rows.map((r) => Object.fromEntries(expected.headers.map((h, i) => [h, r[i + 1]]))),
         e.name,
-      ).toEqual(expected.rows.map((row) => Object.fromEntries(Object.entries(row).map(([k, v]) => [k, read(v)]))));
+      ).toEqual(expected.rows);
     }
   });
 
   it('original: every column as stored, NULL as empty, a repeated header gives its last column', async () => {
     for (const e of editions) {
       // What the download did: each stored row as an object by header name, then the values
-      // of the headers in order. @duckdb/node-api drops a BOM at the start of a value when it
-      // hands text to JavaScript (DuckDB still has it), in the old reading as in the new one.
-      const read = (v: string) => (v.startsWith('\ufeff') ? v.slice(1) : v);
-      const expected = jsEdition(e).rows.map((row) => e.columns.map((c) => read(row[c])));
+      // of the headers in order.
+      const expected = jsEdition(e).rows.map((row) => e.columns.map((c) => row[c]));
       const rows: unknown[][] = [];
       for await (const chunk of service.streamInternalRows(e.path, originalSelectSql(e.columns))) {
         rows.push(...chunk);
