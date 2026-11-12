@@ -21,6 +21,8 @@ export interface UploadConfig {
   /** Where unfinished and finished-but-not-yet-imported uploads are kept. */
   dir: string;
   maxBytes: number;
+  /** Largest CSV inside a `.csv.gz`, once decompressed. */
+  maxUncompressedBytes: number;
   dbfMaxBytes: number;
   expirationMs: number;
 }
@@ -43,18 +45,26 @@ function positiveInteger(
 
 /**
  * `UPLOAD_DIR` (default `storage/uploads` under the working directory, like `storage/`),
- * `UPLOAD_MAX_BYTES` (10 GiB), `DBF_MAX_BYTES` (200 MiB) and `UPLOAD_EXPIRATION_HOURS` (24).
+ * `UPLOAD_MAX_BYTES` (10 GiB), `UPLOAD_MAX_UNCOMPRESSED_BYTES` (default `UPLOAD_MAX_BYTES`: a
+ * `.csv.gz` cannot hold more than could be uploaded uncompressed), `DBF_MAX_BYTES` (200 MiB) and
+ * `UPLOAD_EXPIRATION_HOURS` (24).
  */
 export function uploadConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): UploadConfig {
   const dir = env.UPLOAD_DIR?.trim();
+  const maxBytes = positiveInteger(
+    env,
+    'UPLOAD_MAX_BYTES',
+    DEFAULT_UPLOAD_MAX_BYTES,
+  );
   return {
     dir: dir ? resolve(dir) : resolve(process.cwd(), 'storage', 'uploads'),
-    maxBytes: positiveInteger(
+    maxBytes,
+    maxUncompressedBytes: positiveInteger(
       env,
-      'UPLOAD_MAX_BYTES',
-      DEFAULT_UPLOAD_MAX_BYTES,
+      'UPLOAD_MAX_UNCOMPRESSED_BYTES',
+      maxBytes,
     ),
     dbfMaxBytes: positiveInteger(env, 'DBF_MAX_BYTES', DEFAULT_DBF_MAX_BYTES),
     expirationMs:

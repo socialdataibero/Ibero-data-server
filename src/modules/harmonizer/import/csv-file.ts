@@ -17,6 +17,8 @@ export interface CsvFileImport {
   path: string;
   /** The upload is a gzip-compressed CSV (`.csv.gz`). */
   gzip: boolean;
+  /** Largest CSV a `.csv.gz` may decompress to (`UPLOAD_MAX_UNCOMPRESSED_BYTES`). */
+  maxUncompressedBytes: number;
   settings: DuckDbSettings;
   /** Where to write the raw Parquet. */
   parquetPath: string;
@@ -31,6 +33,18 @@ function gzipInvalid(): ImportError {
   return new ImportError(400, 'gzip_invalid', {
     message:
       'The file ends in .gz but is not a complete gzip file. Compress the CSV again, or upload it uncompressed.',
+  });
+}
+
+/**
+ * A `.csv.gz` whose CSV is larger than the limit. Found while decompressing, before anything is
+ * parsed or written: a small file that decompresses to a huge one would otherwise fill the
+ * worker's disk and keep it busy.
+ */
+function gzipTooLarge(maxBytes: number): ImportError {
+  return new ImportError(413, 'gzip_too_large', {
+    message: `The CSV inside this .gz file is larger than ${maxBytes} bytes once decompressed. Split it into smaller files.`,
+    params: { maxBytes },
   });
 }
 
@@ -52,8 +66,9 @@ function csvBytes(path: string, gzip: boolean): Readable {
  * Imports an uploaded CSV (or `.csv.gz`) without holding it in memory, in two passes:
  *
  * 1. `checking`: the whole file must be UTF-8 (`csv_not_utf8` with the line), checked before
- *    anything is parsed, as the synchronous upload does. The original is kept gzip-compressed
- *    at `originalPath` (a `.csv.gz` upload is copied as it is).
+ *    anything is parsed, as the synchronous upload does. A `.csv.gz` must not decompress to more
+ *    than `maxUncompressedBytes` (`gzip_too_large`). The original is kept gzip-compressed at
+ *    `originalPath` (a `.csv.gz` upload is copied as it is).
  * 2. `reading`: rows are parsed with the same rules as the synchronous upload and written to
  *    the raw Parquet.
  *
@@ -116,10 +131,22 @@ async function checkAndKeepOriginal(job: CsvFileImport): Promise<void> {
   });
 
   if (job.gzip) {
+    let decompressed = 0;
+    const limit = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        decompressed += chunk.length;
+        callback(
+          decompressed > job.maxUncompressedBytes
+            ? gzipTooLarge(job.maxUncompressedBytes)
+            : null,
+          chunk,
+        );
+      },
+    });
     const discard = new Writable({
       write: (_chunk, _encoding, callback) => callback(),
     });
-    await pipeline(csvBytes(job.path, true), check, discard);
+    await pipeline(csvBytes(job.path, true), limit, check, discard);
     await copyFile(job.path, job.originalPath);
     return;
   }

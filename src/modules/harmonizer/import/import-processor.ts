@@ -81,6 +81,7 @@ interface ReadFile {
 export class HarmonizerImportProcessor {
   private readonly logger = new Logger(HarmonizerImportProcessor.name);
   private readonly dbfMaxBytes = uploadConfig().dbfMaxBytes;
+  private readonly maxUncompressedBytes = uploadConfig().maxUncompressedBytes;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -248,6 +249,7 @@ export class HarmonizerImportProcessor {
     const { header, rowCount } = await importCsvFile({
       path,
       gzip: format === 'csv_gz',
+      maxUncompressedBytes: this.maxUncompressedBytes,
       settings: this.duckdb.settings,
       parquetPath,
       originalPath: this.storage.resolvePath(originalKey),

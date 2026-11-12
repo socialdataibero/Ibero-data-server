@@ -96,6 +96,7 @@ npm run start:worker
 | `API_DUCKDB_TEMP_DIR` | No | empty (`<OS temp>/ibero-duckdb-api`) | Where DuckDB in the API spills to disk. Created if missing; each query uses its own folder inside it and deletes it when done. |
 | `UPLOAD_DIR` | No | empty (`storage/uploads`) | Where harmonizer uploads arrive through tus, until the worker imports them. |
 | `UPLOAD_MAX_BYTES` | No | `10737418240` (10 GiB) | Largest harmonizer upload through tus. |
+| `UPLOAD_MAX_UNCOMPRESSED_BYTES` | No | `UPLOAD_MAX_BYTES` | Largest CSV inside a `.csv.gz` upload, once decompressed. By default a `.csv.gz` cannot hold more than could be uploaded uncompressed: compressing makes the upload faster, it does not raise the limit. |
 | `DBF_MAX_BYTES` | No | `209715200` (200 MiB) | Largest DBF upload: a DBF is read whole into the worker's memory. |
 | `UPLOAD_EXPIRATION_HOURS` | No | `24` | An unfinished upload is deleted this long after it started. |
 
@@ -484,7 +485,7 @@ Errors are JSON with the usual shape (`{ statusCode, code, message, params? }`).
 
 Errors that need the file's content (encoding, CSV structure, DBF problems, empty files) cannot be known before it arrives, so with tus they are reported by the import, with the same body.
 
-File formats, by name: `.dbf` is a DBF table, `.gz` a gzip-compressed CSV (`.csv.gz`, tus only; a broken one fails with `400 gzip_invalid`), anything else a CSV.
+File formats, by name: `.dbf` is a DBF table, `.gz` a gzip-compressed CSV (`.csv.gz`, tus only; a broken one fails with `400 gzip_invalid`, and one whose CSV is larger than `UPLOAD_MAX_UNCOMPRESSED_BYTES` once decompressed fails with `413 gzip_too_large`, `params: { maxBytes }`), anything else a CSV.
 
 - `surveyId` is an existing survey ID, or `__new__` to create a survey named `newSurvey` in the same request.
   - With `__new__`, `newSurvey` is required (`400 new_survey_name_required`) and must not be taken (`409 survey_name_taken`).
@@ -522,7 +523,7 @@ The response also has `fileName`, `fileSize`, `format` (`csv`, `csv_gz` or `dbf`
 
 How the worker imports a CSV (see [Background jobs](#background-jobs)):
 
-1. It reads the whole file once to check that it is UTF-8 (`csv_not_utf8` with the line of the first bad byte), before parsing anything, as the one-request upload does. In the same pass it keeps the original, gzip-compressed (see [Original file](#original-file)).
+1. It reads the whole file once to check that it is UTF-8 (`csv_not_utf8` with the line of the first bad byte), before parsing anything, as the one-request upload does. A `.csv.gz` is decompressed as it is read and stops with `413 gzip_too_large` as soon as it passes `UPLOAD_MAX_UNCOMPRESSED_BYTES`, so a small file that decompresses to a huge one never reaches the Parquet. In the same pass it keeps the original, gzip-compressed (see [Original file](#original-file)); this is always done, for every CSV uploaded with tus.
 2. It reads it again, row by row, with the same parser and options as the one-request upload, and writes the edition's Parquet through a DuckDB database file in `DUCKDB_TEMP_DIR`, so a file larger than `DUCKDB_MEMORY_LIMIT` spills to disk. Values, quotes, blank lines, headers (trimmed, repeated, empty) and every CSV error are the same as in the one-request upload.
 3. It checks the names again (another upload may have taken them meanwhile) and creates the survey (with `__new__`) and the edition in one transaction, so a failure leaves neither.
 4. It computes the value profiles of every column and the suggested type of each one (as `GET .../mapping` first asks for it, see [Variable types](#variable-types)). If that fails, they are computed later when needed; the import does not fail for it.

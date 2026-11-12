@@ -46,12 +46,18 @@ const exists = (path: string) =>
     () => false,
   );
 
-async function run(name: string, content: Buffer, gzip = false) {
+async function run(
+  name: string,
+  content: Buffer,
+  gzip = false,
+  maxUncompressedBytes = 1024 ** 3,
+) {
   const path = join(dir, name);
   await writeFile(path, content);
   const job = {
     path,
     gzip,
+    maxUncompressedBytes,
     settings: settings(),
     parquetPath: join(dir, `${name}.parquet`),
     originalPath: join(dir, `${name}.original.csv.gz`),
@@ -87,6 +93,7 @@ describe('importCsvFile', () => {
     await importCsvFile({
       path,
       gzip: false,
+      maxUncompressedBytes: 1024 ** 3,
       settings: settings(),
       parquetPath: join(dir, 'progress.parquet'),
       originalPath: join(dir, 'progress.csv.gz'),
@@ -116,6 +123,50 @@ describe('importCsvFile', () => {
     });
     expect(await exists(job.parquetPath)).toBe(false);
     expect(await exists(job.originalPath)).toBe(false);
+  });
+
+  it('accepts a .csv.gz whose CSV is exactly UPLOAD_MAX_UNCOMPRESSED_BYTES', async () => {
+    const csv = Buffer.from(CSV);
+    const { result } = await run(
+      'at-limit.csv.gz',
+      gzipSync(csv),
+      true,
+      csv.length,
+    );
+    expect((await result).rowCount).toBe(2);
+  });
+
+  it('rejects a .csv.gz that decompresses to more than the limit, before reading rows', async () => {
+    // 64 MB of rows compress to well under 1 MB: what a "gzip bomb" looks like.
+    const big = Buffer.from('a,b\n' + '1,2\n'.repeat(16 * 1024 ** 2));
+    const gz = gzipSync(big);
+    expect(gz.length).toBeLessThan(1024 ** 2);
+    const phases: string[] = [];
+    const path = join(dir, 'bomb.csv.gz');
+    await writeFile(path, gz);
+    const job = {
+      path,
+      gzip: true,
+      maxUncompressedBytes: 1024 ** 2,
+      settings: settings(),
+      parquetPath: join(dir, 'bomb.parquet'),
+      originalPath: join(dir, 'bomb.original.csv.gz'),
+      onProgress: ({ phase }: { phase: string }) => phases.push(phase),
+    };
+    await expect(importCsvFile(job)).rejects.toMatchObject({
+      code: 'gzip_too_large',
+      statusCode: 413,
+      detail: { params: { maxBytes: 1024 ** 2 } },
+    });
+    expect(phases).toEqual(['checking']);
+    expect(await exists(job.parquetPath)).toBe(false);
+    expect(await exists(job.originalPath)).toBe(false);
+  });
+
+  it('does not apply the limit to a plain CSV (UPLOAD_MAX_BYTES already did)', async () => {
+    const csv = Buffer.from(CSV);
+    const { result } = await run('plain-over.csv', csv, false, 1);
+    expect((await result).rowCount).toBe(2);
   });
 
   it('rejects a file that is not UTF-8 with its line, before reading rows', async () => {
