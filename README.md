@@ -142,6 +142,8 @@ CORS is open to every origin. The `Content-Disposition` header is exposed so the
 
 **Search.** Where `q` and `term` are accepted, `q` is the main text search and each `term` (repeatable) is an extra filter. All of them must match (AND). Matching is case-insensitive.
 
+**Stopping.** On `SIGTERM` or `SIGINT` (also when watch mode restarts it) the API runs its shutdown hooks before exiting: it closes the HTTP server, the connections to PostgreSQL and Redis, and deletes the files of prepared downloads (see [Direct downloads](#direct-downloads)). Open connections are cut, not waited for: a download being sent stops half way, and a tus upload loses only the chunk being sent: the web app retries for about 20 seconds and continues from the last byte stored if the API is back by then. The worker stops differently (see [Background jobs](#background-jobs)).
+
 **Identifiers.** All IDs are UUIDs. Slugs accept only lowercase letters, numbers and hyphens (`^[a-z0-9-]+$`).
 
 ---
@@ -772,7 +774,7 @@ A browser can only save a file as it arrives when it opens a link, and a link ca
 2. The browser opens `url` (`/harmonizer/downloads/<token>`, relative to the API), which needs no session: the token is the permission. It answers the file as an attachment, with `Content-Length` when `size` is known (`size` is `null` for a kept original of a tus upload, which is unzipped as it is sent), `Cache-Control: no-store` and `Referrer-Policy: no-referrer`.
 
 - The token is random (256 bits) and works **once**: the second request, or one after `expiresAt` (15 minutes), returns `404 download_not_found`. A download cut half way cannot be resumed; prepare it again.
-- A prepared file waits in the server's temporary folder (`ibero-harmonized-<id>.<ext>`) and is deleted once it is sent or when it expires. If the server stops first, its token is lost and the file stays; the next start deletes such files once they are older than 75 minutes.
+- A prepared file waits in the server's temporary folder (`ibero-harmonized-<id>.<ext>`) and is deleted once it is sent or when it expires. When the API stops (`SIGTERM`, `SIGINT`), it deletes every file still waiting or being sent before it exits; a download being sent is cut, and its token is gone. Files that a stopped or crashed API could not delete are deleted at the next start and every 15 minutes after that, once they are more than 75 minutes old. Files the API is still holding are never touched.
 - Prepared downloads are kept in the API's memory, so they only work with one API process.
 - Preparing takes as long as generating the file: about 20 seconds for the national census edition as Parquet. A proxy in front of the API must allow requests that long.
 - The `GET` endpoints still send the file directly, with the session, for scripts.
