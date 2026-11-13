@@ -214,6 +214,33 @@ describe('harmonized-export: DuckDB gives what the harmonized view gives', () =>
     await expectSameParquet(oldPath, newPath);
   });
 
+  it('typed values are trimmed like the type checks: a BOM, a tab or a no-break space around a number', async () => {
+    // The type checks (jsTrimSql) accept these as numbers; DuckDB's TRIM alone did not, and the
+    // Parquet export failed with parquet_write_failed.
+    const path = join(dir, 'whitespace.parquet');
+    await writeRaw(path, 2, [
+      ['\ufeff1', '\ufeff1.5'],
+      ['1\t', '\t2.5'],
+      [' 2 ', '\u00a03'],
+      ['\u00a0', '\ufeff'],
+      [null, null],
+    ]);
+    const columns: ExportColumn[] = [
+      { canon: 'num', rawColumn: 'c0', missingCodes: [], valueMap: new Map() },
+      { canon: 'dec', rawColumn: 'c1', missingCodes: [], valueMap: new Map() },
+    ];
+    const sql = editionSelectSql('data', columns, ['num', 'dec'], { num: 'BIGINT', dec: 'DOUBLE' });
+    const rows: unknown[][] = [];
+    for await (const chunk of service.streamInternalRows(path, sql)) rows.push(...chunk);
+    expect(rows.map((r) => r.slice(1))).toEqual([
+      ['1', 1.5],
+      ['1', 2.5],
+      ['2', 3],
+      [null, null],
+      [null, null],
+    ]);
+  });
+
   it('survey Parquet: editions stacked in order, absent variables NULL, same types', async () => {
     const wanted = ['dec', 'num', 'solo2020', 'x', 'z'];
     const view = buildSurveyView(editions.map(jsEdition), wanted);
