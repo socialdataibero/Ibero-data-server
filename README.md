@@ -283,7 +283,34 @@ Upload rules:
 - The server writes it straight to storage, so it never goes through the browser and the 500 MB upload limit does not apply. The national census edition (383 MB, 15 million rows) takes about 20 seconds. Before, the web app downloaded the view and uploaded it again, which did not work for files that large.
 - There is no size limit besides the disk: a resource records its size (`sizeBytes`) as a 64-bit number. Before 2026-11-12 it was 32-bit, and a view over 2,147,483,647 bytes returned `422 resource_too_large`.
 - The schema is read and stored as in an upload. The response is the new resource.
+- The resource also keeps a copy of the source metadata in `sourceMetadata` (see [Source metadata](#source-metadata)).
 - Same roles as an upload: `ADMIN` or `EDITOR` of the dataset's organization. Any logged-in user can read every survey of the harmonizer, so no permission on the survey is needed.
+
+### Source metadata
+
+A resource saved from the harmonizer keeps what was declared about its source in the harmonizer ([Source design](#source-design) and the mapping): `sourceMetadata`. Uploaded files and resources created before 2026-11-13 have `null`.
+
+```json
+{
+  "version": 1,
+  "design": "sample",
+  "unit": "person",
+  "sourceEditionIds": ["2914422d-…"],
+  "missingCodesAreNull": true,
+  "columns": [
+    { "name": "FOLIO", "type": "BIGINT" },
+    { "name": "EDAD", "type": "BIGINT", "missingCodes": ["999"] },
+    { "name": "FAC", "type": "BIGINT", "role": "weight" }
+  ]
+}
+```
+
+- `design` and `unit` are those of the edition, and `columns` lists every column of the file in order, with its Parquet `type` (the same `name` and `type` as `columns`).
+- `missingCodes` are the column's "not specified" codes in the mapping. `missingCodesAreNull: true` says that those values, and empty cells, are already `NULL` in the file: the codes are kept to describe the source, not to filter it again. `role` is the column's [sample design role](#source-design). Both are left out when the column has none.
+- `sourceEditionIds` are the editions the data comes from, only to trace it back (for example, to warn later that a mapping changed). Nothing is computed from them.
+- It is a snapshot taken when the resource is created. Changing the edition's design, unit or mapping afterwards does not change it, and reading a resource never looks at the harmonizer.
+- A survey view gets metadata only when all its included editions (those that have any of the chosen variables) have the same design and unit, and their expansion factors are the same canonical variable. Otherwise, and when an edition has no design or unit, `sourceMetadata` is `null`. In a survey view, `missingCodes` joins the codes of every edition, and a column has a role only when every edition gives it that role. The origin columns `_dataset`, `_year` and `_row` have only `name` and `type`.
+- The shape can grow: per-column properties other than `name` and `type` are optional, `version` names the shape, and readers ignore properties they do not know.
 
 Query rules:
 

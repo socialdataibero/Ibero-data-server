@@ -143,17 +143,21 @@ model Dataset {
 }
 
 model Resource {
-  id         String   @id @default(uuid())
-  datasetId  String
-  filename   String
-  format     String
-  sizeBytes  BigInt
-  storageKey String
+  id             String   @id @default(uuid())
+  datasetId      String
+  filename       String
+  format         String
+  sizeBytes      BigInt
+  storageKey     String
   /// Schema del parquet capturado al subir: [{ name, type }]. Se usa para
   /// poblar el selector de columnas del step-builder y validar el recipe
   /// antes de correrlo (igual que parquet_schema en ckanext-duckdb).
-  columns    Json?
-  createdAt  DateTime @default(now())
+  columns        Json?
+  /// Metadata of the harmonized source (design, unit, missing codes and roles per column), copied
+  /// when the resource is saved from the harmonizer. A snapshot: it does not follow later changes
+  /// to the edition. Null on uploaded files and on resources created before it existed.
+  sourceMetadata Json?
+  createdAt      DateTime @default(now())
 
   dataset  Dataset    @relation(fields: [datasetId], references: [id], onDelete: Cascade)
   analyses Analysis[]
@@ -245,10 +249,10 @@ model HarmonizerDataset {
   /// What each record is: `person`, `dwelling` or `household`. Null like `design`.
   unit          String?
 
-  survey   HarmonizerSurvey          @relation(fields: [surveyId], references: [id], onDelete: Cascade)
-  codebook HarmonizerCodebook?       @relation(fields: [codebookId], references: [id], onDelete: SetNull)
-  mappings HarmonizerMapping[]
-  profiles HarmonizerColumnProfile[]
+  survey       HarmonizerSurvey          @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  codebook     HarmonizerCodebook?       @relation(fields: [codebookId], references: [id], onDelete: SetNull)
+  mappings     HarmonizerMapping[]
+  profiles     HarmonizerColumnProfile[]
   columnChecks HarmonizerColumnCheck[]
 
   /// El nombre es `_dataset` en la vista por encuesta: debe ser único en ella.

@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { Readable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import type { ExportFile } from '../harmonizer/harmonizer.service.js';
@@ -68,6 +69,7 @@ describe('ResourcesService.attachHarmonized', () => {
         sizeBytes: 12,
         storageKey: 'd1/uuid-harmonized_Censo_2020.parquet',
         columns: [{ name: 'EDAD', type: 'BIGINT' }],
+        sourceMetadata: Prisma.DbNull,
       },
     });
     expect(resource).toMatchObject({ id: 'r1', sizeBytes: 12 });

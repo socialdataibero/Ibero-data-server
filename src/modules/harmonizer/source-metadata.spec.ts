@@ -6,8 +6,11 @@ import { MappingChoiceDto } from './dto/mapping-choice.dto.js';
 import { HarmonizerService } from './harmonizer.service.js';
 import {
   assertSourceRoles,
+  buildSourceMetadata,
+  parseSourceMetadata,
   missingSourceInfo,
   sourceInfoRequiredBody,
+  type MetadataEdition,
   type RoleChoice,
 } from './source-metadata.js';
 
@@ -226,5 +229,124 @@ describe('saveMapping with roles', () => {
       where: { id: 'm-est' },
       data: { missingCodes: [], role: 'stratum' },
     });
+  });
+});
+
+describe('buildSourceMetadata', () => {
+  const col = (canon: string, missingCodes: string[] = [], role: string | null = null) => ({
+    canon,
+    missingCodes,
+    role,
+  });
+  const edition = (id: string, columns: MetadataEdition['columns'], design = 'sample', unit = 'person') => ({
+    id,
+    design,
+    unit,
+    columns,
+  });
+  const types = { _dataset: 'VARCHAR', _year: 'BIGINT', _row: 'BIGINT', EDAD: 'BIGINT', FAC: 'DOUBLE', EST: 'BIGINT' };
+
+  it('one sample edition: design, unit, codes, roles and its id', () => {
+    expect(
+      buildSourceMetadata(
+        [edition('e1', [col('EDAD', ['999']), col('FAC', [], 'weight'), col('EST', [], 'stratum')])],
+        ['EDAD', 'FAC', 'EST'],
+        types,
+      ),
+    ).toEqual({
+      version: 1,
+      design: 'sample',
+      unit: 'person',
+      sourceEditionIds: ['e1'],
+      missingCodesAreNull: true,
+      columns: [
+        { name: 'EDAD', type: 'BIGINT', missingCodes: ['999'] },
+        { name: 'FAC', type: 'DOUBLE', role: 'weight' },
+        { name: 'EST', type: 'BIGINT', role: 'stratum' },
+      ],
+    });
+  });
+
+  it('a census edition has no roles', () => {
+    const meta = buildSourceMetadata([edition('e1', [col('FAC', [], 'weight')], 'census')], ['FAC'], types);
+    expect(meta?.design).toBe('census');
+    expect(meta?.columns).toEqual([{ name: 'FAC', type: 'DOUBLE' }]);
+  });
+
+  it('an edition without design or unit (uploaded before) has no metadata', () => {
+    expect(buildSourceMetadata([{ id: 'e1', design: null, unit: 'person', columns: [] }], [], types)).toBeNull();
+    expect(buildSourceMetadata([{ id: 'e1', design: 'census', unit: null, columns: [] }], [], types)).toBeNull();
+    expect(buildSourceMetadata([], [], types)).toBeNull();
+  });
+
+  it('a survey: origin columns, codes joined, roles kept when every edition agrees', () => {
+    const meta = buildSourceMetadata(
+      [
+        edition('e1', [col('EDAD', ['999']), col('FAC', [], 'weight'), col('EST', [], 'stratum')]),
+        edition('e2', [col('EDAD', ['99', '999']), col('FAC', [], 'weight'), col('EST')]),
+      ],
+      ['_dataset', '_year', '_row', 'EDAD', 'FAC', 'EST'],
+      types,
+    );
+    expect(meta?.sourceEditionIds).toEqual(['e1', 'e2']);
+    expect(meta?.columns).toEqual([
+      { name: '_dataset', type: 'VARCHAR' },
+      { name: '_year', type: 'BIGINT' },
+      { name: '_row', type: 'BIGINT' },
+      { name: 'EDAD', type: 'BIGINT', missingCodes: ['999', '99'] },
+      { name: 'FAC', type: 'DOUBLE', role: 'weight' },
+      // Stratum in only one of the editions: not a stratum of the whole file.
+      { name: 'EST', type: 'BIGINT' },
+    ]);
+  });
+
+  it('a survey whose editions differ in design, unit or weight has no metadata', () => {
+    const headers = ['_dataset', '_year', '_row', 'FAC', 'EST'];
+    const e1 = edition('e1', [col('FAC', [], 'weight'), col('EST')]);
+    expect(buildSourceMetadata([e1, edition('e2', [col('FAC')], 'census')], headers, types)).toBeNull();
+    expect(buildSourceMetadata([e1, edition('e2', [col('FAC', [], 'weight')], 'sample', 'household')], headers, types)).toBeNull();
+    expect(buildSourceMetadata([e1, edition('e2', [col('FAC'), col('EST', [], 'weight')])], headers, types)).toBeNull();
+  });
+});
+
+describe('parseSourceMetadata', () => {
+  const stored = {
+    version: 1,
+    design: 'sample',
+    unit: 'person',
+    sourceEditionIds: ['e1'],
+    missingCodesAreNull: true,
+    columns: [
+      { name: 'EDAD', type: 'BIGINT', missingCodes: ['999'] },
+      { name: 'FAC', type: 'DOUBLE', role: 'weight' },
+    ],
+  };
+
+  it('reads what buildSourceMetadata writes', () => {
+    expect(parseSourceMetadata(structuredClone(stored))).toEqual(stored);
+  });
+
+  it('ignores properties it does not know, also a role added later', () => {
+    const newer = {
+      ...structuredClone(stored),
+      license: 'CC-BY',
+      columns: [
+        { name: 'EDAD', type: 'BIGINT', missingCodes: ['999'], valueLabels: { 1: 'Hombre' } },
+        { name: 'FAC', type: 'DOUBLE', role: 'weight', universe: 'all' },
+        { name: 'CONG', type: 'BIGINT', role: 'cluster' },
+      ],
+    };
+    expect(parseSourceMetadata(newer)).toEqual({
+      ...stored,
+      columns: [...stored.columns, { name: 'CONG', type: 'BIGINT' }],
+    });
+  });
+
+  it('no metadata, or not version 1, is null', () => {
+    expect(parseSourceMetadata(null)).toBeNull();
+    expect(parseSourceMetadata(undefined)).toBeNull();
+    expect(parseSourceMetadata({ ...stored, version: 2 })).toBeNull();
+    expect(parseSourceMetadata({ ...stored, design: 'muestral' })).toBeNull();
+    expect(parseSourceMetadata({ ...stored, columns: [{ name: 'EDAD' }] })).toBeNull();
   });
 });

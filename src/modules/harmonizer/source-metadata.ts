@@ -88,3 +88,134 @@ export function assertSourceRoles(design: string | null, choices: RoleChoice[]):
     });
   }
 }
+
+/**
+ * Metadata of a harmonized source, copied to a resource when a harmonized view is saved as one
+ * ("Usar en un dataset"). It is a snapshot: later changes to the editions or their mappings do
+ * not change it. Every per-column property except `name` and `type` is optional, `version` says
+ * which shape this is, and readers ignore properties they do not know, so it can grow without
+ * breaking stored copies.
+ */
+export interface SourceMetadata {
+  version: 1;
+  design: SourceDesign;
+  unit: AnalysisUnit;
+  /** Editions the data comes from, for traceability only: nothing is computed from them. */
+  sourceEditionIds: string[];
+  /** Values listed in `missingCodes`, and empty cells, are already `NULL` in the data. */
+  missingCodesAreNull: true;
+  /** Every column of the file, in its order. */
+  columns: SourceMetadataColumn[];
+}
+
+export interface SourceMetadataColumn {
+  name: string;
+  /** Parquet type, e.g. `VARCHAR`, `BIGINT`, `DOUBLE`. */
+  type: string;
+  /** Codes that meant "not specified" in the source; omitted when there are none. */
+  missingCodes?: string[];
+  /** Sample design role; omitted when the column has none. */
+  role?: SourceRole;
+}
+
+/** One edition of a harmonized view, as the metadata needs it. */
+export interface MetadataEdition {
+  id: string;
+  design: string | null;
+  unit: string | null;
+  /** The edition's columns in the view: canonical name, missing codes and role. */
+  columns: { canon: string; missingCodes: string[]; role: string | null }[];
+}
+
+/**
+ * The metadata of a harmonized view made of `editions` (one for an edition view, the included
+ * ones for a survey view), whose file has `headers` with the Parquet `types`.
+ *
+ * It is `null` when it would not be true of every row: an edition without design or unit,
+ * editions with different designs or units, or editions whose expansion factor is a different
+ * variable. A canonical gets a role only in sample sources and when every edition gives it that
+ * role; `missingCodes` joins the codes of every edition.
+ */
+export function buildSourceMetadata(
+  editions: MetadataEdition[],
+  headers: string[],
+  types: Record<string, string>,
+): SourceMetadata | null {
+  const first = editions[0];
+  if (!first) return null;
+  const design = first.design as SourceDesign | null;
+  const unit = first.unit as AnalysisUnit | null;
+  if (!design || !unit) return null;
+  if (editions.some((e) => e.design !== design || e.unit !== unit)) return null;
+
+  const weights = new Set(
+    editions.flatMap((e) => e.columns.filter((c) => c.role === 'weight').map((c) => c.canon)),
+  );
+  if (weights.size > 1) return null;
+
+  const roleOf = (canon: string): SourceRole | undefined => {
+    if (design !== 'sample') return undefined;
+    const roles = editions.map((e) => e.columns.find((c) => c.canon === canon)?.role ?? null);
+    const role = roles[0];
+    return role && roles.every((r) => r === role) ? (role as SourceRole) : undefined;
+  };
+  const codesOf = (canon: string): string[] => [
+    ...new Set(editions.flatMap((e) => e.columns.find((c) => c.canon === canon)?.missingCodes ?? [])),
+  ];
+
+  return {
+    version: 1,
+    design,
+    unit,
+    sourceEditionIds: editions.map((e) => e.id),
+    missingCodesAreNull: true,
+    columns: headers.map((name) => {
+      const missingCodes = codesOf(name);
+      const role = roleOf(name);
+      return {
+        name,
+        type: types[name] ?? 'VARCHAR',
+        ...(missingCodes.length > 0 ? { missingCodes } : {}),
+        ...(role ? { role } : {}),
+      };
+    }),
+  };
+}
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+const isStringList = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.every((s) => typeof s === 'string');
+const isOneOf = <T extends string>(list: readonly T[], v: unknown): v is T =>
+  typeof v === 'string' && (list as readonly string[]).includes(v);
+
+/**
+ * Reads stored metadata: the object with only the properties this version knows, or `null` when
+ * there is none (resources created before it existed) or it does not have the shape of version 1.
+ * Unknown properties are ignored, not an error, so newer copies can still be read.
+ */
+export function parseSourceMetadata(value: unknown): SourceMetadata | null {
+  if (!isRecord(value) || value.version !== 1) return null;
+  if (!isOneOf(SOURCE_DESIGNS, value.design) || !isOneOf(ANALYSIS_UNITS, value.unit)) return null;
+  if (!isStringList(value.sourceEditionIds) || !Array.isArray(value.columns)) return null;
+  const columns: SourceMetadataColumn[] = [];
+  for (const c of value.columns) {
+    if (!isRecord(c) || typeof c.name !== 'string' || typeof c.type !== 'string') return null;
+    if (c.missingCodes !== undefined && !isStringList(c.missingCodes)) return null;
+    columns.push({
+      name: c.name,
+      type: c.type,
+      ...(c.missingCodes !== undefined ? { missingCodes: c.missingCodes } : {}),
+      // A role this version does not know (added later) is skipped like an unknown property.
+      ...(isOneOf(SOURCE_ROLES, c.role) ? { role: c.role } : {}),
+    });
+  }
+  return {
+    version: 1,
+    design: value.design,
+    unit: value.unit,
+    sourceEditionIds: value.sourceEditionIds,
+    missingCodesAreNull: true,
+    columns,
+  };
+}

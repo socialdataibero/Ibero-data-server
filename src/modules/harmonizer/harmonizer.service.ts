@@ -104,8 +104,11 @@ import type { SaveRecodingDto } from './dto/save-recoding.dto.js';
 import type { UpdateDatasetDto } from './dto/update-dataset.dto.js';
 import {
   assertSourceRoles,
+  buildSourceMetadata,
   type AnalysisUnit,
+  type MetadataEdition,
   type SourceDesign,
+  type SourceMetadata,
   type SourceRole,
 } from './source-metadata.js';
 
@@ -187,12 +190,15 @@ interface EditionRecord {
   name: string;
   year: number;
   columns: string[];
+  design: string | null;
+  unit: string | null;
 }
 
 interface EditionMapping {
   sourceColumn: string;
   missingCodes: string[];
   valueMap: Prisma.JsonValue;
+  role: string | null;
   canonicalVariable: { name: string };
 }
 
@@ -202,6 +208,22 @@ interface ExportEdition {
   /** Su Parquet crudo; `null` si la edición no tiene columnas (H-08). */
   path: string | null;
   columns: ExportColumn[];
+  /** Rol de diseño muestral de cada canónica que lo tiene. */
+  roles: Map<string, string>;
+}
+
+/** Lo que los metadatos de la fuente necesitan de una edición y sus columnas en la vista. */
+function metadataEdition(edition: ExportEdition, columns: ExportColumn[]): MetadataEdition {
+  return {
+    id: edition.dataset.id,
+    design: edition.dataset.design,
+    unit: edition.dataset.unit,
+    columns: columns.map((c) => ({
+      canon: c.canon,
+      missingCodes: c.missingCodes,
+      role: edition.roles.get(c.canon) ?? null,
+    })),
+  };
 }
 
 /** La recodificación guardada de un mapeo (`{ valor: código }`) como Map. */
@@ -364,6 +386,11 @@ export interface ExportFile {
   body: Buffer | Readable;
   /** Size in bytes, when it is known before sending. */
   size?: number;
+  /**
+   * Parquet exports only: the metadata of the source (see source-metadata.ts), or `null` when the
+   * view has none. A resource saved from this file keeps a copy.
+   */
+  metadata?: SourceMetadata | null;
 }
 
 /** Temporary files of the downloads: `ibero-harmonized-<uuid>.<csv|parquet>`. */
@@ -2663,6 +2690,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
     const types = await this.exportTypes(dataset.surveyId, [edition], headers);
     return {
       ...file,
+      metadata: buildSourceMetadata([metadataEdition(edition, edition.columns)], headers, types),
       ...(await this.parquetExportFile(
         [{ alias: 'e0', path: edition.path }],
         [editionParquetSql('e0', edition.columns, types)],
@@ -2725,6 +2753,11 @@ export class HarmonizerService implements OnApplicationBootstrap {
     const sources = included.map((i, n) => ({ alias: `e${n}`, path: i.edition.path! }));
     return {
       ...file,
+      metadata: buildSourceMetadata(
+        included.map((i) => metadataEdition(i.edition, i.columns)),
+        ['_dataset', '_year', '_row', ...wanted],
+        types,
+      ),
       ...(await this.parquetExportFile(
         sources,
         surveyParquetSql(
@@ -2816,6 +2849,9 @@ export class HarmonizerService implements OnApplicationBootstrap {
     return {
       dataset,
       path,
+      roles: new Map(
+        used.flatMap((m) => (m.role ? [[m.canonicalVariable.name, m.role] as const] : [])),
+      ),
       columns: exportColumns(
         dataset.columns,
         used.map((m) => ({
