@@ -238,6 +238,12 @@ model HarmonizerDataset {
   /// que le corresponde. Borrar el diccionario deja la edición sin diccionario.
   codebookId    String?
   codebookTable String?
+  /// How the source was collected: `census` (every unit enumerated) or `sample` (each record
+  /// stands for several units and needs an expansion factor). Null on editions uploaded before
+  /// it was asked.
+  design        String?
+  /// What each record is: `person`, `dwelling` or `household`. Null like `design`.
+  unit          String?
 
   survey   HarmonizerSurvey          @relation(fields: [surveyId], references: [id], onDelete: Cascade)
   codebook HarmonizerCodebook?       @relation(fields: [codebookId], references: [id], onDelete: SetNull)
@@ -292,6 +298,9 @@ model HarmonizerMapping {
   /// Recodificación de valores de esta columna: `{ "valor del archivo": "código común" }`.
   /// Se aplica después de los códigos de no especificado.
   valueMap            Json     @default("{}")
+  /// Sample design role of this column: `weight` (expansion factor), `stratum` or `psu`
+  /// (primary sampling unit). Only in sample editions, at most one column per role.
+  role                String?
 
   dataset           HarmonizerDataset           @relation(fields: [datasetId], references: [id], onDelete: Cascade)
   canonicalVariable HarmonizerCanonicalVariable @relation(fields: [canonicalVariableId], references: [id], onDelete: Cascade)
@@ -419,6 +428,9 @@ model HarmonizerImport {
   organizationId String?
   /// DBF encoding choice (`auto`, …); null for CSV.
   encoding       String?
+  /// Source design and unit of analysis of the edition, as sent with the upload.
+  design         String?
+  unit           String?
   createdById    String
   /// Set when the edition is created.
   datasetId      String?

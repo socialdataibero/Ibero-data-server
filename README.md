@@ -423,6 +423,7 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 | `HEAD`, `PATCH`, `DELETE` | `/harmonizer/uploads/:importId` | Continue (tus `PATCH`), check (`HEAD`) or cancel (`DELETE`) an upload. |
 | `GET` | `/harmonizer/imports/:importId` | Status of an upload and of its import. See [Imports](#imports). |
 | `POST` | `/harmonizer/upload` | Upload an edition in one request (multipart), as CSV or DBF. Up to 200 MB, read in memory. The web app uses tus instead. |
+| `PATCH` | `/harmonizer/datasets/:datasetId` | Change the source `design` and/or `unit` of an edition. See [Source design](#source-design). |
 | `DELETE` | `/harmonizer/datasets/:datasetId` | Delete one edition, its mapping and its stored file. Returns `204`. |
 | `GET` | `/harmonizer/datasets/:datasetId/mapping` | Columns of an edition with saved or suggested mappings. |
 | `PUT` | `/harmonizer/datasets/:datasetId/mapping` | Save the mapping of an edition. |
@@ -472,11 +473,11 @@ There are two ways to upload an edition. Both read the file with the same rules 
 - **tus** (`POST /harmonizer/uploads`, used by the web app): a resumable upload protocol ([tus 1.0](https://tus.io/protocols/resumable-upload)). The file arrives in chunks (the web app sends 50 MB per request) and a chunk that fails is sent again, so files of several gigabytes can be uploaded. The server writes the file to disk as it arrives and never holds it in memory. When it is complete, the worker process reads it and creates the edition in the background; the client follows it with `GET /harmonizer/imports/:importId` (see [Imports](#imports)). Up to `UPLOAD_MAX_BYTES` (10 GiB by default).
 - **One request** (`POST /harmonizer/upload`, multipart): the file is read in memory and the response is the new edition. Up to 200 MB. Kept for scripts; large files can take the server down.
 
-Fields: `file`, `name` (edition name, required), `year` (1900–2100), `surveyId`, `newSurvey`, `organizationId` (with `__new__`), and `encoding` (DBF only, see [DBF files](#dbf-files)).
+Fields: `file`, `name` (edition name, required), `year` (1900–2100), `surveyId`, `newSurvey`, `organizationId` (with `__new__`), `encoding` (DBF only, see [DBF files](#dbf-files)), and `design` and `unit` (both required, see [Source design](#source-design)).
 
 With tus, the fields go in the `Upload-Metadata` header of the `POST`, with the same names, except that the edition name is `editionName` (tus clients such as Uppy use `name` for the file name) and the file name is `filename`. Every request needs the session token (`Authorization: Bearer …`). The `POST` checks, before any byte is sent and in this order, everything that does not need the file's content, with the same codes as the one-request upload:
 
-1. The fields (`400 validation_error`, with `details` naming `name`, `year`, …, or `filename`), and the file size (`400 upload_length_required` if the client does not send it).
+1. The fields (`400 validation_error`, with `details` naming `name`, `year`, …, or `filename`), and the file size (`400 upload_length_required` if the client does not send it). Then the source design and unit: `400 source_info_required` if either is missing (see [Source design](#source-design)).
 2. Permissions: `400 survey_organization_required`, `404 organization_not_found`, `403 survey_org_role_required`, `404 survey_not_found`, `403 survey_not_editable`.
 3. Size: `413 upload_too_large` (over `UPLOAD_MAX_BYTES`) or `413 dbf_too_large` (a `.dbf` over `DBF_MAX_BYTES`), with `params: { maxBytes, size }`.
 4. Names: `400 new_survey_name_required`, `409 survey_name_taken`, `409 dataset_name_taken`.
@@ -496,6 +497,7 @@ File formats, by name: `.dbf` is a DBF table, `.gz` a gzip-compressed CSV (`.csv
 - The file must be valid UTF-8 (a BOM is allowed). Any other encoding, such as Latin-1, returns `400 csv_not_utf8` with the line of the first invalid byte, instead of storing accented characters as `�`.
 - The file must have a header and at least one data row. A file with no header (for example 0 bytes or only blank lines) returns `400 csv_empty`; a file with a header but no data rows returns `400 csv_no_rows` (report H-08).
 - The response is `{ datasetId, dataset, renamedColumns, source }`. `source` says how the file was read, so the client can tell the user; it is not stored. It is `{ format: "csv" }`, or for a DBF `{ format: "dbf", encoding, encodingSource, deletedRecords }`. `dataset` includes `rowCount`, the number of data rows read (the header and skipped blank lines are not counted), so the client can check that nothing was dropped (report H-09). The same `dataset` object, with `rowCount`, is returned by `GET .../mapping` and the edition's harmonized view. It also includes `columnCount`, the number of columns in the uploaded file whether mapped or not, because the harmonized view only shows mapped columns (report H-18).
+- `dataset` also includes `design` and `unit` (see [Source design](#source-design)), here and in every response that returns it.
 - The file is checked before anything is written, so a rejected upload with `__new__` does not create the survey.
 - The first row is the header. A leading BOM is removed, blank lines are skipped, and values are kept exactly as written: no trimming and no type conversion. Every value is stored as text, and empty cells are `""`.
 - Headers are trimmed (leading and trailing spaces removed) before anything else. Spaces inside a name are kept.
@@ -504,6 +506,33 @@ File formats, by name: `.dbf` is a DBF table, `.gz` a gzip-compressed CSV (`.csv
 - All columns are stored, including those that are never mapped.
 - The edition name, after trimming, must be unique within its survey, because it is the `_dataset` of the survey view. A repeated name returns `409 dataset_name_taken` and nothing is written. Names are compared exactly (case and accents matter).
 - Uploading never changes other editions. Uploading the same file twice under two names creates two editions.
+
+### Source design
+
+Every upload declares two facts about its source, which travel with the edition so analyses can use them later:
+
+- `design`: `census` (every unit was enumerated) or `sample` (each record stands for several units and the source has an expansion factor).
+- `unit`: the unit of analysis, what each record is: `person`, `dwelling` or `household`.
+
+Rules:
+
+- Both are required in both upload ways. An upload without one or both returns `400 source_info_required`, with `params: { missing }` listing `design`, `unit` or both, and a `message` naming each one (for example "Missing the source design (census or sample) and the unit of analysis (person, dwelling or household)."). An empty field counts as missing. Any other value returns `400 validation_error` (`design must be one of: census, sample.`). Both checks run with the other field checks, before permissions and before any byte of a tus upload.
+- `PATCH /harmonizer/datasets/:datasetId` with `{ design?, unit? }` changes them (same permission as saving the mapping). Switching to `census` removes every role of the edition's mapping. Switching to `sample` keeps the mapping as it is; it cannot be saved again until a column is marked as `weight`. It returns the edition's `dataset` object.
+- Editions uploaded before these fields existed have `design: null` and `unit: null`. Their mapping saves as before, without roles, and `PATCH` sets them.
+
+In a `sample` edition the mapping can give a column a sample design role (`role` in `PUT .../mapping`):
+
+| `role` | Meaning |
+| --- | --- |
+| `weight` | Expansion factor: how many units of the population the record stands for. Required in sample editions. |
+| `stratum` | Stratum of the sample design. Optional. |
+| `psu` | Primary sampling unit (UPM). Optional. |
+
+- Saving the mapping of a `sample` edition with no column marked `weight` returns `400 sample_weight_required`.
+- Each role can be in at most one column (`400 source_role_repeated`, `params: { role, columns }`). A column has at most one role.
+- A role needs a mapped column, because unmapped columns are not in the harmonized view (`400 source_role_unmapped`, `params: { column, role }`).
+- `census` editions, and editions without a design, take no roles (`400 source_role_not_allowed`, `params: { column, role, design }`).
+- These checks run before anything is saved. The role belongs to the mapping: unmapping the column discards it.
 
 ### Imports
 
@@ -555,7 +584,7 @@ dBase and FoxPro tables (`.dbf`), as INEGI distributes its census microdata, are
 
 ### Mapping
 
-`GET .../mapping` returns each column with `selectedCanonicalId`, `suggested`, `suggestionSource`, `missingCodes` (the saved missing-value codes; `[]` for unsaved columns, suggestions never fill it) and `inferredType` (see [Variable types](#variable-types)). `canonicalVariables` lists the survey's canonicals as `{ id, name, dataType }`, where `dataType` is the confirmed type or `null`. For each column, the first of these that applies is used:
+`GET .../mapping` returns each column with `selectedCanonicalId`, `suggested`, `suggestionSource`, `missingCodes` (the saved missing-value codes; `[]` for unsaved columns, suggestions never fill it), `role` (the saved [sample design role](#source-design) or `null`) and `inferredType` (see [Variable types](#variable-types)). `canonicalVariables` lists the survey's canonicals as `{ id, name, dataType }`, where `dataType` is the confirmed type or `null`. For each column, the first of these that applies is used:
 
 1. **Saved**: the mapping already saved for this edition. No suggestion is shown.
 2. **History** (`suggestionSource: "history"`): a column with exactly the same name was mapped in another edition of the same survey.
@@ -582,9 +611,9 @@ The response also has:
 
 Suggestions are preselected in the response but are not saved until the client sends `PUT`.
 
-`GET .../mapping/saved` returns `{ dataset, columns }`, where each column is `{ column, canonicalId, canonicalName, missingCodes }`, in header order. It does not read the edition's file.
+`GET .../mapping/saved` returns `{ dataset, columns }`, where each column is `{ column, canonicalId, canonicalName, missingCodes, role }`, in header order. It does not read the edition's file.
 
-`PUT .../mapping` takes `{ columns: [{ column, choice, newName?, dataType?, missingCodes? }] }`:
+`PUT .../mapping` takes `{ columns: [{ column, choice, newName?, dataType?, missingCodes?, role? }] }` (`role`: see [Source design](#source-design)):
 
 | `choice` | Effect |
 | --- | --- |

@@ -20,6 +20,7 @@ import {
   type RenamedColumn,
   type UploadSource,
 } from '../harmonizer.service.js';
+import type { AnalysisUnit, SourceDesign } from '../source-metadata.js';
 import type { UploadEncoding } from '../dto/upload-dataset.dto.js';
 import { importCsvFile, type ImportPhase } from './csv-file.js';
 import { cachedColumnChecks } from '../column-check-store.js';
@@ -347,6 +348,8 @@ export class HarmonizerImportProcessor {
             year: record.year,
             columns: read.columns,
             rowCount: read.rowCount,
+            design: record.design,
+            unit: record.unit,
           },
         });
         return { survey, dataset };
@@ -367,6 +370,8 @@ export class HarmonizerImportProcessor {
         surveyName: survey.name,
         rowCount: dataset.rowCount,
         columnCount: dataset.columns.length,
+        design: dataset.design as SourceDesign | null,
+        unit: dataset.unit as AnalysisUnit | null,
       },
       renamedColumns: read.renamed,
       source: read.source,

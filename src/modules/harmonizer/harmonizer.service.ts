@@ -101,6 +101,13 @@ import {
 } from './comparison.js';
 import type { SetDatasetCodebookDto } from './dto/set-dataset-codebook.dto.js';
 import type { SaveRecodingDto } from './dto/save-recoding.dto.js';
+import type { UpdateDatasetDto } from './dto/update-dataset.dto.js';
+import {
+  assertSourceRoles,
+  type AnalysisUnit,
+  type SourceDesign,
+  type SourceRole,
+} from './source-metadata.js';
 
 export interface SurveyDatasetSummary {
   id: string;
@@ -144,6 +151,9 @@ export interface DatasetInfo {
   rowCount: number;
   // Columnas del archivo, mapeadas o no (H-18).
   columnCount: number;
+  // Diseño y unidad de análisis de la fuente; null en ediciones subidas antes de pedirlos.
+  design: SourceDesign | null;
+  unit: AnalysisUnit | null;
 }
 
 export interface ViewPageParams {
@@ -249,6 +259,8 @@ export interface MappingColumn {
   suggested: string | null;
   suggestionSource: SuggestionSource | null;
   missingCodes: string[];
+  // Rol de diseño muestral guardado; null = ninguno.
+  role: SourceRole | null;
   // Tipo que sugieren los valores de esta edición, con sus códigos guardados.
   inferredType: ValueType;
   values: ColumnValues;
@@ -1265,6 +1277,8 @@ export class HarmonizerService implements OnApplicationBootstrap {
           year: dto.year,
           columns,
           rowCount: rows.length,
+          design: dto.design,
+          unit: dto.unit,
         },
       });
     } catch (err) {
@@ -1296,6 +1310,8 @@ export class HarmonizerService implements OnApplicationBootstrap {
         surveyName: survey.name,
         rowCount: dataset.rowCount,
         columnCount: dataset.columns.length,
+        design: dataset.design as SourceDesign | null,
+        unit: dataset.unit as AnalysisUnit | null,
       },
       renamedColumns: renamed,
       source,
@@ -1494,6 +1510,29 @@ export class HarmonizerService implements OnApplicationBootstrap {
     await Promise.all(aside.map((key) => this.storage.remove(key)));
   }
 
+  /**
+   * Changes the source design or unit of an edition. Census editions do not take sample design
+   * roles, so switching to census clears them; switching to sample leaves the weight to be
+   * marked in the mapping, which cannot be saved without it.
+   */
+  async updateDataset(datasetId: string, dto: UpdateDatasetDto): Promise<DatasetInfo> {
+    await this.getDataset(datasetId);
+    const dataset = await this.prisma.$transaction(async (tx) => {
+      if (dto.design === 'census') {
+        await tx.harmonizerMapping.updateMany({
+          where: { datasetId, role: { not: null } },
+          data: { role: null },
+        });
+      }
+      return tx.harmonizerDataset.update({
+        where: { id: datasetId },
+        data: { design: dto.design, unit: dto.unit },
+        include: { survey: true },
+      });
+    });
+    return this.toDatasetInfo(dataset);
+  }
+
   private toDatasetInfo(dataset: {
     id: string;
     name: string;
@@ -1501,6 +1540,8 @@ export class HarmonizerService implements OnApplicationBootstrap {
     surveyId: string;
     rowCount: number;
     columns: string[];
+    design: string | null;
+    unit: string | null;
     survey: { name: string };
   }): DatasetInfo {
     return {
@@ -1511,6 +1552,8 @@ export class HarmonizerService implements OnApplicationBootstrap {
       surveyName: dataset.survey.name,
       rowCount: dataset.rowCount,
       columnCount: dataset.columns.length,
+      design: dataset.design as SourceDesign | null,
+      unit: dataset.unit as AnalysisUnit | null,
     };
   }
 
@@ -1800,6 +1843,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
           canonicalId: m.canonicalVariableId,
           canonicalName: m.canonicalVariable.name,
           missingCodes: m.missingCodes,
+          role: m.role,
         })),
     };
   }
@@ -1853,6 +1897,9 @@ export class HarmonizerService implements OnApplicationBootstrap {
     );
     const savedCodesByColumn = new Map(
       saved.map((m) => [m.sourceColumn, m.missingCodes]),
+    );
+    const savedRoleByColumn = new Map(
+      saved.map((m) => [m.sourceColumn, m.role as SourceRole | null]),
     );
     const historicalByColumn = new Map<string, string>();
     for (const m of historical) {
@@ -1920,7 +1967,14 @@ export class HarmonizerService implements OnApplicationBootstrap {
           suggestedType: codebookSuggestedType(info, types.codebook.facts),
         };
       }
-      const base = { name, missingCodes: [] as string[], inferredType, values, codebook };
+      const base = {
+        name,
+        missingCodes: [] as string[],
+        role: null as SourceRole | null,
+        inferredType,
+        values,
+        codebook,
+      };
       const savedId = savedByColumn.get(name);
       if (savedId) {
         return {
@@ -1929,6 +1983,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
           suggested: null,
           suggestionSource: null,
           missingCodes: savedCodesByColumn.get(name) ?? [],
+          role: savedRoleByColumn.get(name) ?? null,
         };
       }
       const suggested = suggestion(name, info);
@@ -1990,6 +2045,13 @@ export class HarmonizerService implements OnApplicationBootstrap {
     const dataset = await this.getDataset(datasetId);
     const choiceByColumn = new Map(dto.columns.map((c) => [c.column, c]));
 
+    assertSourceRoles(
+      dataset.design,
+      dataset.columns.map((column) => {
+        const choice = choiceByColumn.get(column);
+        return { column, mapped: !!choice && isMappedChoice(choice), role: choice?.role };
+      }),
+    );
     await this.assertNewCanonicalNames(dataset, choiceByColumn);
     const saved = await this.prisma.harmonizerMapping.findMany({
       where: { datasetId },
@@ -2044,6 +2106,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
           column: string;
           canonicalId: string | null;
           missingCodes: string[];
+          role: SourceRole | null;
           dataType: ValueType | undefined;
         }[] = [];
         const columnsByCanonical = new Map<string, string[]>();
@@ -2068,6 +2131,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
             column,
             canonicalId,
             missingCodes: normalizeMissingCodes(choice?.missingCodes),
+            role: choice?.role ?? null,
             dataType: choice?.dataType,
           });
           if (canonicalId !== null) {
@@ -2094,22 +2158,31 @@ export class HarmonizerService implements OnApplicationBootstrap {
 
         const toDelete: string[] = [];
         const toInsert: Prisma.HarmonizerMappingCreateManyInput[] = [];
-        for (const { column, canonicalId, missingCodes } of resolved) {
+        for (const { column, canonicalId, missingCodes, role } of resolved) {
           const existing = savedByColumn.get(column);
           if (canonicalId === null) {
             if (existing) toDelete.push(existing.id);
           } else if (!existing) {
-            toInsert.push({ datasetId, sourceColumn: column, canonicalVariableId: canonicalId, missingCodes });
+            toInsert.push({
+              datasetId,
+              sourceColumn: column,
+              canonicalVariableId: canonicalId,
+              missingCodes,
+              role,
+            });
           } else if (existing.canonicalVariableId !== canonicalId) {
             // La recodificación es de la variable anterior: con otra variable no aplica.
             await tx.harmonizerMapping.update({
               where: { id: existing.id },
-              data: { canonicalVariableId: canonicalId, missingCodes, valueMap: {} },
+              data: { canonicalVariableId: canonicalId, missingCodes, role, valueMap: {} },
             });
-          } else if (existing.missingCodes.join('\u0000') !== missingCodes.join('\u0000')) {
+          } else if (
+            existing.missingCodes.join('\u0000') !== missingCodes.join('\u0000') ||
+            existing.role !== role
+          ) {
             await tx.harmonizerMapping.update({
               where: { id: existing.id },
-              data: { missingCodes },
+              data: { missingCodes, role },
             });
           }
         }
