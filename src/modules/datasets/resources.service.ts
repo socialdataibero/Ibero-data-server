@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-  UnprocessableEntityException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { access } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { OrgRole } from '@prisma/client';
@@ -12,13 +7,20 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { LocalStorageService } from '../storage/local-storage.service.js';
 import { AnalysisService } from '../analysis/analysis.service.js';
 import { HarmonizerService } from '../harmonizer/harmonizer.service.js';
-import { discardExportFile } from '../harmonizer/export-response.js';
 import type { AttachHarmonizedDto } from './dto/attach-harmonized.dto.js';
 
 const PARQUET_MAGIC = Buffer.from('PAR1', 'ascii');
 
-/** `Resource.sizeBytes` is a 32-bit integer. */
-export const MAX_RESOURCE_BYTES = 2_147_483_647;
+/**
+ * A resource as the API answers it. `sizeBytes` is a BIGINT in the database (an attached harmonized
+ * view can pass 2 GB) and a `bigint` in Prisma, which JSON cannot hold: it goes out as a number,
+ * exact up to 2^53 bytes (8 PiB), like `HarmonizerImport.fileSize`.
+ */
+export function toResourceResponse<T extends { sizeBytes: bigint }>(
+  resource: T,
+): Omit<T, 'sizeBytes'> & { sizeBytes: number } {
+  return { ...resource, sizeBytes: Number(resource.sizeBytes) };
+}
 
 export function looksLikeParquet(buffer: Buffer): boolean {
   return (
@@ -37,8 +39,12 @@ export class ResourcesService {
     private readonly harmonizer: HarmonizerService,
   ) {}
 
-  findAll(datasetId: string) {
-    return this.prisma.resource.findMany({ where: { datasetId }, orderBy: { createdAt: 'desc' } });
+  async findAll(datasetId: string) {
+    const resources = await this.prisma.resource.findMany({
+      where: { datasetId },
+      orderBy: { createdAt: 'desc' },
+    });
+    return resources.map(toResourceResponse);
   }
 
   async handoffContext(organizationId: string, datasetId: string, user: AuthenticatedUser) {
@@ -107,14 +113,6 @@ export class ResourcesService {
       ? await this.harmonizer.exportDataset(dto.editionId, 'parquet')
       : await this.harmonizer.exportSurvey(dto.surveyId!, 'parquet', dto.variables);
     const size = file.size ?? (Buffer.isBuffer(file.body) ? file.body.length : 0);
-    if (size > MAX_RESOURCE_BYTES) {
-      discardExportFile(file);
-      throw new UnprocessableEntityException({
-        code: 'resource_too_large',
-        message: `The file is ${size} bytes and a resource can be at most ${MAX_RESOURCE_BYTES}.`,
-        params: { size, maxBytes: MAX_RESOURCE_BYTES },
-      });
-    }
     const body = Buffer.isBuffer(file.body) ? Readable.from([file.body]) : file.body;
     const storageKey = await this.storage.saveStream(datasetId, file.filename, body);
     try {
@@ -139,7 +137,7 @@ export class ResourcesService {
       columns = null;
     }
 
-    return this.prisma.resource.create({
+    const resource = await this.prisma.resource.create({
       data: {
         datasetId,
         filename,
@@ -149,6 +147,7 @@ export class ResourcesService {
         columns: columns as any,
       },
     });
+    return toResourceResponse(resource);
   }
 
   async resolveFilePath(datasetId: string, resourceId: string): Promise<string> {

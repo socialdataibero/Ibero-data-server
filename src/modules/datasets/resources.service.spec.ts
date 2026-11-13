@@ -1,8 +1,8 @@
-import { BadRequestException, UnprocessableEntityException } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import { Readable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import type { ExportFile } from '../harmonizer/harmonizer.service.js';
-import { MAX_RESOURCE_BYTES, ResourcesService } from './resources.service.js';
+import { ResourcesService, toResourceResponse } from './resources.service.js';
 
 function setup(file: Partial<ExportFile> = {}) {
   const body = Readable.from([Buffer.from('PAR1....PAR1')]);
@@ -22,7 +22,12 @@ function setup(file: Partial<ExportFile> = {}) {
     resolvePath: vi.fn((key: string) => `/storage/${key}`),
     remove: vi.fn(async () => undefined),
   };
-  const prisma = { resource: { create: vi.fn(async ({ data }) => ({ id: 'r1', ...data })) } };
+  // Like Prisma: `sizeBytes` is a BIGINT column, read back as a `bigint`.
+  const prisma = {
+    resource: {
+      create: vi.fn(async ({ data }) => ({ id: 'r1', ...data, sizeBytes: BigInt(data.sizeBytes) })),
+    },
+  };
   const analysis = { describeSchema: vi.fn(async () => [{ name: 'EDAD', type: 'BIGINT' }]) };
   const harmonizer = {
     exportDataset: vi.fn(async () => exported),
@@ -65,7 +70,7 @@ describe('ResourcesService.attachHarmonized', () => {
         columns: [{ name: 'EDAD', type: 'BIGINT' }],
       },
     });
-    expect(resource).toMatchObject({ id: 'r1' });
+    expect(resource).toMatchObject({ id: 'r1', sizeBytes: 12 });
   });
 
   it('exports the survey with its variables', async () => {
@@ -74,14 +79,13 @@ describe('ResourcesService.attachHarmonized', () => {
     expect(harmonizer.exportSurvey).toHaveBeenCalledWith('s1', 'parquet', ['EDAD', 'SEXO']);
   });
 
-  it('refuses a file larger than a resource can record, and deletes it', async () => {
-    const { service, storage, body } = setup({ size: MAX_RESOURCE_BYTES + 1 });
-    await expect(service.attachHarmonized('d1', { editionId: 'e1' })).rejects.toMatchObject({
-      constructor: UnprocessableEntityException,
-      response: { code: 'resource_too_large', params: { size: MAX_RESOURCE_BYTES + 1 } },
-    });
-    expect(storage.saveStream).not.toHaveBeenCalled();
-    expect(body.destroyed).toBe(true);
+  it('saves a view over 2 GB (it no longer fits a 32-bit size) and answers its size as a number', async () => {
+    const size = 3_000_000_000;
+    const { service, storage } = setup({ size });
+    const resource = await service.attachHarmonized('d1', { editionId: 'e1' });
+    expect(storage.saveStream).toHaveBeenCalled();
+    expect(resource.sizeBytes).toBe(size);
+    expect(JSON.parse(JSON.stringify(resource))).toMatchObject({ sizeBytes: size });
   });
 
   it('removes the stored file when the resource cannot be created', async () => {
@@ -89,5 +93,15 @@ describe('ResourcesService.attachHarmonized', () => {
     prisma.resource.create.mockRejectedValueOnce(new Error('db down'));
     await expect(service.attachHarmonized('d1', { editionId: 'e1' })).rejects.toThrow('db down');
     expect(storage.remove).toHaveBeenCalledWith('d1/uuid-harmonized_Censo_2020.parquet');
+  });
+});
+
+describe('toResourceResponse', () => {
+  it('turns the BIGINT size into a JSON number, exact past 2^31 and 2^32', () => {
+    const resource = { id: 'r1', filename: 'a.parquet', sizeBytes: 5_000_000_000n };
+    expect(JSON.stringify(toResourceResponse(resource))).toBe(
+      '{"id":"r1","filename":"a.parquet","sizeBytes":5000000000}',
+    );
+    expect(() => JSON.stringify(resource)).toThrow(TypeError);
   });
 });

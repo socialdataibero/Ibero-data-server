@@ -281,7 +281,7 @@ Upload rules:
 
 - The file is exactly the Parquet of `GET /harmonizer/datasets/:editionId/harmonized.parquet` or `GET /harmonizer/surveys/:surveyId/harmonized.parquet`, with the same filename (see [Harmonized views](#harmonized-views)). Its errors come back as they are (`404 harmonizer_dataset_not_found`, `400 harmonized_view_empty`, `409 value_type_mismatch`, …).
 - The server writes it straight to storage, so it never goes through the browser and the 500 MB upload limit does not apply. The national census edition (383 MB, 15 million rows) takes about 20 seconds. Before, the web app downloaded the view and uploaded it again, which did not work for files that large.
-- A resource records its size as a 32-bit number, so a file over 2,147,483,647 bytes returns `422 resource_too_large` with `params: { size, maxBytes }`, and nothing is saved.
+- There is no size limit besides the disk: a resource records its size (`sizeBytes`) as a 64-bit number. Before 2026-11-12 it was 32-bit, and a view over 2,147,483,647 bytes returned `422 resource_too_large`.
 - The schema is read and stored as in an upload. The response is the new resource.
 - Same roles as an upload: `ADMIN` or `EDITOR` of the dataset's organization. Any logged-in user can read every survey of the harmonizer, so no permission on the survey is needed.
 

@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { LocalStorageService } from '../storage/local-storage.service.js';
 import type { CreateDatasetDto } from './dto/create-dataset.dto.js';
 import type { UpdateDatasetDto } from './dto/update-dataset.dto.js';
+import { toResourceResponse } from './resources.service.js';
 
 export type DatasetSort = 'recent' | 'title-asc' | 'title-desc' | 'year-desc' | 'year-asc';
 
@@ -136,7 +137,7 @@ export class DatasetsService {
     if (!dataset) {
       throw new NotFoundException({ code: 'dataset_not_found', message: 'Dataset not found.' });
     }
-    return dataset;
+    return { ...dataset, resources: dataset.resources.map(toResourceResponse) };
   }
 
   async create(organizationId: string, dto: CreateDatasetDto, ownerId: string) {

@@ -147,7 +147,7 @@ model Resource {
   datasetId  String
   filename   String
   format     String
-  sizeBytes  Int
+  sizeBytes  BigInt
   storageKey String
   /// Schema del parquet capturado al subir: [{ name, type }]. Se usa para
   /// poblar el selector de columnas del step-builder y validar el recipe
