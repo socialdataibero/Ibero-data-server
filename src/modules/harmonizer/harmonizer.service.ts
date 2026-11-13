@@ -105,6 +105,7 @@ import type { UpdateDatasetDto } from './dto/update-dataset.dto.js';
 import {
   assertSourceRoles,
   buildSourceMetadata,
+  sourceMetadataFooter,
   type AnalysisUnit,
   type MetadataEdition,
   type SourceDesign,
@@ -2688,12 +2689,14 @@ export class HarmonizerService implements OnApplicationBootstrap {
       });
     }
     const types = await this.exportTypes(dataset.surveyId, [edition], headers);
+    const metadata = buildSourceMetadata([metadataEdition(edition, edition.columns)], headers, types);
     return {
       ...file,
-      metadata: buildSourceMetadata([metadataEdition(edition, edition.columns)], headers, types),
+      metadata,
       ...(await this.parquetExportFile(
         [{ alias: 'e0', path: edition.path }],
         [editionParquetSql('e0', edition.columns, types)],
+        metadata,
       )),
     };
   }
@@ -2751,13 +2754,14 @@ export class HarmonizerService implements OnApplicationBootstrap {
       wanted,
     );
     const sources = included.map((i, n) => ({ alias: `e${n}`, path: i.edition.path! }));
+    const metadata = buildSourceMetadata(
+      included.map((i) => metadataEdition(i.edition, i.columns)),
+      ['_dataset', '_year', '_row', ...wanted],
+      types,
+    );
     return {
       ...file,
-      metadata: buildSourceMetadata(
-        included.map((i) => metadataEdition(i.edition, i.columns)),
-        ['_dataset', '_year', '_row', ...wanted],
-        types,
-      ),
+      metadata,
       ...(await this.parquetExportFile(
         sources,
         surveyParquetSql(
@@ -2770,6 +2774,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
           wanted,
           types,
         ),
+        metadata,
       )),
     };
   }
@@ -2962,12 +2967,19 @@ export class HarmonizerService implements OnApplicationBootstrap {
     );
   }
 
+  /** The Parquet of a harmonized view, with its source metadata in the footer when it has any. */
   private parquetExportFile(
     sources: NamedSource[],
     parts: string[],
+    metadata: SourceMetadata | null,
   ): Promise<Pick<ExportFile, 'body' | 'size'>> {
     return this.exportTempFile('parquet', (path) =>
-      this.analysisService.copyInternalQueryToParquet(sources, parts, path),
+      this.analysisService.copyInternalQueryToParquet(
+        sources,
+        parts,
+        path,
+        sourceMetadataFooter(metadata),
+      ),
     );
   }
 

@@ -90,6 +90,17 @@ export function assertSourceRoles(design: string | null, choices: RoleChoice[]):
 }
 
 /**
+ * Footer key (`KV_METADATA`) of a harmonized Parquet that holds its `SourceMetadata` as JSON, so
+ * the file describes itself outside the platform too.
+ */
+export const SOURCE_METADATA_KEY = 'socialdata_metadata';
+
+/** The footer of a harmonized Parquet: its metadata as JSON under one key, or nothing. */
+export function sourceMetadataFooter(metadata: SourceMetadata | null | undefined): Record<string, string> {
+  return metadata ? { [SOURCE_METADATA_KEY]: JSON.stringify(metadata) } : {};
+}
+
+/**
  * Metadata of a harmonized source, copied to a resource when a harmonized view is saved as one
  * ("Usar en un dataset"). It is a snapshot: later changes to the editions or their mappings do
  * not change it. Every per-column property except `name` and `type` is optional, `version` says

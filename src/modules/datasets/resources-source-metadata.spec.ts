@@ -1,10 +1,12 @@
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { Prisma } from '@prisma/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AnalysisService } from '../analysis/analysis.service.js';
 import { LocalStorageService } from '../storage/local-storage.service.js';
 import { HarmonizerService, rawStorageKey } from '../harmonizer/harmonizer.service.js';
+import { SOURCE_METADATA_KEY } from '../harmonizer/source-metadata.js';
 import { ResourcesService } from './resources.service.js';
 
 /**
@@ -78,7 +80,13 @@ async function setup() {
     harmonizerColumnCheck: { findMany: vi.fn(async () => []), createMany: vi.fn(async () => ({})) },
     resource: {
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
-        const resource = { id: `r${resources.length + 1}`, ...data, sizeBytes: BigInt(data.sizeBytes as number) };
+        // Like Prisma: BIGINT reads back as bigint, and a JSON `DbNull` as null.
+        const resource = {
+          id: `r${resources.length + 1}`,
+          ...data,
+          sizeBytes: BigInt(data.sizeBytes as number),
+          sourceMetadata: data.sourceMetadata === Prisma.DbNull ? null : data.sourceMetadata,
+        };
         resources.push(resource);
         return resource;
       }),
@@ -87,7 +95,7 @@ async function setup() {
   };
   const harmonizer = new HarmonizerService(prisma as never, analysis, storage);
   const service = new ResourcesService(prisma as never, storage, analysis, harmonizer);
-  return { service, prisma, edition, mappings };
+  return { service, prisma, edition, mappings, storage, analysis };
 }
 
 const expected = {
@@ -142,5 +150,32 @@ describe('"Usar en un dataset" copies the source metadata', () => {
     });
     const [first] = (await service.findAll('d1')) as Record<string, unknown>[];
     expect(first.sourceMetadata).toEqual(expected);
+  });
+});
+
+describe('"Usar en un dataset" keeps the metadata in the Parquet footer', () => {
+  it('the stored resource file has in its footer exactly the metadata of the record', async () => {
+    const { service, storage, analysis } = await setup();
+    const resource = (await service.attachHarmonized('d1', { editionId: 'ed1' })) as Record<string, unknown>;
+    // The file as it stays in storage, after the export's temporary file and the copy.
+    const path = storage.resolvePath(resource.storageKey as string);
+    expect(path.startsWith(root)).toBe(true);
+    const footer = await analysis.readKvMetadata(path);
+    expect(Object.keys(footer)).toEqual([SOURCE_METADATA_KEY]);
+    const fromFile = JSON.parse(footer[SOURCE_METADATA_KEY]);
+    expect(fromFile).toEqual(resource.sourceMetadata);
+    expect(fromFile).toMatchObject({
+      design: 'sample',
+      unit: 'person',
+      columns: expect.arrayContaining([{ name: 'EDAD', type: 'BIGINT', missingCodes: ['999'] }]),
+    });
+  });
+
+  it('a view without metadata (an edition uploaded before SDI-135) writes no footer key', async () => {
+    const { service, storage, analysis, edition } = await setup();
+    (edition as { design: string | null }).design = null;
+    const resource = (await service.attachHarmonized('d1', { editionId: 'ed1' })) as Record<string, unknown>;
+    expect(resource.sourceMetadata).toBeNull();
+    expect(await analysis.readKvMetadata(storage.resolvePath(resource.storageKey as string))).toEqual({});
   });
 });

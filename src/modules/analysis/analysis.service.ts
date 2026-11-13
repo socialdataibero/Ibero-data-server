@@ -229,18 +229,30 @@ export class AnalysisService {
    * A single SELECT keeps the order of its source, but `UNION ALL` does not keep the order of
    * its parts (it mixed a small edition into a large one). So, with several parts, each one is
    * written to its own file and the files are then read back in order, which DuckDB keeps.
+   *
+   * `kvMetadata` goes in the footer of the file as key-value pairs (`KV_METADATA`). It is written
+   * by the COPY that writes `destPath`, in the same pass: a Parquet footer cannot be edited later
+   * without rewriting the whole file.
    */
   async copyInternalQueryToParquet(
     sources: NamedSource[],
     parts: string[],
     destPath: string,
+    kvMetadata: Record<string, string> = {},
   ): Promise<void> {
     const duckdb = await this.openInstance();
     const connection = await duckdb.instance.connect();
     const partPaths =
       parts.length > 1 ? parts.map((_, i) => `${destPath}.part${i}.parquet`) : [];
+    const kv = Object.entries(kvMetadata).map(
+      ([key, value]) => `'${escapeSqlLiteral(key)}': '${escapeSqlLiteral(value)}'`,
+    );
+    const options = (path: string) =>
+      path === destPath && kv.length > 0
+        ? `FORMAT PARQUET, KV_METADATA { ${kv.join(', ')} }`
+        : 'FORMAT PARQUET';
     const copy = (sql: string, path: string) =>
-      connection.run(`COPY (${sql}) TO '${escapeSqlLiteral(path)}' (FORMAT PARQUET)`);
+      connection.run(`COPY (${sql}) TO '${escapeSqlLiteral(path)}' (${options(path)})`);
     try {
       for (const source of sources) {
         await connection.run(
@@ -337,6 +349,25 @@ export class AnalysisService {
       });
     } catch (err) {
       throw safeDuckDbError(err, [parquetPath], 'schema_read_failed');
+    }
+  }
+
+  /**
+   * The key-value pairs of a Parquet file's footer (`KV_METADATA`), as text. DuckDB gives them
+   * as BLOBs; they are decoded as UTF-8.
+   */
+  async readKvMetadata(parquetPath: string): Promise<Record<string, string>> {
+    try {
+      return await this.withViews([], async (connection) => {
+        const reader = await connection.runAndReadAll(
+          `SELECT decode(key) AS key, decode(value) AS value FROM parquet_kv_metadata('${escapeSqlLiteral(parquetPath)}')`,
+        );
+        return Object.fromEntries(
+          reader.getRowObjects().map((row) => [String(row.key), String(row.value)]),
+        );
+      });
+    } catch (err) {
+      throw safeDuckDbError(err, [parquetPath], 'parquet_read_failed');
     }
   }
 
