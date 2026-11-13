@@ -102,8 +102,64 @@ describe('toResourceResponse', () => {
   it('turns the BIGINT size into a JSON number, exact past 2^31 and 2^32', () => {
     const resource = { id: 'r1', filename: 'a.parquet', sizeBytes: 5_000_000_000n };
     expect(JSON.stringify(toResourceResponse(resource))).toBe(
-      '{"id":"r1","filename":"a.parquet","sizeBytes":5000000000}',
+      '{"id":"r1","filename":"a.parquet","sizeBytes":5000000000,"sourceMetadata":null}',
     );
     expect(() => JSON.stringify(resource)).toThrow(TypeError);
+  });
+});
+
+describe('the resource in the API: source metadata (SDI-138)', () => {
+  // As Postgres gives it back: jsonb sorts the keys, and a newer writer may add properties.
+  const stored = {
+    unit: 'person',
+    design: 'sample',
+    columns: [
+      { name: 'EDAD', type: 'BIGINT', missingCodes: ['999'] },
+      { name: 'FAC', role: 'weight', type: 'BIGINT', universe: 'all' },
+    ],
+    version: 1,
+    sourceEditionIds: ['ed1'],
+    missingCodesAreNull: true,
+  };
+  const metadata = {
+    version: 1,
+    design: 'sample',
+    unit: 'person',
+    sourceEditionIds: ['ed1'],
+    missingCodesAreNull: true,
+    columns: [
+      { name: 'EDAD', type: 'BIGINT', missingCodes: ['999'] },
+      { name: 'FAC', type: 'BIGINT', role: 'weight' },
+    ],
+  };
+  const row = (id: string, sourceMetadata: unknown) => ({
+    id,
+    datasetId: 'd1',
+    filename: `${id}.parquet`,
+    format: 'parquet',
+    sizeBytes: 10n,
+    storageKey: `d1/${id}.parquet`,
+    columns: [],
+    sourceMetadata,
+    createdAt: new Date(0),
+  });
+
+  function listService(rows: unknown[]) {
+    const prisma = { resource: { findMany: vi.fn(async () => rows) } };
+    return new ResourcesService(prisma as never, {} as never, {} as never, {} as never);
+  }
+
+  it('a resource with metadata answers design, unit, edition ids and, per column, codes and role', async () => {
+    const [resource] = await listService([row('r1', stored)]).findAll('d1');
+    expect(resource.sourceMetadata).toEqual(metadata);
+    // The JSON a client receives.
+    expect(JSON.parse(JSON.stringify(resource)).sourceMetadata).toEqual(metadata);
+  });
+
+  it('a resource without metadata answers sourceMetadata: null, without failing', async () => {
+    const [uploaded, broken] = await listService([row('r2', null), row('r3', { version: 7 })]).findAll('d1');
+    expect(uploaded).toHaveProperty('sourceMetadata', null);
+    expect(broken).toHaveProperty('sourceMetadata', null);
+    expect(JSON.parse(JSON.stringify(uploaded))).toHaveProperty('sourceMetadata', null);
   });
 });

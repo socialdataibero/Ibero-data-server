@@ -19,11 +19,21 @@ const PARQUET_MAGIC = Buffer.from('PAR1', 'ascii');
  * A resource as the API answers it. `sizeBytes` is a BIGINT in the database (an attached harmonized
  * view can pass 2 GB) and a `bigint` in Prisma, which JSON cannot hold: it goes out as a number,
  * exact up to 2^53 bytes (8 PiB), like `HarmonizerImport.fileSize`.
+ *
+ * `sourceMetadata` always goes out: the metadata of its harmonized source with the properties this
+ * version knows, or `null` for resources without it (uploaded files, older resources).
  */
-export function toResourceResponse<T extends { sizeBytes: bigint }>(
+export function toResourceResponse<T extends { sizeBytes: bigint; sourceMetadata?: unknown }>(
   resource: T,
-): Omit<T, 'sizeBytes'> & { sizeBytes: number } {
-  return { ...resource, sizeBytes: Number(resource.sizeBytes) };
+): Omit<T, 'sizeBytes' | 'sourceMetadata'> & {
+  sizeBytes: number;
+  sourceMetadata: SourceMetadata | null;
+} {
+  return {
+    ...resource,
+    sizeBytes: Number(resource.sizeBytes),
+    sourceMetadata: parseSourceMetadata(resource.sourceMetadata),
+  };
 }
 
 export function looksLikeParquet(buffer: Buffer): boolean {
