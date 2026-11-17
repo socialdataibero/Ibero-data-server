@@ -11,4 +11,5 @@ export interface AuthenticatedUser {
   email: string;
   fullName: string;
   isSysadmin: boolean;
+  tokenVersion: number;
 }
