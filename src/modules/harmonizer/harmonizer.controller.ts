@@ -38,6 +38,8 @@ import { RenameCanonicalVariableDto } from './dto/rename-canonical-variable.dto.
 import { CreateCodebookDto } from './dto/create-codebook.dto.js';
 import { SetDatasetCodebookDto } from './dto/set-dataset-codebook.dto.js';
 import { SaveRecodingDto } from './dto/save-recoding.dto.js';
+import { UpdateDatasetDto } from './dto/update-dataset.dto.js';
+import { missingSourceInfo, sourceInfoRequiredBody } from './source-metadata.js';
 
 const MAX_CSV_BYTES = 200 * 1024 * 1024;
 
@@ -265,6 +267,11 @@ export class HarmonizerController {
     @CurrentUser() user: AuthenticatedUser,
     @UploadedFile() file?: Express.Multer.File,
   ) {
+    const missing = missingSourceInfo(dto);
+    if (missing.length > 0) {
+      const { statusCode: _status, ...body } = sourceInfoRequiredBody(missing);
+      throw new BadRequestException(body);
+    }
     if (dto.surveyId === NEW_SURVEY) {
       if (!dto.organizationId) {
         throw new BadRequestException({
@@ -313,6 +320,17 @@ export class HarmonizerController {
   ) {
     await this.access.assertCanEditDataset(user, datasetId);
     return this.harmonizerService.saveMapping(datasetId, dto);
+  }
+
+  /** Changes the source design or unit of analysis of an edition. */
+  @Patch('datasets/:datasetId')
+  async updateDataset(
+    @Param('datasetId') datasetId: string,
+    @Body() dto: UpdateDatasetDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.access.assertCanEditDataset(user, datasetId);
+    return this.harmonizerService.updateDataset(datasetId, dto);
   }
 
   @Delete('datasets/:datasetId')

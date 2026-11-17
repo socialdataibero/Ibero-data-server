@@ -20,10 +20,11 @@ import {
   type RenamedColumn,
   type UploadSource,
 } from '../harmonizer.service.js';
+import type { AnalysisUnit, SourceDesign } from '../source-metadata.js';
 import type { UploadEncoding } from '../dto/upload-dataset.dto.js';
 import { importCsvFile, type ImportPhase } from './csv-file.js';
 import { cachedColumnChecks } from '../column-check-store.js';
-import { columnTypeQuery } from '../column-checks.js';
+import { columnTypeQuery, jsTrimSql } from '../column-checks.js';
 import {
   ImportError,
   importErrorBody,
@@ -81,6 +82,7 @@ interface ReadFile {
 export class HarmonizerImportProcessor {
   private readonly logger = new Logger(HarmonizerImportProcessor.name);
   private readonly dbfMaxBytes = uploadConfig().dbfMaxBytes;
+  private readonly maxUncompressedBytes = uploadConfig().maxUncompressedBytes;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -248,6 +250,7 @@ export class HarmonizerImportProcessor {
     const { header, rowCount } = await importCsvFile({
       path,
       gzip: format === 'csv_gz',
+      maxUncompressedBytes: this.maxUncompressedBytes,
       settings: this.duckdb.settings,
       parquetPath,
       originalPath: this.storage.resolvePath(originalKey),
@@ -345,6 +348,8 @@ export class HarmonizerImportProcessor {
             year: record.year,
             columns: read.columns,
             rowCount: read.rowCount,
+            design: record.design,
+            unit: record.unit,
           },
         });
         return { survey, dataset };
@@ -365,6 +370,8 @@ export class HarmonizerImportProcessor {
         surveyName: survey.name,
         rowCount: dataset.rowCount,
         columnCount: dataset.columns.length,
+        design: dataset.design as SourceDesign | null,
+        unit: dataset.unit as AnalysisUnit | null,
       },
       renamedColumns: read.renamed,
       source: read.source,
@@ -398,6 +405,7 @@ export class HarmonizerImportProcessor {
         this.storage.resolvePath(rawStorageKey(datasetId)),
         columns.map((_, i) => `c${i}`),
         PROFILE_MAX_VALUES,
+        jsTrimSql,
       );
       await this.prisma.harmonizerColumnProfile.createMany({
         data: columns.map((column, i) => ({

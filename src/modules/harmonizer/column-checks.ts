@@ -21,9 +21,14 @@ export const JS_WHITESPACE_CODES = [
 ];
 const JS_WHITESPACE_SQL = JS_WHITESPACE_CODES.map((c) => `chr(${c})`).join(' || ');
 
-/** `value.trim()` in SQL. DuckDB's one-argument `trim` only removes spaces. */
+/** `value.trim()` in SQL, with NULL as `''`. DuckDB's one-argument `trim` only removes spaces. */
 export function jsTrimSql(expr: string): string {
-  return `trim(coalesce(${expr}, ''), ${JS_WHITESPACE_SQL})`;
+  return jsTrimNullableSql(`coalesce(${expr}, '')`);
+}
+
+/** `value.trim()` in SQL, keeping NULL as NULL (a missing value stays missing). */
+export function jsTrimNullableSql(expr: string): string {
+  return `trim(${expr}, ${JS_WHITESPACE_SQL})`;
 }
 
 export function sqlString(value: string): string {

@@ -1,7 +1,7 @@
 import { quoteIdent } from '../analysis/recipe.js';
 import type { ParquetColumnType } from '../analysis/analysis.service.js';
 import { stringify } from 'csv-stringify/sync';
-import { PLAIN_NUMBER, jsTrimSql, sqlString } from './column-checks.js';
+import { PLAIN_NUMBER, jsTrimNullableSql, jsTrimSql, sqlString } from './column-checks.js';
 import { neutralizeCsvFormula } from './harmonized-view.js';
 
 /**
@@ -75,9 +75,13 @@ function cellSql(column: ExportColumn, r: string, t: string): string {
   return `CASE WHEN ${missing} THEN NULL ELSE ${value} END`;
 }
 
-/** `writeRowsToParquet`'s conversion of a text value to a Parquet type. */
+/**
+ * `writeRowsToParquet`'s conversion of a text value to a Parquet type. The value is trimmed like
+ * the type checks trim it (JavaScript's `trim`: BOM, tabs, no-break spaces too), so a value they
+ * accept as a number, such as `\ufeff1`, converts; DuckDB's `TRIM` alone only removes spaces.
+ */
 function typed(expr: string, type: ParquetColumnType | undefined): string {
-  return !type || type === 'VARCHAR' ? expr : `CAST(TRIM(${expr}) AS ${type})`;
+  return !type || type === 'VARCHAR' ? expr : `CAST(${jsTrimNullableSql(expr)} AS ${type})`;
 }
 
 /**

@@ -96,6 +96,7 @@ npm run start:worker
 | `API_DUCKDB_TEMP_DIR` | No | empty (`<OS temp>/ibero-duckdb-api`) | Where DuckDB in the API spills to disk. Created if missing; each query uses its own folder inside it and deletes it when done. |
 | `UPLOAD_DIR` | No | empty (`storage/uploads`) | Where harmonizer uploads arrive through tus, until the worker imports them. |
 | `UPLOAD_MAX_BYTES` | No | `10737418240` (10 GiB) | Largest harmonizer upload through tus. |
+| `UPLOAD_MAX_UNCOMPRESSED_BYTES` | No | `UPLOAD_MAX_BYTES` | Largest CSV inside a `.csv.gz` upload, once decompressed. By default a `.csv.gz` cannot hold more than could be uploaded uncompressed: compressing makes the upload faster, it does not raise the limit. |
 | `DBF_MAX_BYTES` | No | `209715200` (200 MiB) | Largest DBF upload: a DBF is read whole into the worker's memory. |
 | `UPLOAD_EXPIRATION_HOURS` | No | `24` | An unfinished upload is deleted this long after it started. |
 
@@ -141,6 +142,8 @@ CORS is open to every origin. The `Content-Disposition` header is exposed so the
 **Pagination.** List endpoints that paginate accept `limit` and `offset` and return `{ total, items }`. Unless stated otherwise, `limit` defaults to 100 and is clamped to 1–200.
 
 **Search.** Where `q` and `term` are accepted, `q` is the main text search and each `term` (repeatable) is an extra filter. All of them must match (AND). Matching is case-insensitive.
+
+**Stopping.** On `SIGTERM` or `SIGINT` (also when watch mode restarts it) the API runs its shutdown hooks before exiting: it closes the HTTP server, the connections to PostgreSQL and Redis, and deletes the files of prepared downloads (see [Direct downloads](#direct-downloads)). Open connections are cut, not waited for: a download being sent stops half way, and a tus upload loses only the chunk being sent: the web app retries for about 20 seconds and continues from the last byte stored if the API is back by then. The worker stops differently (see [Background jobs](#background-jobs)).
 
 **Identifiers.** All IDs are UUIDs. Slugs accept only lowercase letters, numbers and hyphens (`^[a-z0-9-]+$`).
 
@@ -278,9 +281,39 @@ Upload rules:
 
 - The file is exactly the Parquet of `GET /harmonizer/datasets/:editionId/harmonized.parquet` or `GET /harmonizer/surveys/:surveyId/harmonized.parquet`, with the same filename (see [Harmonized views](#harmonized-views)). Its errors come back as they are (`404 harmonizer_dataset_not_found`, `400 harmonized_view_empty`, `409 value_type_mismatch`, …).
 - The server writes it straight to storage, so it never goes through the browser and the 500 MB upload limit does not apply. The national census edition (383 MB, 15 million rows) takes about 20 seconds. Before, the web app downloaded the view and uploaded it again, which did not work for files that large.
-- A resource records its size as a 32-bit number, so a file over 2,147,483,647 bytes returns `422 resource_too_large` with `params: { size, maxBytes }`, and nothing is saved.
+- There is no size limit besides the disk: a resource records its size (`sizeBytes`) as a 64-bit number. Before 2026-11-12 it was 32-bit, and a view over 2,147,483,647 bytes returned `422 resource_too_large`.
 - The schema is read and stored as in an upload. The response is the new resource.
+- The resource also keeps a copy of the source metadata in `sourceMetadata` (see [Source metadata](#source-metadata)).
 - Same roles as an upload: `ADMIN` or `EDITOR` of the dataset's organization. Any logged-in user can read every survey of the harmonizer, so no permission on the survey is needed.
+
+### Source metadata
+
+A resource saved from the harmonizer keeps what was declared about its source in the harmonizer ([Source design](#source-design) and the mapping): `sourceMetadata`. Uploaded files and resources created before 2026-11-13 have `null`.
+
+```json
+{
+  "version": 1,
+  "design": "sample",
+  "unit": "person",
+  "sourceEditionIds": ["2914422d-…"],
+  "missingCodesAreNull": true,
+  "columns": [
+    { "name": "FOLIO", "type": "BIGINT" },
+    { "name": "EDAD", "type": "BIGINT", "missingCodes": ["999"] },
+    { "name": "FAC", "type": "BIGINT", "role": "weight" }
+  ]
+}
+```
+
+- `design` and `unit` are those of the edition, and `columns` lists every column of the file in order, with its Parquet `type` (the same `name` and `type` as `columns`).
+- `missingCodes` are the column's "not specified" codes in the mapping. `missingCodesAreNull: true` says that those values, and empty cells, are already `NULL` in the file: the codes are kept to describe the source, not to filter it again. `role` is the column's [sample design role](#source-design). Both are left out when the column has none.
+- `sourceEditionIds` are the editions the data comes from, only to trace it back (for example, to warn later that a mapping changed). Nothing is computed from them.
+- It is a snapshot taken when the resource is created. Changing the edition's design, unit or mapping afterwards does not change it, and reading a resource never looks at the harmonizer.
+- A survey view gets metadata only when all its included editions (those that have any of the chosen variables) have the same design and unit, and their expansion factors are the same canonical variable. Otherwise, and when an edition has no design or unit, `sourceMetadata` is `null`. In a survey view, `missingCodes` joins the codes of every edition, and a column has a role only when every edition gives it that role. The origin columns `_dataset`, `_year` and `_row` have only `name` and `type`.
+- The shape can grow: per-column properties other than `name` and `type` are optional, `version` names the shape, and readers ignore properties they do not know.
+- **In the API.** Every resource object has `sourceMetadata`: in `GET .../resources`, in the `resources` of `GET /organizations/:organizationId/datasets/:datasetId`, and in the response of an upload or of `from-harmonizer`. It comes with the properties of version 1 only and in the order shown above. It is `null`, explicitly, when the resource has none (uploaded files, resources created before 2026-11-13, mixed survey views) or when what is stored cannot be read as version 1; the request never fails because of it. It goes with the resource, not with its schema, because that is where the web app's analysis builder already reads the columns (`columns`).
+- **For analyses.** `ResourceMetadataService.forResource(datasetId, resourceId)` (module `analysis`, file `resource-metadata.ts`) returns a resource's metadata or `null` (`404 resource_not_found` if the resource is not in that dataset). The helpers `weightColumn`, `roleColumn`, `missingCodesOf`, `columnMetadata` and `isSample` in the same file read it, so future quality panels, weighted estimates and templates do not parse the JSON themselves. Both read the database copy: never the Parquet footer (slower) nor the harmonizer.
+- **In the file.** The same object is in the footer of the resource's Parquet, as JSON under the key `socialdata_metadata` (key-value metadata, written with DuckDB's `KV_METADATA`). Its content is the same as `sourceMetadata`; only the key order can differ, because the database stores JSON as `jsonb`. It is written by the same `COPY` that writes the data, with no extra pass over the file (a Parquet footer cannot be edited without rewriting the whole file), and the server then copies the file to storage byte by byte. Reading it: `SELECT decode(key), decode(value) FROM parquet_kv_metadata('file.parquet')` in DuckDB, or `pyarrow.parquet.read_metadata(path).metadata[b'socialdata_metadata']` in Python. The API reads `sourceMetadata` from the database, never from the file.
 
 Query rules:
 
@@ -420,6 +453,7 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 | `HEAD`, `PATCH`, `DELETE` | `/harmonizer/uploads/:importId` | Continue (tus `PATCH`), check (`HEAD`) or cancel (`DELETE`) an upload. |
 | `GET` | `/harmonizer/imports/:importId` | Status of an upload and of its import. See [Imports](#imports). |
 | `POST` | `/harmonizer/upload` | Upload an edition in one request (multipart), as CSV or DBF. Up to 200 MB, read in memory. The web app uses tus instead. |
+| `PATCH` | `/harmonizer/datasets/:datasetId` | Change the source `design` and/or `unit` of an edition. See [Source design](#source-design). |
 | `DELETE` | `/harmonizer/datasets/:datasetId` | Delete one edition, its mapping and its stored file. Returns `204`. |
 | `GET` | `/harmonizer/datasets/:datasetId/mapping` | Columns of an edition with saved or suggested mappings. |
 | `PUT` | `/harmonizer/datasets/:datasetId/mapping` | Save the mapping of an edition. |
@@ -469,11 +503,11 @@ There are two ways to upload an edition. Both read the file with the same rules 
 - **tus** (`POST /harmonizer/uploads`, used by the web app): a resumable upload protocol ([tus 1.0](https://tus.io/protocols/resumable-upload)). The file arrives in chunks (the web app sends 50 MB per request) and a chunk that fails is sent again, so files of several gigabytes can be uploaded. The server writes the file to disk as it arrives and never holds it in memory. When it is complete, the worker process reads it and creates the edition in the background; the client follows it with `GET /harmonizer/imports/:importId` (see [Imports](#imports)). Up to `UPLOAD_MAX_BYTES` (10 GiB by default).
 - **One request** (`POST /harmonizer/upload`, multipart): the file is read in memory and the response is the new edition. Up to 200 MB. Kept for scripts; large files can take the server down.
 
-Fields: `file`, `name` (edition name, required), `year` (1900–2100), `surveyId`, `newSurvey`, `organizationId` (with `__new__`), and `encoding` (DBF only, see [DBF files](#dbf-files)).
+Fields: `file`, `name` (edition name, required), `year` (1900–2100), `surveyId`, `newSurvey`, `organizationId` (with `__new__`), `encoding` (DBF only, see [DBF files](#dbf-files)), and `design` and `unit` (both required, see [Source design](#source-design)).
 
 With tus, the fields go in the `Upload-Metadata` header of the `POST`, with the same names, except that the edition name is `editionName` (tus clients such as Uppy use `name` for the file name) and the file name is `filename`. Every request needs the session token (`Authorization: Bearer …`). The `POST` checks, before any byte is sent and in this order, everything that does not need the file's content, with the same codes as the one-request upload:
 
-1. The fields (`400 validation_error`, with `details` naming `name`, `year`, …, or `filename`), and the file size (`400 upload_length_required` if the client does not send it).
+1. The fields (`400 validation_error`, with `details` naming `name`, `year`, …, or `filename`), and the file size (`400 upload_length_required` if the client does not send it). Then the source design and unit: `400 source_info_required` if either is missing (see [Source design](#source-design)).
 2. Permissions: `400 survey_organization_required`, `404 organization_not_found`, `403 survey_org_role_required`, `404 survey_not_found`, `403 survey_not_editable`.
 3. Size: `413 upload_too_large` (over `UPLOAD_MAX_BYTES`) or `413 dbf_too_large` (a `.dbf` over `DBF_MAX_BYTES`), with `params: { maxBytes, size }`.
 4. Names: `400 new_survey_name_required`, `409 survey_name_taken`, `409 dataset_name_taken`.
@@ -482,7 +516,7 @@ Errors are JSON with the usual shape (`{ statusCode, code, message, params? }`).
 
 Errors that need the file's content (encoding, CSV structure, DBF problems, empty files) cannot be known before it arrives, so with tus they are reported by the import, with the same body.
 
-File formats, by name: `.dbf` is a DBF table, `.gz` a gzip-compressed CSV (`.csv.gz`, tus only; a broken one fails with `400 gzip_invalid`), anything else a CSV.
+File formats, by name: `.dbf` is a DBF table, `.gz` a gzip-compressed CSV (`.csv.gz`, tus only; a broken one fails with `400 gzip_invalid`, and one whose CSV is larger than `UPLOAD_MAX_UNCOMPRESSED_BYTES` once decompressed fails with `413 gzip_too_large`, `params: { maxBytes }`), anything else a CSV.
 
 - `surveyId` is an existing survey ID, or `__new__` to create a survey named `newSurvey` in the same request.
   - With `__new__`, `newSurvey` is required (`400 new_survey_name_required`) and must not be taken (`409 survey_name_taken`).
@@ -493,6 +527,7 @@ File formats, by name: `.dbf` is a DBF table, `.gz` a gzip-compressed CSV (`.csv
 - The file must be valid UTF-8 (a BOM is allowed). Any other encoding, such as Latin-1, returns `400 csv_not_utf8` with the line of the first invalid byte, instead of storing accented characters as `�`.
 - The file must have a header and at least one data row. A file with no header (for example 0 bytes or only blank lines) returns `400 csv_empty`; a file with a header but no data rows returns `400 csv_no_rows` (report H-08).
 - The response is `{ datasetId, dataset, renamedColumns, source }`. `source` says how the file was read, so the client can tell the user; it is not stored. It is `{ format: "csv" }`, or for a DBF `{ format: "dbf", encoding, encodingSource, deletedRecords }`. `dataset` includes `rowCount`, the number of data rows read (the header and skipped blank lines are not counted), so the client can check that nothing was dropped (report H-09). The same `dataset` object, with `rowCount`, is returned by `GET .../mapping` and the edition's harmonized view. It also includes `columnCount`, the number of columns in the uploaded file whether mapped or not, because the harmonized view only shows mapped columns (report H-18).
+- `dataset` also includes `design` and `unit` (see [Source design](#source-design)), here and in every response that returns it.
 - The file is checked before anything is written, so a rejected upload with `__new__` does not create the survey.
 - The first row is the header. A leading BOM is removed, blank lines are skipped, and values are kept exactly as written: no trimming and no type conversion. Every value is stored as text, and empty cells are `""`.
 - Headers are trimmed (leading and trailing spaces removed) before anything else. Spaces inside a name are kept.
@@ -501,6 +536,33 @@ File formats, by name: `.dbf` is a DBF table, `.gz` a gzip-compressed CSV (`.csv
 - All columns are stored, including those that are never mapped.
 - The edition name, after trimming, must be unique within its survey, because it is the `_dataset` of the survey view. A repeated name returns `409 dataset_name_taken` and nothing is written. Names are compared exactly (case and accents matter).
 - Uploading never changes other editions. Uploading the same file twice under two names creates two editions.
+
+### Source design
+
+Every upload declares two facts about its source, which travel with the edition so analyses can use them later:
+
+- `design`: `census` (every unit was enumerated) or `sample` (each record stands for several units and the source has an expansion factor).
+- `unit`: the unit of analysis, what each record is: `person`, `dwelling` or `household`.
+
+Rules:
+
+- Both are required in both upload ways. An upload without one or both returns `400 source_info_required`, with `params: { missing }` listing `design`, `unit` or both, and a `message` naming each one (for example "Missing the source design (census or sample) and the unit of analysis (person, dwelling or household)."). An empty field counts as missing. Any other value returns `400 validation_error` (`design must be one of: census, sample.`). Both checks run with the other field checks, before permissions and before any byte of a tus upload.
+- `PATCH /harmonizer/datasets/:datasetId` with `{ design?, unit? }` changes them (same permission as saving the mapping). Switching to `census` removes every role of the edition's mapping. Switching to `sample` keeps the mapping as it is; it cannot be saved again until a column is marked as `weight`. It returns the edition's `dataset` object.
+- Editions uploaded before these fields existed have `design: null` and `unit: null`. Their mapping saves as before, without roles, and `PATCH` sets them.
+
+In a `sample` edition the mapping can give a column a sample design role (`role` in `PUT .../mapping`):
+
+| `role` | Meaning |
+| --- | --- |
+| `weight` | Expansion factor: how many units of the population the record stands for. Required in sample editions. |
+| `stratum` | Stratum of the sample design. Optional. |
+| `psu` | Primary sampling unit (UPM). Optional. |
+
+- Saving the mapping of a `sample` edition with no column marked `weight` returns `400 sample_weight_required`.
+- Each role can be in at most one column (`400 source_role_repeated`, `params: { role, columns }`). A column has at most one role.
+- A role needs a mapped column, because unmapped columns are not in the harmonized view (`400 source_role_unmapped`, `params: { column, role }`).
+- `census` editions, and editions without a design, take no roles (`400 source_role_not_allowed`, `params: { column, role, design }`).
+- These checks run before anything is saved. The role belongs to the mapping: unmapping the column discards it.
 
 ### Imports
 
@@ -520,7 +582,7 @@ The response also has `fileName`, `fileSize`, `format` (`csv`, `csv_gz` or `dbf`
 
 How the worker imports a CSV (see [Background jobs](#background-jobs)):
 
-1. It reads the whole file once to check that it is UTF-8 (`csv_not_utf8` with the line of the first bad byte), before parsing anything, as the one-request upload does. In the same pass it keeps the original, gzip-compressed (see [Original file](#original-file)).
+1. It reads the whole file once to check that it is UTF-8 (`csv_not_utf8` with the line of the first bad byte), before parsing anything, as the one-request upload does. A `.csv.gz` is decompressed as it is read and stops with `413 gzip_too_large` as soon as it passes `UPLOAD_MAX_UNCOMPRESSED_BYTES`, so a small file that decompresses to a huge one never reaches the Parquet. In the same pass it keeps the original, gzip-compressed (see [Original file](#original-file)); this is always done, for every CSV uploaded with tus.
 2. It reads it again, row by row, with the same parser and options as the one-request upload, and writes the edition's Parquet through a DuckDB database file in `DUCKDB_TEMP_DIR`, so a file larger than `DUCKDB_MEMORY_LIMIT` spills to disk. Values, quotes, blank lines, headers (trimmed, repeated, empty) and every CSV error are the same as in the one-request upload.
 3. It checks the names again (another upload may have taken them meanwhile) and creates the survey (with `__new__`) and the edition in one transaction, so a failure leaves neither.
 4. It computes the value profiles of every column and the suggested type of each one (as `GET .../mapping` first asks for it, see [Variable types](#variable-types)). If that fails, they are computed later when needed; the import does not fail for it.
@@ -552,7 +614,7 @@ dBase and FoxPro tables (`.dbf`), as INEGI distributes its census microdata, are
 
 ### Mapping
 
-`GET .../mapping` returns each column with `selectedCanonicalId`, `suggested`, `suggestionSource`, `missingCodes` (the saved missing-value codes; `[]` for unsaved columns, suggestions never fill it) and `inferredType` (see [Variable types](#variable-types)). `canonicalVariables` lists the survey's canonicals as `{ id, name, dataType }`, where `dataType` is the confirmed type or `null`. For each column, the first of these that applies is used:
+`GET .../mapping` returns each column with `selectedCanonicalId`, `suggested`, `suggestionSource`, `missingCodes` (the saved missing-value codes; `[]` for unsaved columns, suggestions never fill it), `role` (the saved [sample design role](#source-design) or `null`) and `inferredType` (see [Variable types](#variable-types)). `canonicalVariables` lists the survey's canonicals as `{ id, name, dataType }`, where `dataType` is the confirmed type or `null`. For each column, the first of these that applies is used:
 
 1. **Saved**: the mapping already saved for this edition. No suggestion is shown.
 2. **History** (`suggestionSource: "history"`): a column with exactly the same name was mapped in another edition of the same survey.
@@ -566,7 +628,7 @@ Each column also has `values`, a summary of its values in this edition so they c
 
 - It comes from the column's stored **profile** (see [Codes between editions](#codes-between-editions)): its 200 most frequent distinct values over the whole file, with their counts, and its empty cells. The rows are not read again.
 - `top` has up to 5 `{ value, count }`, most frequent first; on a tie, in alphabetical order.
-- Values are trimmed and counted as they are in the file. Missing-value codes are not removed, so a `9` or `99` shows up before it is marked as missing. Empty or blank cells are not values: they are counted in `empty`.
+- Values are trimmed and counted as they are in the file. Trimming, here and in the rest of the harmonizer (missing codes, recoding, views, type checks), removes what JavaScript's `trim()` removes: spaces, tabs, line breaks, no-break spaces and the BOM character (U+FEFF). So `1`, ` 1` and `\ufeff1` are the same value, counted together. Missing-value codes are not removed, so a `9` or `99` shows up before it is marked as missing. Empty or blank cells are not values: they are counted in `empty`.
 - `distinct` is the number of different values, counted up to 200. When a column has more, `distinct` is `200` and `distinctCapped` is `true`.
 
 The response also has:
@@ -579,9 +641,9 @@ The response also has:
 
 Suggestions are preselected in the response but are not saved until the client sends `PUT`.
 
-`GET .../mapping/saved` returns `{ dataset, columns }`, where each column is `{ column, canonicalId, canonicalName, missingCodes }`, in header order. It does not read the edition's file.
+`GET .../mapping/saved` returns `{ dataset, columns }`, where each column is `{ column, canonicalId, canonicalName, missingCodes, role }`, in header order. It does not read the edition's file.
 
-`PUT .../mapping` takes `{ columns: [{ column, choice, newName?, dataType?, missingCodes? }] }`:
+`PUT .../mapping` takes `{ columns: [{ column, choice, newName?, dataType?, missingCodes?, role? }] }` (`role`: see [Source design](#source-design)):
 
 | `choice` | Effect |
 | --- | --- |
@@ -670,9 +732,10 @@ Exports:
 - The survey export puts `_dataset`, `_year` and `_row` first. The edition export does not include them.
 - CSV is UTF-8 with a BOM, so Excel opens it correctly. Missing values are empty.
 - In CSV, values and headers that start with `=`, `+`, `-`, `@`, a tab or a carriage return get a leading `'`, so spreadsheets do not run them as formulas (report H-12). Plain numbers such as `-5` or `+3.2` are left as they are. Parquet is not changed.
-- Parquet columns take the canonical variable's confirmed type, or the type inferred from the exported values when it is not confirmed (the same rules as `inferredType`, applied to all exported editions together): `text` → `VARCHAR`, `integer` → `BIGINT`, `decimal` → `DOUBLE`. Numbers are converted from the trimmed text. `_dataset` is `VARCHAR`, and `_year` and `_row` are `BIGINT`. Missing values are `NULL`, so they are distinct from any value. This lets analyses sum, average, multiply and compare these columns (before, every column was text and `SUM` failed).
+- Parquet columns take the canonical variable's confirmed type, or the type inferred from the exported values when it is not confirmed (the same rules as `inferredType`, applied to all exported editions together): `text` → `VARCHAR`, `integer` → `BIGINT`, `decimal` → `DOUBLE`. Numbers are converted from the trimmed text, trimmed as everywhere in the harmonizer (see [Mapping](#mapping)), so a value such as `\ufeff1` or `1` followed by a tab, which the type checks accept as an integer, becomes `1` (before 2026-11-12 only spaces were trimmed here and the export failed with `400 parquet_write_failed`). `_dataset` is `VARCHAR`, and `_year` and `_row` are `BIGINT`. Missing values are `NULL`, so they are distinct from any value. This lets analyses sum, average, multiply and compare these columns (before, every column was text and `SUM` failed).
 - If a confirmed numeric variable has a value that does not fit (possible only for an edition saved without `dataType`), the Parquet export returns `409 value_type_mismatch` with the variable and the offending values.
 - Exporting an edition with no mappings as Parquet returns `400 harmonized_view_empty`.
+- The Parquet carries its [source metadata](#source-metadata) in its footer, as JSON under the key `socialdata_metadata` (DuckDB `KV_METADATA`), so the file describes itself outside the platform too. Views without metadata (an edition without design or unit, or a survey whose editions differ) have no such key.
 - How the file is made: DuckDB reads the editions' stored Parquet and applies the missing codes, the recoding and the types, so the rows are never loaded into the server whole (`harmonized-export.ts`). The Parquet is written by DuckDB, one edition after another. For the CSV, DuckDB also writes the rows: each line is built in SQL with the quoting of the CSV writer the server used before (`csv-stringify`: a value is quoted when it has a `"`, a `,` or a line feed, and its quotes are doubled) and with the formula neutralization; the BOM and the header line are written by that same CSV writer. A failure there returns `400 csv_write_failed`. Both are written to a temporary file first, so any error (`409 value_type_mismatch`, `404 harmonizer_dataset_file_missing`) comes back as a normal error response before anything is sent; then the file is sent and deleted, also when the client disconnects. The types are checked with the same stored column checks as the mapping (see [Variable types](#variable-types)). On the national census (15 million rows, 91 columns), the edition's Parquet takes about 20 seconds and its CSV (3.3 GB) about 15 seconds.
 
 ### Dictionaries
@@ -761,7 +824,7 @@ For editions uploaded in one request or as DBF, the bytes of the upload are not 
 - Differences from the uploaded bytes: UTF-8 with a BOM, comma separator, `\n` line endings, values quoted only when needed, and blank lines dropped.
 - The filename is `original_<edition>_<year>.csv`, with accents and symbols removed. The name of the uploaded file is not stored.
 - An unknown edition returns `404 harmonizer_dataset_not_found`.
-- A value that starts with a BOM character (U+FEFF) keeps it: DuckDB writes the file. (The paged JSON views lose it, because the DuckDB client for Node removes it when it reads text; the downloads and the stored data keep it.)
+- A value that starts with a BOM character (U+FEFF) keeps it, as everywhere else: the paged JSON views and the downloads return text exactly as stored. (Before 2026-11-12 the DuckDB client for Node removed a leading BOM from every text it read, so the JSON views, the value profiles and column names read through DuckDB lost it; the server now keeps it, see `src/modules/analysis/duckdb-text.ts`.)
 - The file is rebuilt without loading the rows into the server: the header line is written by the CSV writer and the rows by DuckDB, with the same quoting (see [Exports](#harmonized-views)), to a temporary file that is sent and then deleted, so it has no row limit.
 
 ### Direct downloads
@@ -772,7 +835,7 @@ A browser can only save a file as it arrives when it opens a link, and a link ca
 2. The browser opens `url` (`/harmonizer/downloads/<token>`, relative to the API), which needs no session: the token is the permission. It answers the file as an attachment, with `Content-Length` when `size` is known (`size` is `null` for a kept original of a tus upload, which is unzipped as it is sent), `Cache-Control: no-store` and `Referrer-Policy: no-referrer`.
 
 - The token is random (256 bits) and works **once**: the second request, or one after `expiresAt` (15 minutes), returns `404 download_not_found`. A download cut half way cannot be resumed; prepare it again.
-- A prepared file waits in the server's temporary folder (`ibero-harmonized-<id>.<ext>`) and is deleted once it is sent or when it expires. If the server stops first, its token is lost and the file stays; the next start deletes such files once they are older than 75 minutes.
+- A prepared file waits in the server's temporary folder (`ibero-harmonized-<id>.<ext>`) and is deleted once it is sent or when it expires. When the API stops (`SIGTERM`, `SIGINT`), it deletes every file still waiting or being sent before it exits; a download being sent is cut, and its token is gone. Files that a stopped or crashed API could not delete are deleted at the next start and every 15 minutes after that, once they are more than 75 minutes old. Files the API is still holding are never touched.
 - Prepared downloads are kept in the API's memory, so they only work with one API process.
 - Preparing takes as long as generating the file: about 20 seconds for the national census edition as Parquet. A proxy in front of the API must allow requests that long.
 - The `GET` endpoints still send the file directly, with the session, for scripts.

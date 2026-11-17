@@ -1,5 +1,6 @@
 import { IsArray, IsIn, IsOptional, IsString } from 'class-validator';
 import { VALUE_TYPES, type ValueType } from '../harmonized-view.js';
+import { SOURCE_ROLES, type SourceRole } from '../source-metadata.js';
 
 export const NEW_CANONICAL = '__new__';
 export const CANONICAL_PREFIX = 'cv:';
@@ -29,4 +30,9 @@ export class MappingChoiceDto {
   @IsArray({ message: 'missingCodes must be a list.' })
   @IsString({ each: true, message: 'missingCodes can only contain strings.' })
   missingCodes?: string[];
+
+  /** Sample design role of the column; absent or null = none. */
+  @IsOptional()
+  @IsIn(SOURCE_ROLES, { message: `role must be one of: ${SOURCE_ROLES.join(', ')}.` })
+  role?: SourceRole | null;
 }

@@ -1,24 +1,40 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-  UnprocessableEntityException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { access } from 'node:fs/promises';
 import { Readable } from 'node:stream';
-import { OrgRole } from '@prisma/client';
+import { OrgRole, Prisma } from '@prisma/client';
 import type { AuthenticatedUser } from '../auth/jwt-payload.interface.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { LocalStorageService } from '../storage/local-storage.service.js';
 import { AnalysisService } from '../analysis/analysis.service.js';
 import { HarmonizerService } from '../harmonizer/harmonizer.service.js';
-import { discardExportFile } from '../harmonizer/export-response.js';
 import type { AttachHarmonizedDto } from './dto/attach-harmonized.dto.js';
+import {
+  parseSourceMetadata,
+  type SourceMetadata,
+} from '../harmonizer/source-metadata.js';
 
 const PARQUET_MAGIC = Buffer.from('PAR1', 'ascii');
 
-/** `Resource.sizeBytes` is a 32-bit integer. */
-export const MAX_RESOURCE_BYTES = 2_147_483_647;
+/**
+ * A resource as the API answers it. `sizeBytes` is a BIGINT in the database (an attached harmonized
+ * view can pass 2 GB) and a `bigint` in Prisma, which JSON cannot hold: it goes out as a number,
+ * exact up to 2^53 bytes (8 PiB), like `HarmonizerImport.fileSize`.
+ *
+ * `sourceMetadata` always goes out: the metadata of its harmonized source with the properties this
+ * version knows, or `null` for resources without it (uploaded files, older resources).
+ */
+export function toResourceResponse<T extends { sizeBytes: bigint; sourceMetadata?: unknown }>(
+  resource: T,
+): Omit<T, 'sizeBytes' | 'sourceMetadata'> & {
+  sizeBytes: number;
+  sourceMetadata: SourceMetadata | null;
+} {
+  return {
+    ...resource,
+    sizeBytes: Number(resource.sizeBytes),
+    sourceMetadata: parseSourceMetadata(resource.sourceMetadata),
+  };
+}
 
 export function looksLikeParquet(buffer: Buffer): boolean {
   return (
@@ -37,8 +53,12 @@ export class ResourcesService {
     private readonly harmonizer: HarmonizerService,
   ) {}
 
-  findAll(datasetId: string) {
-    return this.prisma.resource.findMany({ where: { datasetId }, orderBy: { createdAt: 'desc' } });
+  async findAll(datasetId: string) {
+    const resources = await this.prisma.resource.findMany({
+      where: { datasetId },
+      orderBy: { createdAt: 'desc' },
+    });
+    return resources.map(toResourceResponse);
   }
 
   async handoffContext(organizationId: string, datasetId: string, user: AuthenticatedUser) {
@@ -95,6 +115,8 @@ export class ResourcesService {
    * Saves a harmonized view (the Parquet of `GET /harmonizer/.../harmonized.parquet`) as a
    * resource of the dataset. The server writes it straight to storage: it never goes through
    * the browser, memory, or the 500 MB upload limit. Errors of the export come back as they are.
+   * The resource keeps a copy of the source metadata of the export (`sourceMetadata`): later
+   * changes to the editions or their mappings do not change it.
    */
   async attachHarmonized(datasetId: string, dto: AttachHarmonizedDto) {
     if (Boolean(dto.editionId) === Boolean(dto.surveyId) || (dto.editionId && dto.variables)) {
@@ -107,18 +129,10 @@ export class ResourcesService {
       ? await this.harmonizer.exportDataset(dto.editionId, 'parquet')
       : await this.harmonizer.exportSurvey(dto.surveyId!, 'parquet', dto.variables);
     const size = file.size ?? (Buffer.isBuffer(file.body) ? file.body.length : 0);
-    if (size > MAX_RESOURCE_BYTES) {
-      discardExportFile(file);
-      throw new UnprocessableEntityException({
-        code: 'resource_too_large',
-        message: `The file is ${size} bytes and a resource can be at most ${MAX_RESOURCE_BYTES}.`,
-        params: { size, maxBytes: MAX_RESOURCE_BYTES },
-      });
-    }
     const body = Buffer.isBuffer(file.body) ? Readable.from([file.body]) : file.body;
     const storageKey = await this.storage.saveStream(datasetId, file.filename, body);
     try {
-      return await this.createStored(datasetId, file.filename, size, storageKey);
+      return await this.createStored(datasetId, file.filename, size, storageKey, file.metadata ?? null);
     } catch (err) {
       await this.storage.remove(storageKey);
       throw err;
@@ -131,7 +145,13 @@ export class ResourcesService {
     filename: string,
     sizeBytes: number,
     storageKey: string,
+    sourceMetadata: SourceMetadata | null = null,
   ) {
+    // Checked on write: what is stored must read back as the same object.
+    const metadata = sourceMetadata === null ? null : parseSourceMetadata(sourceMetadata);
+    if (sourceMetadata !== null && metadata === null) {
+      throw new Error('Invalid source metadata for a harmonized resource.');
+    }
     let columns: unknown = null;
     try {
       columns = await this.analysisService.describeSchema(this.storage.resolvePath(storageKey));
@@ -139,7 +159,7 @@ export class ResourcesService {
       columns = null;
     }
 
-    return this.prisma.resource.create({
+    const resource = await this.prisma.resource.create({
       data: {
         datasetId,
         filename,
@@ -147,8 +167,10 @@ export class ResourcesService {
         sizeBytes,
         storageKey,
         columns: columns as any,
+        sourceMetadata: metadata === null ? Prisma.DbNull : (metadata as unknown as Prisma.InputJsonObject),
       },
     });
+    return toResourceResponse(resource);
   }
 
   async resolveFilePath(datasetId: string, resourceId: string): Promise<string> {

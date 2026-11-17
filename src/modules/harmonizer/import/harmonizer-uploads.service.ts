@@ -20,6 +20,7 @@ import { NEW_SURVEY, UploadDatasetDto } from '../dto/upload-dataset.dto.js';
 import { datasetNameTaken } from '../harmonizer.service.js';
 import { importErrorBody, type ImportErrorBody } from './import-error.js';
 import { importFormat } from './import-format.js';
+import { missingSourceInfo, sourceInfoRequiredBody } from '../source-metadata.js';
 import {
   UPLOAD_STORAGE,
   uploadConfig,
@@ -178,6 +179,8 @@ export class HarmonizerUploadsService implements OnModuleInit, OnModuleDestroy {
       newSurvey: meta.newSurvey ?? undefined,
       organizationId: meta.organizationId ?? undefined,
       encoding: meta.encoding || undefined,
+      design: meta.design || undefined,
+      unit: meta.unit || undefined,
     });
     const details = (await validate(dto, { whitelist: true })).flatMap((e) =>
       Object.values(e.constraints ?? {}),
@@ -192,6 +195,8 @@ export class HarmonizerUploadsService implements OnModuleInit, OnModuleDestroy {
         details,
       });
     }
+    const missing = missingSourceInfo(dto);
+    if (missing.length > 0) throw tusError(sourceInfoRequiredBody(missing));
 
     if (dto.surveyId === NEW_SURVEY) {
       if (!dto.organizationId) {
@@ -268,6 +273,8 @@ export class HarmonizerUploadsService implements OnModuleInit, OnModuleDestroy {
         newSurveyName,
         organizationId: newSurveyName === null ? null : dto.organizationId!,
         encoding: format === 'dbf' ? (dto.encoding ?? 'auto') : null,
+        design: dto.design!,
+        unit: dto.unit!,
         createdById: user.id,
       },
     });
