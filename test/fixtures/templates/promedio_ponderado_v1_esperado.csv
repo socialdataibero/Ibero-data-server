@@ -1,0 +1,5 @@
+fuente,edicion,indicador,nivel,cve,nombre,num,den,ee,casos
+prueba,2020,Edad promedio (años),entidad,01,Entidad A,2790.0,110.0,0.165289,7
+prueba,2020,Edad promedio (años),entidad,02,Entidad B,7640.0,280.0,8.326531,8
+prueba,2020,Edad promedio (años),entidad,03,Entidad C,2805.0,80.0,18.046875,4
+prueba,2020,Edad promedio (años),nacional,00,Todo el país,13235.0,470.0,6.065451,19

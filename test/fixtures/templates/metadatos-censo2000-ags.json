@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "title": "Censo 2000, muestra del cuestionario ampliado, Aguascalientes",
+  "source": "censo",
+  "edition": 2000,
+  "design": "sample",
+  "unit": "person",
+  "unitPlural": "personas",
+  "total": { "level": "entidad", "code": "01", "label": "Aguascalientes" },
+  "columns": [
+    { "name": "ENT", "role": "identifier", "label": "Entidad" },
+    {
+      "name": "CVE_MUN",
+      "role": "geographic",
+      "label": "Municipio",
+      "geoLevel": "municipio",
+      "categories": [
+        { "code": "01001", "label": "Aguascalientes" },
+        { "code": "01002", "label": "Asientos" },
+        { "code": "01003", "label": "Calvillo" },
+        { "code": "01004", "label": "Cosío" },
+        { "code": "01005", "label": "Jesús María" },
+        { "code": "01006", "label": "Pabellón de Arteaga" },
+        { "code": "01007", "label": "Rincón de Romos" },
+        { "code": "01008", "label": "San José de Gracia" },
+        { "code": "01009", "label": "Tepezalá" },
+        { "code": "01010", "label": "El Llano" },
+        { "code": "01011", "label": "San Francisco de los Romo" }
+      ]
+    },
+    { "name": "FACTOR", "role": "weight", "label": "Factor de expansión" },
+    { "name": "ESTRATO", "role": "stratum", "label": "Estrato de diseño" },
+    { "name": "UPM", "role": "psu", "label": "Unidad primaria de muestreo" },
+    {
+      "name": "SEXO",
+      "role": "category",
+      "label": "Sexo",
+      "categories": [
+        { "code": "1", "label": "Hombre" },
+        { "code": "2", "label": "Mujer" }
+      ]
+    },
+    {
+      "name": "EDAD",
+      "role": "measure",
+      "label": "Edad",
+      "unit": "años",
+      "missingCodes": ["999"]
+    },
+    {
+      "name": "GRUPO_EDAD",
+      "role": "ordinal",
+      "label": "Grupo de edad",
+      "categories": [
+        { "code": "0", "label": "0 a 4 años" },
+        { "code": "1", "label": "5 a 14 años" },
+        { "code": "2", "label": "15 a 29 años" },
+        { "code": "3", "label": "30 a 59 años" },
+        { "code": "4", "label": "60 años y más" },
+        { "code": "99", "label": "No especificado" }
+      ],
+      "missingCodes": ["99"]
+    },
+    {
+      "name": "HLENGUA",
+      "role": "dichotomous",
+      "label": "Condición de habla de lengua indígena",
+      "positiveValue": "1",
+      "positiveLabel": "Habla lengua indígena",
+      "universe": "población de 5 años y más",
+      "notApplicableLabel": "No aplica (menores de 5 años)",
+      "categories": [
+        { "code": "1", "label": "Habla lengua indígena" },
+        { "code": "2", "label": "No habla lengua indígena" },
+        { "code": "9", "label": "No especificado" }
+      ],
+      "missingCodes": ["9"]
+    },
+    {
+      "name": "PERETN",
+      "role": "dichotomous",
+      "label": "Pertenencia a un grupo indígena",
+      "positiveValue": "1",
+      "positiveLabel": "Pertenece a un grupo indígena",
+      "universe": "población de 5 años y más",
+      "notApplicableLabel": "No aplica (menores de 5 años)",
+      "categories": [
+        { "code": "1", "label": "Pertenece a un grupo indígena" },
+        { "code": "2", "label": "No pertenece a un grupo indígena" },
+        { "code": "9", "label": "No especificado" }
+      ],
+      "missingCodes": ["9"]
+    },
+    {
+      "name": "ESCOLARIDAD",
+      "role": "ordinal",
+      "label": "Escolaridad",
+      "universe": "población de 5 años y más",
+      "notApplicableLabel": "No aplica (menores de 5 años)",
+      "categories": [
+        { "code": "0", "label": "Sin escolaridad" },
+        { "code": "1", "label": "Básica" },
+        { "code": "2", "label": "Media superior y técnica" },
+        { "code": "3", "label": "Superior" },
+        { "code": "9", "label": "No especificado" }
+      ],
+      "missingCodes": ["9"]
+    },
+    {
+      "name": "ACTIVIDAD",
+      "role": "category",
+      "label": "Condición de actividad",
+      "universe": "población de 12 años y más",
+      "notApplicableLabel": "No aplica (menores de 12 años)",
+      "categories": [
+        { "code": "1", "label": "Ocupada" },
+        { "code": "2", "label": "Desocupada" },
+        { "code": "3", "label": "No económicamente activa" },
+        { "code": "99", "label": "No especificado" }
+      ],
+      "missingCodes": ["99"]
+    },
+    {
+      "name": "AMBITO",
+      "role": "dichotomous",
+      "label": "Ámbito",
+      "positiveValue": "1",
+      "positiveLabel": "Vive en una localidad rural",
+      "universe": "toda la población",
+      "categories": [
+        { "code": "1", "label": "Rural (menos de 2,500 habitantes)" },
+        { "code": "2", "label": "Urbano" }
+      ]
+    }
+  ]
+}

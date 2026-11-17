@@ -102,7 +102,7 @@ describe('toResourceResponse', () => {
   it('turns the BIGINT size into a JSON number, exact past 2^31 and 2^32', () => {
     const resource = { id: 'r1', filename: 'a.parquet', sizeBytes: 5_000_000_000n };
     expect(JSON.stringify(toResourceResponse(resource))).toBe(
-      '{"id":"r1","filename":"a.parquet","sizeBytes":5000000000,"sourceMetadata":null}',
+      '{"id":"r1","filename":"a.parquet","sizeBytes":5000000000,"sourceMetadata":null,"variableMetadata":null}',
     );
     expect(() => JSON.stringify(resource)).toThrow(TypeError);
   });
