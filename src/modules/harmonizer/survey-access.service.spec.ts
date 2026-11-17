@@ -10,6 +10,7 @@ const user = (isSysadmin = false): AuthenticatedUser => ({
   email: 'u@example.org',
   fullName: 'U',
   isSysadmin,
+  tokenVersion: 0,
 });
 
 function makeService(opts: { surveyOrg?: string | null; role?: OrgRole | null; orgExists?: boolean }) {

@@ -54,6 +54,7 @@ const PUBLIC_VISITOR: AuthenticatedUser = {
   email: 'visitor@public.ibero-data',
   fullName: 'Public visitor',
   isSysadmin: false,
+  tokenVersion: 0,
 };
 
 @Injectable()

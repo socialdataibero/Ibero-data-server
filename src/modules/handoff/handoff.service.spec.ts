@@ -2,7 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { HandoffService } from './handoff.service.js';
 
-const user = { id: 'u1', email: 'u1@example.test', fullName: 'User One', isSysadmin: false };
+const user = { id: 'u1', email: 'u1@example.test', fullName: 'User One', isSysadmin: false, tokenVersion: 2 };
 const context = { organizationId: 'org-1', organizationName: 'Org', datasetId: 'd1', datasetTitle: 'Dataset' };
 
 function makeService() {
@@ -27,5 +27,16 @@ describe('HandoffService publish token (SDI-134)', () => {
     const ibero = payloadOf(service, url)?.ibero;
     expect(ibero).toMatchObject({ canPublish: false, datasetId: 'd1' });
     expect(ibero?.publishToken).toBeUndefined();
+  });
+});
+
+describe('HandoffService session version', () => {
+  it('signs the download and publish tokens with the user token version', () => {
+    const service = makeService();
+    const jwt = new JwtService({ secret: 'test-secret' });
+    expect(jwt.decode(service.createDownloadToken(user)).ver).toBe(2);
+    const url = service.buildResourceHandoffUrl(user, 'http://api.test/file', 'file.parquet', { ...context, canPublish: true });
+    const publishToken = payloadOf(service, url)?.ibero?.publishToken as string;
+    expect(jwt.decode(publishToken).ver).toBe(2);
   });
 });

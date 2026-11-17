@@ -569,7 +569,7 @@ function texts(
   return {
     title: upperFirst(`${people} según ${lowerFirst(v.label)}${byGroup}`),
     question: `¿Cómo se reparten las ${people}${inEach} según ${lowerFirst(v.label)}?`,
-    note: `${sample ? 'Estimación con factor de expansión.' : `Conteo de ${people}.`} Porcentaje respecto a la ${universe}.`,
+    note: `${sample ? 'Estimación con factor de expansión.' : `Conteo de ${people}.`} Porcentaje respecto a ${universe.startsWith('toda') ? '' : 'la '}${universe}.`,
     missing:
       missing === 0
         ? null

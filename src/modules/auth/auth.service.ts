@@ -59,6 +59,7 @@ export class AuthService {
       email: user.email,
       fullName: user.fullName,
       isSysadmin: user.isSysadmin,
+      tokenVersion: user.tokenVersion,
     };
   }
 
