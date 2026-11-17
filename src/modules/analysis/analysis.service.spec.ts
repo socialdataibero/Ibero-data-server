@@ -228,7 +228,7 @@ describe('AnalysisService: Parquet crudo del armonizador (DuckDB real)', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('readParquetRows devuelve las filas tal como se escribieron, en orden y como texto', async () => {
+  it('streamInternalRows devuelve las filas tal como se escribieron, en orden y como texto', async () => {
     const path = join(dir, 'raw.parquet');
     const rows = Array.from({ length: 12_000 }, (_, i) => ({
       c0: String(i).padStart(5, '0'),
@@ -236,9 +236,15 @@ describe('AnalysisService: Parquet crudo del armonizador (DuckDB real)', () => {
     }));
 
     await service.writeRowsToParquet(['c0', 'c1'], rows, path);
-    const read = await service.readParquetRows(path);
+    const read: unknown[][] = [];
+    let chunks = 0;
+    for await (const chunk of service.streamInternalRows(path, 'SELECT c0, c1 FROM data')) {
+      read.push(...chunk);
+      chunks++;
+    }
 
-    // Más filas que MAX_ROWS: la lectura cruda no se trunca.
+    // Más filas que MAX_ROWS, en varios bloques: la lectura no se trunca.
+    expect(chunks).toBeGreaterThan(1);
     expect(read).toHaveLength(12_000);
     expect(read[0]).toEqual(['00000', 'Hñähñu']);
     expect(read[11_999]).toEqual(['11999', '']);
@@ -272,5 +278,63 @@ describe('AnalysisService: Parquet crudo del armonizador (DuckDB real)', () => {
       { g: 'A', n: '5', nf: 33 },
       { g: 'B', n: null, nf: null },
     ]);
+  });
+});
+
+describe('AnalysisService: metadata in the Parquet footer (KV_METADATA)', () => {
+  let dir: string;
+  const service = new AnalysisService();
+  // User text: quotes, backslashes, line breaks, accents and an emoji must survive as they are.
+  const value = JSON.stringify({
+    name: "EDAD d'algo \\ \"x\"",
+    codes: ['999', "'; DROP TABLE x; --"],
+    note: 'línea 1\nlínea 2 · Población 🙂',
+  });
+
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'ibero-kv-test-'));
+    await service.writeRowsToParquet(['c0'], [{ c0: 'a' }, { c0: 'b' }], join(dir, 'a.parquet'));
+    await service.writeRowsToParquet(['c0'], [{ c0: 'c' }], join(dir, 'b.parquet'));
+  });
+
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('writes the pairs in the same COPY as the data, with one part', async () => {
+    const dest = join(dir, 'one.parquet');
+    await service.copyInternalQueryToParquet(
+      [{ alias: 'a', path: join(dir, 'a.parquet') }],
+      ['SELECT c0 FROM a'],
+      dest,
+      { socialdata_metadata: value },
+    );
+    expect(await service.readKvMetadata(dest)).toEqual({ socialdata_metadata: value });
+    expect((await service.runQuery(dest, 'SELECT c0 FROM data')).rows).toEqual([{ c0: 'a' }, { c0: 'b' }]);
+  });
+
+  it('with several parts the final file has them, in order', async () => {
+    const dest = join(dir, 'two.parquet');
+    await service.copyInternalQueryToParquet(
+      [
+        { alias: 'a', path: join(dir, 'a.parquet') },
+        { alias: 'b', path: join(dir, 'b.parquet') },
+      ],
+      ['SELECT c0 FROM a', 'SELECT c0 FROM b'],
+      dest,
+      { socialdata_metadata: value },
+    );
+    expect(await service.readKvMetadata(dest)).toEqual({ socialdata_metadata: value });
+    expect((await service.runQuery(dest, 'SELECT c0 FROM data')).rows.map((r) => r.c0)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('without pairs the footer has none', async () => {
+    const dest = join(dir, 'none.parquet');
+    await service.copyInternalQueryToParquet(
+      [{ alias: 'a', path: join(dir, 'a.parquet') }],
+      ['SELECT c0 FROM a'],
+      dest,
+    );
+    expect(await service.readKvMetadata(dest)).toEqual({});
   });
 });

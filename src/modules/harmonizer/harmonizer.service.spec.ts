@@ -1,5 +1,12 @@
 import { ConflictException } from '@nestjs/common';
-import { mkdtemp, readdir, rm, writeFile, mkdir } from 'node:fs/promises';
+import {
+  mkdtemp,
+  readdir,
+  rm,
+  writeFile,
+  mkdir,
+  utimes,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LocalStorageService } from '../storage/local-storage.service.js';
@@ -86,9 +93,16 @@ function makeService(
   return { service, prisma, storage, rows };
 }
 
-const files = async () => (await readdir(join(root, 'harmonizer'))).sort();
+const files = async (dir = 'harmonizer') =>
+  (await readdir(join(root, dir))).sort();
 const touch = (name: string) =>
   writeFile(join(root, 'harmonizer', name), 'PAR1');
+// The cleanup leaves files younger than an hour (an import may be writing them).
+const touchOld = async (name: string) => {
+  await touch(name);
+  const twoHoursAgo = new Date(Date.now() - 2 * 3600_000);
+  await utimes(join(root, 'harmonizer', name), twoHoursAgo, twoHoursAgo);
+};
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'harmonizer-storage-'));
@@ -108,6 +122,16 @@ describe('removeDataset', () => {
     await service.removeDataset(ID_A);
     expect(rows.has(ID_A)).toBe(false);
     expect(await files()).toEqual([]);
+  });
+
+  it('borra también el original comprimido de una edición importada', async () => {
+    const { service } = makeService([{ id: ID_A, name: 'E1', surveyId: 's' }]);
+    await mkdir(join(root, 'harmonizer', 'originals'));
+    await touch(`${ID_A}.parquet`);
+    await touch(`originals/${ID_A}.csv.gz`);
+    await service.removeDataset(ID_A);
+    expect(await files()).toEqual(['originals']);
+    expect(await files('harmonizer/originals')).toEqual([]);
   });
 
   it('con el archivo bloqueado no borra nada y responde 409', async () => {
@@ -175,12 +199,38 @@ describe('limpieza al arrancar', () => {
     ]);
     await touch(`${ID_A}.parquet`);
     await touch(`${ID_B}.parquet.deleting`);
-    await touch(`${ID_GONE}.parquet`);
-    await touch(`${ID_GONE}.parquet.deleting`);
+    await touchOld(`${ID_GONE}.parquet`);
+    await touchOld(`${ID_GONE}.parquet.deleting`);
     await touch('notas.txt');
     await service.onApplicationBootstrap();
     expect(await files()).toEqual(
       [`${ID_A}.parquet`, `${ID_B}.parquet`, 'notas.txt'].sort(),
+    );
+  });
+
+  it('no borra huérfanos recientes: pueden ser de una importación en curso', async () => {
+    const { service } = makeService([{ id: ID_A, name: 'E1', surveyId: 's' }]);
+    await touch(`${ID_A}.parquet`);
+    await touch(`${ID_GONE}.parquet`);
+    await service.onApplicationBootstrap();
+    expect(await files()).toEqual(
+      [`${ID_A}.parquet`, `${ID_GONE}.parquet`].sort(),
+    );
+  });
+
+  it('también limpia los originales comprimidos', async () => {
+    const { service } = makeService([
+      { id: ID_A, name: 'E1', surveyId: 's' },
+      { id: ID_B, name: 'E2', surveyId: 's' },
+    ]);
+    await mkdir(join(root, 'harmonizer', 'originals'));
+    await touch(`${ID_A}.parquet`);
+    await touch(`originals/${ID_A}.csv.gz`);
+    await touch(`originals/${ID_B}.csv.gz.deleting`);
+    await touchOld(`originals/${ID_GONE}.csv.gz`);
+    await service.onApplicationBootstrap();
+    expect(await files('harmonizer/originals')).toEqual(
+      [`${ID_A}.csv.gz`, `${ID_B}.csv.gz`].sort(),
     );
   });
 

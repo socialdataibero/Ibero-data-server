@@ -22,6 +22,7 @@ import { AnalysisService } from '../analysis/analysis.service.js';
 import { HandoffService } from '../handoff/handoff.service.js';
 import { ResourcesService } from './resources.service.js';
 import { RunQueryDto } from './dto/run-query.dto.js';
+import { AttachHarmonizedDto } from './dto/attach-harmonized.dto.js';
 
 const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
 
@@ -55,6 +56,13 @@ export class ResourcesController {
       });
     }
     return this.resourcesService.upload(datasetId, file);
+  }
+
+  /** A harmonized view of the survey harmonizer, saved as a resource by the server. */
+  @Post('from-harmonizer')
+  @OrgRoles(OrgRole.ADMIN, OrgRole.EDITOR)
+  attachHarmonized(@Param('datasetId') datasetId: string, @Body() dto: AttachHarmonizedDto) {
+    return this.resourcesService.attachHarmonized(datasetId, dto);
   }
 
   @Post(':resourceId/query')

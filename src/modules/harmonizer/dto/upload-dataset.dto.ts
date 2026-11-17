@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsIn,
   IsInt,
@@ -9,6 +9,15 @@ import {
   MinLength,
 } from 'class-validator';
 import { DBF_ENCODINGS } from '../dbf.js';
+import {
+  ANALYSIS_UNITS,
+  SOURCE_DESIGNS,
+  type AnalysisUnit,
+  type SourceDesign,
+} from '../source-metadata.js';
+
+/** An empty form field counts as missing, not as an invalid value. */
+const emptyAsMissing = ({ value }: { value: unknown }) => (value === '' ? undefined : value);
 
 export const NEW_SURVEY = '__new__';
 
@@ -45,4 +54,15 @@ export class UploadDatasetDto {
     message: `encoding must be one of: ${UPLOAD_ENCODINGS.join(', ')}.`,
   })
   encoding?: UploadEncoding;
+
+  /** Required, but checked after validation so one error can name both missing fields. */
+  @Transform(emptyAsMissing)
+  @IsOptional()
+  @IsIn(SOURCE_DESIGNS, { message: `design must be one of: ${SOURCE_DESIGNS.join(', ')}.` })
+  design?: SourceDesign;
+
+  @Transform(emptyAsMissing)
+  @IsOptional()
+  @IsIn(ANALYSIS_UNITS, { message: `unit must be one of: ${ANALYSIS_UNITS.join(', ')}.` })
+  unit?: AnalysisUnit;
 }

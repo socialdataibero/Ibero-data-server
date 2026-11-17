@@ -67,6 +67,7 @@ model User {
   ownedDatasets     Dataset[]
   analyses          Analysis[]
   harmonizerSurveys HarmonizerSurvey[]
+  harmonizerImports HarmonizerImport[]
 
   @@map("users")
 }
@@ -142,17 +143,21 @@ model Dataset {
 }
 
 model Resource {
-  id         String   @id @default(uuid())
-  datasetId  String
-  filename   String
-  format     String
-  sizeBytes  Int
-  storageKey String
+  id             String   @id @default(uuid())
+  datasetId      String
+  filename       String
+  format         String
+  sizeBytes      BigInt
+  storageKey     String
   /// Schema del parquet capturado al subir: [{ name, type }]. Se usa para
   /// poblar el selector de columnas del step-builder y validar el recipe
   /// antes de correrlo (igual que parquet_schema en ckanext-duckdb).
-  columns    Json?
-  createdAt  DateTime @default(now())
+  columns        Json?
+  /// Metadata of the harmonized source (design, unit, missing codes and roles per column), copied
+  /// when the resource is saved from the harmonizer. A snapshot: it does not follow later changes
+  /// to the edition. Null on uploaded files and on resources created before it existed.
+  sourceMetadata Json?
+  createdAt      DateTime @default(now())
 
   dataset  Dataset    @relation(fields: [datasetId], references: [id], onDelete: Cascade)
   analyses Analysis[]
@@ -217,6 +222,7 @@ model HarmonizerSurvey {
   datasets           HarmonizerDataset[]
   canonicalVariables HarmonizerCanonicalVariable[]
   codebooks          HarmonizerCodebook[]
+  imports            HarmonizerImport[]
 
   @@map("harmonizer_surveys")
 }
@@ -236,11 +242,18 @@ model HarmonizerDataset {
   /// que le corresponde. Borrar el diccionario deja la edición sin diccionario.
   codebookId    String?
   codebookTable String?
+  /// How the source was collected: `census` (every unit enumerated) or `sample` (each record
+  /// stands for several units and needs an expansion factor). Null on editions uploaded before
+  /// it was asked.
+  design        String?
+  /// What each record is: `person`, `dwelling` or `household`. Null like `design`.
+  unit          String?
 
-  survey   HarmonizerSurvey          @relation(fields: [surveyId], references: [id], onDelete: Cascade)
-  codebook HarmonizerCodebook?       @relation(fields: [codebookId], references: [id], onDelete: SetNull)
-  mappings HarmonizerMapping[]
-  profiles HarmonizerColumnProfile[]
+  survey       HarmonizerSurvey          @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  codebook     HarmonizerCodebook?       @relation(fields: [codebookId], references: [id], onDelete: SetNull)
+  mappings     HarmonizerMapping[]
+  profiles     HarmonizerColumnProfile[]
+  columnChecks HarmonizerColumnCheck[]
 
   /// El nombre es `_dataset` en la vista por encuesta: debe ser único en ella.
   @@unique([surveyId, name])
@@ -289,6 +302,9 @@ model HarmonizerMapping {
   /// Recodificación de valores de esta columna: `{ "valor del archivo": "código común" }`.
   /// Se aplica después de los códigos de no especificado.
   valueMap            Json     @default("{}")
+  /// Sample design role of this column: `weight` (expansion factor), `stratum` or `psu`
+  /// (primary sampling unit). Only in sample editions, at most one column per role.
+  role                String?
 
   dataset           HarmonizerDataset           @relation(fields: [datasetId], references: [id], onDelete: Cascade)
   canonicalVariable HarmonizerCanonicalVariable @relation(fields: [canonicalVariableId], references: [id], onDelete: Cascade)
@@ -363,4 +379,77 @@ model HarmonizerColumnProfile {
 
   @@unique([datasetId, sourceColumn])
   @@map("harmonizer_column_profiles")
+}
+
+/// Result of one value check of an edition's column (`column-checks.ts`: suggested type, codes of
+/// the dictionary), kept because an edition's data never changes. `key` is the SHA-256 of the
+/// check's query, so different codes, or a change in the query itself, compute a new one.
+model HarmonizerColumnCheck {
+  datasetId String
+  key       String
+  /// The query's single row.
+  result    Json
+  createdAt DateTime @default(now())
+
+  dataset HarmonizerDataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+
+  @@id([datasetId, key])
+  @@map("harmonizer_column_checks")
+}
+
+enum HarmonizerImportStatus {
+  /// The file is still arriving through tus.
+  UPLOADING
+  /// The file arrived and the job is queued.
+  PENDING
+  /// The worker is reading and converting it.
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+/// One upload of an edition through tus, from its first byte until the worker turns it into an
+/// edition (or rejects it). Its id is also the tus upload id and the job id.
+model HarmonizerImport {
+  id             String                 @id
+  status         HarmonizerImportStatus @default(UPLOADING)
+  /// What the worker is doing: `checking` (encoding), `reading` (rows), `saving`.
+  phase          String?
+  /// Data rows read so far, updated while the worker reads.
+  rowsRead       Int                    @default(0)
+  /// Times the worker started it. A file that keeps stopping the worker fails after a few.
+  attempts       Int                    @default(0)
+  fileName       String
+  fileSize       BigInt
+  /// `csv`, `csv_gz` or `dbf`, from the file name.
+  format         String
+  /// Edition fields, as sent with the upload.
+  name           String
+  year           Int
+  /// Existing survey; null when the upload creates one (`newSurveyName`, `organizationId`).
+  surveyId       String?
+  newSurveyName  String?
+  organizationId String?
+  /// DBF encoding choice (`auto`, …); null for CSV.
+  encoding       String?
+  /// Source design and unit of analysis of the edition, as sent with the upload.
+  design         String?
+  unit           String?
+  createdById    String
+  /// Set when the edition is created.
+  datasetId      String?
+  /// `{ datasetId, dataset, renamedColumns, source }`, as the upload response used to be.
+  result         Json?
+  /// `{ statusCode, code, message, params? }`, the same body a synchronous upload would answer.
+  error          Json?
+  createdAt      DateTime               @default(now())
+  uploadedAt     DateTime?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+
+  survey    HarmonizerSurvey? @relation(fields: [surveyId], references: [id], onDelete: SetNull)
+  createdBy User              @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("harmonizer_imports")
 }

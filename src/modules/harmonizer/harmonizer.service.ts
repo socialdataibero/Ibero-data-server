@@ -10,27 +10,51 @@ import { Prisma } from '@prisma/client';
 import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
 import { randomUUID } from 'node:crypto';
-import { access, readFile, rm } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { access, rm, stat } from 'node:fs/promises';
+import type { Readable } from 'node:stream';
+import { createGunzip } from 'node:zlib';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
   AnalysisService,
+  type NamedSource,
   type ParquetColumnType,
 } from '../analysis/analysis.service.js';
 import { LocalStorageService } from '../storage/local-storage.service.js';
 import { asciiFold, matchByName, parseVariables } from './matching.js';
+import { cachedColumnChecks } from './column-check-store.js';
+import {
+  allFit,
+  columnTypeQuery,
+  inferredType as inferredTypeOf,
+  jsTrimSql,
+  mergeFacts,
+  notFittingQuery,
+  readColumnTypeResult,
+  readNotFitting,
+  readValueFacts,
+  valueFactsQuery,
+  type ColumnTypeCheck,
+  type ColumnTypeResult,
+  type TypeFacts,
+} from './column-checks.js';
+import { csvError, csvNotUtf8Body } from './csv-errors.js';
+import {
+  editionCsvLinesSql,
+  editionParquetSql,
+  exportColumns,
+  originalCsvLinesSql,
+  surveyParquetSql,
+  type ExportColumn,
+} from './harmonized-export.js';
 import {
   buildDatasetView,
   buildSurveyView,
-  columnValues,
-  inferValueType,
   neutralizeCsvFormula,
-  sourceColumnValues,
-  valuesNotFitting,
   type ColumnValues,
   type DatasetEdition,
-  type HarmonizedView,
   type RawData,
   type ValueType,
 } from './harmonized-view.js';
@@ -77,6 +101,17 @@ import {
 } from './comparison.js';
 import type { SetDatasetCodebookDto } from './dto/set-dataset-codebook.dto.js';
 import type { SaveRecodingDto } from './dto/save-recoding.dto.js';
+import type { UpdateDatasetDto } from './dto/update-dataset.dto.js';
+import {
+  assertSourceRoles,
+  buildSourceMetadata,
+  sourceMetadataFooter,
+  type AnalysisUnit,
+  type MetadataEdition,
+  type SourceDesign,
+  type SourceMetadata,
+  type SourceRole,
+} from './source-metadata.js';
 
 export interface SurveyDatasetSummary {
   id: string;
@@ -120,6 +155,9 @@ export interface DatasetInfo {
   rowCount: number;
   // Columnas del archivo, mapeadas o no (H-18).
   columnCount: number;
+  // Diseño y unidad de análisis de la fuente; null en ediciones subidas antes de pedirlos.
+  design: SourceDesign | null;
+  unit: AnalysisUnit | null;
 }
 
 export interface ViewPageParams {
@@ -153,13 +191,40 @@ interface EditionRecord {
   name: string;
   year: number;
   columns: string[];
+  design: string | null;
+  unit: string | null;
 }
 
 interface EditionMapping {
   sourceColumn: string;
   missingCodes: string[];
   valueMap: Prisma.JsonValue;
+  role: string | null;
   canonicalVariable: { name: string };
+}
+
+/** Una edición lista para descargarse (ver `exportEdition`). */
+interface ExportEdition {
+  dataset: EditionRecord;
+  /** Su Parquet crudo; `null` si la edición no tiene columnas (H-08). */
+  path: string | null;
+  columns: ExportColumn[];
+  /** Rol de diseño muestral de cada canónica que lo tiene. */
+  roles: Map<string, string>;
+}
+
+/** Lo que los metadatos de la fuente necesitan de una edición y sus columnas en la vista. */
+function metadataEdition(edition: ExportEdition, columns: ExportColumn[]): MetadataEdition {
+  return {
+    id: edition.dataset.id,
+    design: edition.dataset.design,
+    unit: edition.dataset.unit,
+    columns: columns.map((c) => ({
+      canon: c.canon,
+      missingCodes: c.missingCodes,
+      role: edition.roles.get(c.canon) ?? null,
+    })),
+  };
 }
 
 /** La recodificación guardada de un mapeo (`{ valor: código }`) como Map. */
@@ -217,6 +282,8 @@ export interface MappingColumn {
   suggested: string | null;
   suggestionSource: SuggestionSource | null;
   missingCodes: string[];
+  // Rol de diseño muestral guardado; null = ninguno.
+  role: SourceRole | null;
   // Tipo que sugieren los valores de esta edición, con sus códigos guardados.
   inferredType: ValueType;
   values: ColumnValues;
@@ -232,7 +299,7 @@ export interface CanonicalVariableInfo {
 }
 
 /** Valores distintos que se guardan por columna en su perfil. */
-const PROFILE_MAX_VALUES = 200;
+export const PROFILE_MAX_VALUES = 200;
 
 /** Diccionarios: tamaño máximo del archivo y extensiones aceptadas. */
 export const MAX_CODEBOOK_BYTES = 20 * 1024 * 1024;
@@ -246,20 +313,41 @@ interface CodebookDatasetRef {
   codebookTable: string | null;
 }
 
-/** Tipo sugerido para una columna con diccionario, ya sin sus códigos de no especificado. */
+/**
+ * Tipo sugerido para una columna con diccionario, a partir de sus valores ya sin sus códigos de
+ * no especificado (`facts`, ver column-checks.ts).
+ */
 function codebookSuggestedType(
   info: CodebookVariableInfo,
-  values: (string | null)[],
+  facts: TypeFacts,
 ): ValueType {
   if (info.declaredType === 'text') return 'text';
   if (info.declaredType === null) {
     // Una variable con categorías es un código: se guarda como texto para no perder ceros.
     if (info.categories.filter((c) => c.kind === 'value').length >= 2) return 'text';
-    return inferValueType(values);
+    return inferredTypeOf(facts);
   }
-  if (valuesNotFitting(values, 'integer', 1).length === 0) return 'integer';
-  if (valuesNotFitting(values, 'decimal', 1).length === 0) return 'decimal';
+  if (allFit(facts, 'integer')) return 'integer';
+  if (allFit(facts, 'decimal')) return 'decimal';
   return 'text';
+}
+
+/** Valores más frecuentes que muestra la pantalla de mapeo por columna. */
+const MAPPING_TOP_VALUES = 5;
+
+/**
+ * Resumen de los valores de una columna para el mapeo, desde su perfil guardado: los más
+ * frecuentes (en un empate, en orden alfabético) y cuántos distintos hay, contando hasta
+ * `PROFILE_MAX_VALUES`.
+ */
+function profileColumnValues(profile: ColumnProfile | undefined): ColumnValues {
+  if (!profile) return { top: [], distinct: 0, distinctCapped: false, empty: 0 };
+  return {
+    top: profile.values.slice(0, MAPPING_TOP_VALUES),
+    distinct: profile.values.length,
+    distinctCapped: profile.distinctCapped,
+    empty: profile.empty,
+  };
 }
 
 function toCodebookInfo(v: {
@@ -292,8 +380,22 @@ export type ExportFormat = 'csv' | 'parquet';
 export interface ExportFile {
   filename: string;
   contentType: string;
-  body: Buffer;
+  /**
+   * The whole file, or a stream for files too large to hold in memory. A stream over a temporary
+   * file deletes it when it closes, also when it is destroyed without being read.
+   */
+  body: Buffer | Readable;
+  /** Size in bytes, when it is known before sending. */
+  size?: number;
+  /**
+   * Parquet exports only: the metadata of the source (see source-metadata.ts), or `null` when the
+   * view has none. A resource saved from this file keeps a copy.
+   */
+  metadata?: SourceMetadata | null;
 }
+
+/** Temporary files of the downloads: `ibero-harmonized-<uuid>.<csv|parquet>`. */
+export const EXPORT_TEMP_FILE = /^ibero-harmonized-[0-9a-f-]{36}\.(csv|parquet)/;
 
 function safeFileBase(name: string, fallback: string): string {
   return (
@@ -305,12 +407,23 @@ function safeFileBase(name: string, fallback: string): string {
 
 // Cada edición se guarda una sola vez como Parquet todo-VARCHAR. Guardarla como
 // un JSON por fila repetía el nombre de cada columna en cada fila (H-31).
-function rawStorageKey(datasetId: string): string {
+export function rawStorageKey(datasetId: string): string {
   return `harmonizer/${datasetId}.parquet`;
+}
+
+// El CSV tal como se subió, comprimido con gzip. Solo existe para ediciones importadas
+// por el worker (subida por tus); las demás regeneran «Descargar original» del Parquet.
+export function originalStorageKey(datasetId: string): string {
+  return `harmonizer/originals/${datasetId}.csv.gz`;
 }
 
 // `<id>.parquet` y, apartado para borrarse, `<id>.parquet.deleting`.
 const RAW_FILE = /^([0-9a-f-]{36})\.parquet(\.deleting)?$/;
+// Lo mismo para los originales: `originals/<id>.csv.gz(.deleting)`.
+const ORIGINAL_FILE = /^([0-9a-f-]{36})\.csv\.gz(\.deleting)?$/;
+// El worker escribe los archivos de una edición antes de crearla en la base. La limpieza
+// no toca archivos tan recientes, para no borrar los de una importación en curso.
+const SWEEP_MIN_AGE_MS = 3600_000;
 
 // Las columnas del Parquet crudo son posicionales (`c0`, `c1`, …) y los nombres
 // reales viven en `HarmonizerDataset.columns`. DuckDB no distingue mayúsculas en
@@ -361,7 +474,7 @@ export type UploadSource =
       deletedRecords: number;
     };
 
-interface ParsedUpload {
+export interface ParsedUpload {
   columns: string[];
   rows: RawData[];
   renamed: RenamedColumn[];
@@ -414,7 +527,7 @@ function normalizeMissingCodes(codes: string[] | undefined): string[] {
   ];
 }
 
-function datasetNameTaken(name: string, surveyName: string) {
+export function datasetNameTaken(name: string, surveyName: string) {
   return new ConflictException({
     code: 'dataset_name_taken',
     message: `Survey "${surveyName}" already has an edition named "${name}".`,
@@ -430,52 +543,43 @@ function decodeUtf8(buffer: Buffer): string {
   } catch {
     const lossy = new TextDecoder('utf-8').decode(buffer);
     const line = lossy.slice(0, lossy.indexOf('\uFFFD')).split('\n').length;
-    throw new BadRequestException({
-      code: 'csv_not_utf8',
-      message: `The file is not UTF-8 and its accents would be lost (the first unreadable character is on line ${line}). Save it as "CSV UTF-8" and upload it again.`,
-      params: { line },
-    });
+    throw new BadRequestException(csvNotUtf8Body(line));
   }
 }
 
-/**
- * Explains a CSV that could not be parsed (H-07): the line and what to check, instead of the
- * parser's internal rule ("Invalid Opening Quote"). `lastRecordLine` is the line where the
- * last good row ended.
- */
-function csvError(err: unknown, lastRecordLine: number): { message: string; params: Record<string, unknown> } {
-  const info = (err ?? {}) as {
-    code?: string;
-    lines?: number;
-    record?: unknown[];
-    columns?: unknown[];
-  };
-  switch (info.code) {
-    case 'CSV_QUOTE_NOT_CLOSED': {
-      const line = lastRecordLine + 1;
-      return {
-        message: `A value opens a quote (") and never closes it, starting at line ${line}.`,
-        params: { problem: 'quote_not_closed', line },
-      };
+/** Reads an uploaded DBF into rows. Shared by the synchronous upload and the import worker. */
+export function parseDbfUpload(
+  buffer: Buffer,
+  encoding: UploadEncoding | undefined,
+): ParsedUpload {
+  let table;
+  try {
+    table = readDbf(buffer, encoding === 'auto' ? undefined : encoding);
+  } catch (err) {
+    if (err instanceof DbfError) {
+      throw new BadRequestException({ code: err.code, message: err.message, params: err.params });
     }
-    case 'CSV_RECORD_INCONSISTENT_COLUMNS':
-      if (info.record && info.columns) {
-        return {
-          message: `The row on line ${info.lines} has ${info.record.length} columns and the header has ${info.columns.length}.`,
-          params: {
-            problem: 'inconsistent_columns',
-            line: info.lines,
-            rowColumns: info.record.length,
-            headerColumns: info.columns.length,
-          },
-        };
-      }
-      break;
+    throw err;
   }
-  const where = info.lines ? ` near line ${info.lines}` : '';
+  if (table.rows.length === 0) {
+    throw new BadRequestException({
+      code: 'dbf_no_rows',
+      message: 'The DBF file has no records, or all of them are marked as deleted.',
+    });
+  }
+  const { columns, renamed } = dedupeHeaders(table.headers);
   return {
-    message: `The file could not be read as CSV${where}.`,
-    params: { problem: 'unreadable', ...(info.lines ? { line: info.lines } : {}) },
+    columns,
+    rows: table.rows.map((values) =>
+      Object.fromEntries(columns.map((col, i) => [col, values[i]])),
+    ),
+    renamed,
+    source: {
+      format: 'dbf',
+      encoding: table.encoding,
+      encodingSource: table.encodingSource,
+      deletedRecords: table.deletedRecords,
+    },
   };
 }
 
@@ -601,18 +705,24 @@ export class HarmonizerService implements OnApplicationBootstrap {
   ): Promise<string[]> {
     const aside: string[] = [];
     for (const dataset of datasets) {
-      try {
-        const key = await this.storage.setAside(rawStorageKey(dataset.id));
-        if (key) aside.push(key);
-      } catch (err) {
-        this.logger.warn(
-          `Could not set aside "${rawStorageKey(dataset.id)}": ${(err as Error).message}`,
-        );
-        await this.restoreRawFiles(aside);
-        throw new ConflictException({
-          code: 'harmonizer_file_in_use',
-          message: lockedMessage(dataset.name),
-        });
+      // El original comprimido solo existe en ediciones importadas por el worker.
+      for (const storageKey of [
+        rawStorageKey(dataset.id),
+        originalStorageKey(dataset.id),
+      ]) {
+        try {
+          const key = await this.storage.setAside(storageKey);
+          if (key) aside.push(key);
+        } catch (err) {
+          this.logger.warn(
+            `Could not set aside "${storageKey}": ${(err as Error).message}`,
+          );
+          await this.restoreRawFiles(aside);
+          throw new ConflictException({
+            code: 'harmonizer_file_in_use',
+            message: lockedMessage(dataset.name),
+          });
+        }
       }
     }
     return aside;
@@ -649,19 +759,24 @@ export class HarmonizerService implements OnApplicationBootstrap {
   }
 
   private async sweepRawFiles(): Promise<void> {
-    const files = (await this.storage.list('harmonizer'))
-      .map((name) => ({ name, match: RAW_FILE.exec(name) }))
-      .filter((f) => f.match !== null)
-      .map((f) => ({
-        name: f.name,
-        id: f.match![1],
-        aside: f.match![2] !== undefined,
-      }));
-    if (files.length === 0) return;
+    const listed = async (dir: string, pattern: RegExp) =>
+      (await this.storage.list(dir))
+        .map((name) => ({ name, match: pattern.exec(name) }))
+        .filter((f) => f.match !== null)
+        .map((f) => ({
+          key: `${dir}/${f.name}`,
+          id: f.match![1],
+          aside: f.match![2] !== undefined,
+        }));
+    const found = [
+      ...(await listed('harmonizer', RAW_FILE)),
+      ...(await listed('harmonizer/originals', ORIGINAL_FILE)),
+    ];
+    if (found.length === 0) return;
     const live = new Set(
       (
         await this.prisma.harmonizerDataset.findMany({
-          where: { id: { in: files.map((f) => f.id) } },
+          where: { id: { in: found.map((f) => f.id) } },
           select: { id: true },
         })
       ).map((d) => d.id),
@@ -670,22 +785,31 @@ export class HarmonizerService implements OnApplicationBootstrap {
     // archivo es de esta base, la carpeta es de la otra y no se toca.
     if (live.size === 0) {
       this.logger.warn(
-        `No file in storage/harmonizer belongs to an edition in this database; ${files.length} file(s) kept.`,
+        `No file in storage/harmonizer belongs to an edition in this database; ${found.length} file(s) kept.`,
       );
       return;
     }
     let removed = 0;
-    for (const f of files) {
-      const key = `harmonizer/${f.name}`;
+    for (const f of found) {
       if (!live.has(f.id)) {
-        await this.storage.remove(key);
+        if (await this.isRecent(f.key)) continue;
+        await this.storage.remove(f.key);
         removed++;
       } else if (f.aside) {
-        await this.restoreRawFiles([key]);
+        await this.restoreRawFiles([f.key]);
       }
     }
     if (removed > 0) {
       this.logger.log(`Removed ${removed} harmonizer file(s) with no edition.`);
+    }
+  }
+
+  private async isRecent(key: string): Promise<boolean> {
+    try {
+      const { mtimeMs } = await stat(this.storage.resolvePath(key));
+      return Date.now() - mtimeMs < SWEEP_MIN_AGE_MS;
+    } catch {
+      return false;
     }
   }
 
@@ -938,11 +1062,14 @@ export class HarmonizerService implements OnApplicationBootstrap {
     if (dataType === 'integer' || dataType === 'decimal') {
       for (const [datasetId, map] of valueMaps) {
         const mapping = byDataset.get(datasetId)!;
-        const rows = await this.readRawColumns(mapping.dataset, [mapping.sourceColumn]);
-        const bad = valuesNotFitting(
-          sourceColumnValues(rows, mapping.sourceColumn, new Set(mapping.missingCodes), map),
-          dataType,
-        );
+        const [bad] = await this.valuesNotFittingIn(mapping.dataset, [
+          {
+            column: mapping.sourceColumn,
+            type: dataType,
+            missingCodes: mapping.missingCodes,
+            valueMap: map,
+          },
+        ]);
         if (bad.length > 0) {
           throw new BadRequestException({
             code: 'value_type_mismatch',
@@ -1178,6 +1305,8 @@ export class HarmonizerService implements OnApplicationBootstrap {
           year: dto.year,
           columns,
           rowCount: rows.length,
+          design: dto.design,
+          unit: dto.unit,
         },
       });
     } catch (err) {
@@ -1209,6 +1338,8 @@ export class HarmonizerService implements OnApplicationBootstrap {
         surveyName: survey.name,
         rowCount: dataset.rowCount,
         columnCount: dataset.columns.length,
+        design: dataset.design as SourceDesign | null,
+        unit: dataset.unit as AnalysisUnit | null,
       },
       renamedColumns: renamed,
       source,
@@ -1265,6 +1396,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
         await this.rawPath({ id: datasetId }),
         missing.map((c) => `c${columns.indexOf(c)}`),
         PROFILE_MAX_VALUES,
+        jsTrimSql,
       );
       const rows = missing.map((column, i) => ({
         datasetId,
@@ -1314,39 +1446,8 @@ export class HarmonizerService implements OnApplicationBootstrap {
     return this.createSurvey({ name, organizationId: dto.organizationId! }, userId);
   }
 
-  private parseDbf(
-    buffer: Buffer,
-    encoding: UploadEncoding | undefined,
-  ): ParsedUpload {
-    let table;
-    try {
-      table = readDbf(buffer, encoding === 'auto' ? undefined : encoding);
-    } catch (err) {
-      if (err instanceof DbfError) {
-        throw new BadRequestException({ code: err.code, message: err.message, params: err.params });
-      }
-      throw err;
-    }
-    if (table.rows.length === 0) {
-      throw new BadRequestException({
-        code: 'dbf_no_rows',
-        message: 'The DBF file has no records, or all of them are marked as deleted.',
-      });
-    }
-    const { columns, renamed } = dedupeHeaders(table.headers);
-    return {
-      columns,
-      rows: table.rows.map((values) =>
-        Object.fromEntries(columns.map((col, i) => [col, values[i]])),
-      ),
-      renamed,
-      source: {
-        format: 'dbf',
-        encoding: table.encoding,
-        encodingSource: table.encodingSource,
-        deletedRecords: table.deletedRecords,
-      },
-    };
+  private parseDbf(buffer: Buffer, encoding: UploadEncoding | undefined): ParsedUpload {
+    return parseDbfUpload(buffer, encoding);
   }
 
   private parseCsv(buffer: Buffer): {
@@ -1437,6 +1538,29 @@ export class HarmonizerService implements OnApplicationBootstrap {
     await Promise.all(aside.map((key) => this.storage.remove(key)));
   }
 
+  /**
+   * Changes the source design or unit of an edition. Census editions do not take sample design
+   * roles, so switching to census clears them; switching to sample leaves the weight to be
+   * marked in the mapping, which cannot be saved without it.
+   */
+  async updateDataset(datasetId: string, dto: UpdateDatasetDto): Promise<DatasetInfo> {
+    await this.getDataset(datasetId);
+    const dataset = await this.prisma.$transaction(async (tx) => {
+      if (dto.design === 'census') {
+        await tx.harmonizerMapping.updateMany({
+          where: { datasetId, role: { not: null } },
+          data: { role: null },
+        });
+      }
+      return tx.harmonizerDataset.update({
+        where: { id: datasetId },
+        data: { design: dto.design, unit: dto.unit },
+        include: { survey: true },
+      });
+    });
+    return this.toDatasetInfo(dataset);
+  }
+
   private toDatasetInfo(dataset: {
     id: string;
     name: string;
@@ -1444,6 +1568,8 @@ export class HarmonizerService implements OnApplicationBootstrap {
     surveyId: string;
     rowCount: number;
     columns: string[];
+    design: string | null;
+    unit: string | null;
     survey: { name: string };
   }): DatasetInfo {
     return {
@@ -1454,6 +1580,8 @@ export class HarmonizerService implements OnApplicationBootstrap {
       surveyName: dataset.survey.name,
       rowCount: dataset.rowCount,
       columnCount: dataset.columns.length,
+      design: dataset.design as SourceDesign | null,
+      unit: dataset.unit as AnalysisUnit | null,
     };
   }
 
@@ -1743,6 +1871,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
           canonicalId: m.canonicalVariableId,
           canonicalName: m.canonicalVariable.name,
           missingCodes: m.missingCodes,
+          role: m.role,
         })),
     };
   }
@@ -1757,7 +1886,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
   }> {
     const dataset = await this.getDataset(datasetId);
 
-    const [canonicals, saved, historical, rawRows, codebookVars, codebooks, others] = await Promise.all([
+    const [canonicals, saved, historical, codebookVars, codebooks, others] = await Promise.all([
       this.prisma.harmonizerCanonicalVariable.findMany({
         where: { surveyId: dataset.surveyId },
         orderBy: { name: 'asc' },
@@ -1771,7 +1900,6 @@ export class HarmonizerService implements OnApplicationBootstrap {
           dataset: { surveyId: dataset.surveyId },
         },
       }),
-      this.readRawRows(dataset),
       this.codebookByColumn([dataset]),
       this.prisma.harmonizerCodebook.findMany({
         where: { surveyId: dataset.surveyId },
@@ -1798,11 +1926,34 @@ export class HarmonizerService implements OnApplicationBootstrap {
     const savedCodesByColumn = new Map(
       saved.map((m) => [m.sourceColumn, m.missingCodes]),
     );
+    const savedRoleByColumn = new Map(
+      saved.map((m) => [m.sourceColumn, m.role as SourceRole | null]),
+    );
     const historicalByColumn = new Map<string, string>();
     for (const m of historical) {
       if (!historicalByColumn.has(m.sourceColumn))
         historicalByColumn.set(m.sourceColumn, m.canonicalVariableId);
     }
+
+    // Las filas no se cargan: los valores frecuentes salen de los perfiles guardados y los
+    // tipos, de una consulta de DuckDB por columna sobre el Parquet.
+    const [profiles, typeResults] = await Promise.all([
+      this.columnProfiles([{ dataset, column: null }]),
+      this.columnTypeResults(
+        dataset,
+        dataset.columns.map((name, i): ColumnTypeCheck => {
+          const info = columnCodebook.get(name);
+          return {
+            rawColumn: `c${i}`,
+            missingCodes: savedCodesByColumn.get(name) ?? [],
+            codebookMissing: info
+              ? info.categories.filter((c) => c.kind === 'missing').map((c) => c.code)
+              : null,
+          };
+        }),
+      ),
+    ]);
+    const profileByColumn = profiles.get(dataset.id);
 
     // Una canónica ya asignada (o ya sugerida) a otra columna de este archivo
     // no se vuelve a sugerir: dos columnas a la misma canónica colisionan.
@@ -1831,31 +1982,27 @@ export class HarmonizerService implements OnApplicationBootstrap {
       return null;
     };
 
-    const columns = dataset.columns.map((name): MappingColumn => {
-      const inferredType = inferValueType(
-        sourceColumnValues(
-          rawRows,
-          name,
-          new Set(savedCodesByColumn.get(name) ?? []),
-        ),
-      );
-      const values = columnValues(rawRows, name);
+    const columns = dataset.columns.map((name, i): MappingColumn => {
+      const types = typeResults[i];
+      const inferredType = inferredTypeOf(types.saved);
+      const values = profileColumnValues(profileByColumn?.get(name));
       const info = columnCodebook.get(name);
       let codebook: ColumnCodebook | null = null;
-      if (info) {
-        const distinct = new Set(rawRows.map((r) => (r[name] ?? '').trim()));
-        distinct.delete('');
-        const missingCodes = codebookMissingCodes(info.categories, distinct);
+      if (info && types.codebook) {
         codebook = {
           ...info,
-          missingCodes,
-          suggestedType: codebookSuggestedType(
-            info,
-            sourceColumnValues(rawRows, name, new Set(missingCodes)),
-          ),
+          missingCodes: codebookMissingCodes(info.categories, types.codebook.codeValues),
+          suggestedType: codebookSuggestedType(info, types.codebook.facts),
         };
       }
-      const base = { name, missingCodes: [] as string[], inferredType, values, codebook };
+      const base = {
+        name,
+        missingCodes: [] as string[],
+        role: null as SourceRole | null,
+        inferredType,
+        values,
+        codebook,
+      };
       const savedId = savedByColumn.get(name);
       if (savedId) {
         return {
@@ -1864,6 +2011,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
           suggested: null,
           suggestionSource: null,
           missingCodes: savedCodesByColumn.get(name) ?? [],
+          role: savedRoleByColumn.get(name) ?? null,
         };
       }
       const suggested = suggestion(name, info);
@@ -1925,6 +2073,13 @@ export class HarmonizerService implements OnApplicationBootstrap {
     const dataset = await this.getDataset(datasetId);
     const choiceByColumn = new Map(dto.columns.map((c) => [c.column, c]));
 
+    assertSourceRoles(
+      dataset.design,
+      dataset.columns.map((column) => {
+        const choice = choiceByColumn.get(column);
+        return { column, mapped: !!choice && isMappedChoice(choice), role: choice?.role };
+      }),
+    );
     await this.assertNewCanonicalNames(dataset, choiceByColumn);
     const saved = await this.prisma.harmonizerMapping.findMany({
       where: { datasetId },
@@ -1979,6 +2134,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
           column: string;
           canonicalId: string | null;
           missingCodes: string[];
+          role: SourceRole | null;
           dataType: ValueType | undefined;
         }[] = [];
         const columnsByCanonical = new Map<string, string[]>();
@@ -2003,6 +2159,7 @@ export class HarmonizerService implements OnApplicationBootstrap {
             column,
             canonicalId,
             missingCodes: normalizeMissingCodes(choice?.missingCodes),
+            role: choice?.role ?? null,
             dataType: choice?.dataType,
           });
           if (canonicalId !== null) {
@@ -2029,22 +2186,31 @@ export class HarmonizerService implements OnApplicationBootstrap {
 
         const toDelete: string[] = [];
         const toInsert: Prisma.HarmonizerMappingCreateManyInput[] = [];
-        for (const { column, canonicalId, missingCodes } of resolved) {
+        for (const { column, canonicalId, missingCodes, role } of resolved) {
           const existing = savedByColumn.get(column);
           if (canonicalId === null) {
             if (existing) toDelete.push(existing.id);
           } else if (!existing) {
-            toInsert.push({ datasetId, sourceColumn: column, canonicalVariableId: canonicalId, missingCodes });
+            toInsert.push({
+              datasetId,
+              sourceColumn: column,
+              canonicalVariableId: canonicalId,
+              missingCodes,
+              role,
+            });
           } else if (existing.canonicalVariableId !== canonicalId) {
             // La recodificación es de la variable anterior: con otra variable no aplica.
             await tx.harmonizerMapping.update({
               where: { id: existing.id },
-              data: { canonicalVariableId: canonicalId, missingCodes, valueMap: {} },
+              data: { canonicalVariableId: canonicalId, missingCodes, role, valueMap: {} },
             });
-          } else if (existing.missingCodes.join('\u0000') !== missingCodes.join('\u0000')) {
+          } else if (
+            existing.missingCodes.join('\u0000') !== missingCodes.join('\u0000') ||
+            existing.role !== role
+          ) {
             await tx.harmonizerMapping.update({
               where: { id: existing.id },
-              data: { missingCodes },
+              data: { missingCodes, role },
             });
           }
         }
@@ -2186,26 +2352,24 @@ export class HarmonizerService implements OnApplicationBootstrap {
       );
     });
     if (changed.length > 0) {
-      const rows = await this.readRawColumns(
+      const badByChoice = await this.valuesNotFittingIn(
         dataset,
-        changed.map((c) => c.column),
+        changed.map((choice) => {
+          // La recodificación guardada sigue aplicando si la columna mantiene su variable.
+          const saved = savedByColumn.get(choice.column);
+          const keepsVariable =
+            saved !== undefined &&
+            choice.choice === `${CANONICAL_PREFIX}${saved.canonicalVariableId}`;
+          return {
+            column: choice.column,
+            type: choice.dataType,
+            missingCodes: normalizeMissingCodes(choice.missingCodes),
+            valueMap: keepsVariable ? toValueMap(saved.valueMap) : undefined,
+          };
+        }),
       );
-      for (const choice of changed) {
-        const codes = new Set(normalizeMissingCodes(choice.missingCodes));
-        // La recodificación guardada sigue aplicando si la columna mantiene su variable.
-        const saved = savedByColumn.get(choice.column);
-        const keepsVariable =
-          saved !== undefined &&
-          choice.choice === `${CANONICAL_PREFIX}${saved.canonicalVariableId}`;
-        const bad = valuesNotFitting(
-          sourceColumnValues(
-            rows,
-            choice.column,
-            codes,
-            keepsVariable ? toValueMap(saved.valueMap) : undefined,
-          ),
-          choice.dataType,
-        );
+      for (const [i, choice] of changed.entries()) {
+        const bad = badByChoice[i];
         if (bad.length > 0) {
           throw new BadRequestException({
             code: 'value_type_mismatch',
@@ -2236,17 +2400,15 @@ export class HarmonizerService implements OnApplicationBootstrap {
       orderBy: { dataset: { year: 'asc' } },
     });
     for (const m of others) {
-      const otherRows = await this.readRawColumns(m.dataset, [m.sourceColumn]);
       const type = wanted.get(m.canonicalVariableId)!;
-      const bad = valuesNotFitting(
-        sourceColumnValues(
-          otherRows,
-          m.sourceColumn,
-          new Set(m.missingCodes),
-          toValueMap(m.valueMap),
-        ),
-        type,
-      );
+      const [bad] = await this.valuesNotFittingIn(m.dataset, [
+        {
+          column: m.sourceColumn,
+          type,
+          missingCodes: m.missingCodes,
+          valueMap: toValueMap(m.valueMap),
+        },
+      ]);
       if (bad.length > 0) {
         throw new BadRequestException({
           code: 'value_type_mismatch',
@@ -2264,31 +2426,65 @@ export class HarmonizerService implements OnApplicationBootstrap {
     }
   }
 
-  /** Todas las filas de una edición, pero solo con las columnas pedidas (validación de tipos). */
-  private async readRawColumns(
+  /**
+   * Para cada revisión, los valores de la columna (sin los códigos de no especificado y ya
+   * recodificados) que no caben en el tipo: como mucho 5, en orden de aparición. DuckDB los
+   * busca en el Parquet; las filas no se cargan. Una columna que la edición no tiene no da
+   * ninguno.
+   */
+  private async valuesNotFittingIn(
     dataset: { id: string; columns: string[]; rowCount: number },
-    columns: string[],
-  ): Promise<RawData[]> {
-    const wanted = columns.filter((c) => dataset.columns.includes(c));
-    if (wanted.length === 0 || dataset.rowCount === 0) return [];
-    const rows = await this.analysisService.readParquetSlice(
+    checks: {
+      column: string;
+      type: ValueType;
+      missingCodes: string[];
+      valueMap?: Map<string, string>;
+    }[],
+  ): Promise<string[][]> {
+    const out: string[][] = checks.map(() => []);
+    const queried: number[] = [];
+    const queries: string[] = [];
+    for (const [i, check] of checks.entries()) {
+      const position = dataset.columns.indexOf(check.column);
+      if (position < 0 || dataset.rowCount === 0 || check.type === 'text') continue;
+      queried.push(i);
+      queries.push(
+        notFittingQuery({
+          rawColumn: `c${position}`,
+          type: check.type,
+          missingCodes: check.missingCodes,
+          valueMap: check.valueMap,
+        }),
+      );
+    }
+    if (queries.length === 0) return out;
+    const rows = await this.analysisService.runInternalQueries(
       await this.rawPath(dataset),
-      wanted.map((c) => `c${dataset.columns.indexOf(c)}`),
-      0,
-      dataset.rowCount,
+      queries,
     );
-    return rows.map((values) =>
-      Object.fromEntries(wanted.map((c, i) => [c, String(values[i] ?? '')])),
-    );
+    queried.forEach((checkIndex, q) => {
+      out[checkIndex] = readNotFitting(rows[q]);
+    });
+    return out;
   }
 
-  /** Edición con todas sus filas (descargas y validación de tipos). */
-  private async loadEdition(dataset: EditionRecord): Promise<DatasetEdition> {
-    const [mappings, rawRows] = await Promise.all([
-      this.editionMappings(dataset.id),
-      this.readRawRows(dataset),
-    ]);
-    return toEdition(dataset, mappings, rawRows);
+  /**
+   * Tipos de varias columnas de una edición (ver column-checks.ts), en el mismo orden. Cada
+   * resultado se guarda la primera vez (`HarmonizerColumnCheck`): los datos no cambian.
+   */
+  private async columnTypeResults(
+    dataset: { id: string; columns: string[] },
+    checks: ColumnTypeCheck[],
+  ): Promise<ColumnTypeResult[]> {
+    if (checks.length === 0) return [];
+    const rows = await cachedColumnChecks(
+      this.prisma,
+      this.analysisService,
+      dataset.id,
+      await this.rawPath(dataset),
+      checks.map(columnTypeQuery),
+    );
+    return checks.map((check, i) => readColumnTypeResult(check, rows[i]));
   }
 
   /**
@@ -2340,22 +2536,6 @@ export class HarmonizerService implements OnApplicationBootstrap {
     return path;
   }
 
-  private async readRawRows(dataset: {
-    id: string;
-    columns: string[];
-  }): Promise<RawData[]> {
-    // Un archivo vacío no tiene encabezados y no se escribe Parquet.
-    if (dataset.columns.length === 0) return [];
-    const rows = await this.analysisService.readParquetRows(
-      await this.rawPath(dataset),
-    );
-    return rows.map((values) =>
-      Object.fromEntries(
-        dataset.columns.map((col, i) => [col, String(values[i] ?? '')]),
-      ),
-    );
-  }
-
   async getDatasetHarmonized(datasetId: string, params: ViewPageParams = {}) {
     const dataset = await this.getDataset(datasetId);
     const page = viewPage(params);
@@ -2397,33 +2577,6 @@ export class HarmonizerService implements OnApplicationBootstrap {
     const selected = available.filter((v) => requested.has(v));
     const wanted = requested.size > 0 ? selected : available;
     return { available, selected, wanted };
-  }
-
-  private async surveyView(
-    surveyId: string,
-    variables: string | string[] | undefined,
-  ) {
-    const survey = await this.getSurvey(surveyId);
-    const { available, selected, wanted } = await this.surveySelection(
-      surveyId,
-      variables,
-    );
-
-    const datasets = await this.prisma.harmonizerDataset.findMany({
-      where: { surveyId },
-      orderBy: [{ year: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
-    });
-    const editions: DatasetEdition[] = [];
-    for (const dataset of datasets) {
-      editions.push(await this.loadEdition(dataset));
-    }
-
-    return {
-      survey,
-      available,
-      selected,
-      view: buildSurveyView(editions, wanted),
-    };
   }
 
   /**
@@ -2511,14 +2664,41 @@ export class HarmonizerService implements OnApplicationBootstrap {
   async exportDataset(datasetId: string, fmt: string): Promise<ExportFile> {
     const format = this.assertExportFormat(fmt);
     const dataset = await this.getDataset(datasetId);
-    const view = buildDatasetView(await this.loadEdition(dataset));
-    return this.exportView(
-      `harmonized_${dataset.name}_${dataset.year}`,
-      view.headers,
-      view,
-      format,
-      dataset.surveyId,
-    );
+    const edition = await this.exportEdition(dataset);
+    const file = {
+      filename: `${safeFileBase(`harmonized_${dataset.name}_${dataset.year}`, 'harmonized')}.${format}`,
+      contentType: EXPORT_CONTENT_TYPE[format],
+    };
+    const headers = edition.columns.map((c) => c.canon);
+    if (format === 'csv') {
+      return {
+        ...file,
+        ...(await this.csvLinesFile(
+          headers,
+          edition.path ? [{ alias: 'e0', path: edition.path }] : [],
+          edition.path && headers.length > 0
+            ? [editionCsvLinesSql('e0', edition.columns, headers)]
+            : [],
+        )),
+      };
+    }
+    if (headers.length === 0 || !edition.path) {
+      throw new BadRequestException({
+        code: 'harmonized_view_empty',
+        message: 'There are no mapped variables to export as Parquet. Map at least one column.',
+      });
+    }
+    const types = await this.exportTypes(dataset.surveyId, [edition], headers);
+    const metadata = buildSourceMetadata([metadataEdition(edition, edition.columns)], headers, types);
+    return {
+      ...file,
+      metadata,
+      ...(await this.parquetExportFile(
+        [{ alias: 'e0', path: edition.path }],
+        [editionParquetSql('e0', edition.columns, types)],
+        metadata,
+      )),
+    };
   }
 
   async exportSurvey(
@@ -2527,14 +2707,76 @@ export class HarmonizerService implements OnApplicationBootstrap {
     variables: string | string[] | undefined,
   ): Promise<ExportFile> {
     const format = this.assertExportFormat(fmt);
-    const { survey, view } = await this.surveyView(surveyId, variables);
-    return this.exportView(
-      `harmonized_${survey.name}`,
-      ['_dataset', '_year', '_row', ...view.headers],
-      view,
-      format,
+    const survey = await this.getSurvey(surveyId);
+    const { wanted } = await this.surveySelection(surveyId, variables);
+    const datasets = await this.prisma.harmonizerDataset.findMany({
+      where: { surveyId },
+      orderBy: [{ year: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+      include: {
+        mappings: {
+          include: { canonicalVariable: { select: { name: true } } },
+        },
+      },
+    });
+    // Se revisan todas las ediciones (un archivo que falta da 404 aunque no se pidan sus
+    // variables), pero solo aportan filas las que tienen alguna de las variables elegidas.
+    const wantedSet = new Set(wanted);
+    const included: { edition: ExportEdition; columns: ExportColumn[] }[] = [];
+    for (const { mappings, ...dataset } of datasets) {
+      const edition = await this.exportEdition(dataset, mappings);
+      const columns = edition.columns.filter((c) => wantedSet.has(c.canon));
+      if (columns.length > 0) included.push({ edition, columns });
+    }
+    const file = {
+      filename: `${safeFileBase(`harmonized_${survey.name}`, 'harmonized')}.${format}`,
+      contentType: EXPORT_CONTENT_TYPE[format],
+    };
+
+    if (format === 'csv') {
+      return {
+        ...file,
+        ...(await this.csvLinesFile(
+          ['_dataset', '_year', '_row', ...wanted],
+          included.map((i, n) => ({ alias: `e${n}`, path: i.edition.path! })),
+          included.map((i, n) =>
+            editionCsvLinesSql(`e${n}`, i.columns, wanted, {
+              name: i.edition.dataset.name,
+              year: i.edition.dataset.year,
+            }),
+          ),
+        )),
+      };
+    }
+
+    const types = await this.exportTypes(
       survey.id,
+      included.map((i) => ({ ...i.edition, columns: i.columns })),
+      wanted,
     );
+    const sources = included.map((i, n) => ({ alias: `e${n}`, path: i.edition.path! }));
+    const metadata = buildSourceMetadata(
+      included.map((i) => metadataEdition(i.edition, i.columns)),
+      ['_dataset', '_year', '_row', ...wanted],
+      types,
+    );
+    return {
+      ...file,
+      metadata,
+      ...(await this.parquetExportFile(
+        sources,
+        surveyParquetSql(
+          included.map((i, n) => ({
+            source: sources[n].alias,
+            name: i.edition.dataset.name,
+            year: i.edition.dataset.year,
+            columns: i.columns,
+          })),
+          wanted,
+          types,
+        ),
+        metadata,
+      )),
+    };
   }
 
   /**
@@ -2544,16 +2786,43 @@ export class HarmonizerService implements OnApplicationBootstrap {
    */
   async exportOriginal(datasetId: string): Promise<ExportFile> {
     const dataset = await this.getDataset(datasetId);
-    const rows = await this.readRawRows(dataset);
-    // Filas como arreglos: con objetos, csv-stringify leería `EDAD.1` como ruta anidada.
-    const csv = stringify([
-      dataset.columns,
-      ...rows.map((row) => dataset.columns.map((column) => row[column])),
-    ]);
+    const filename = `${safeFileBase(`original_${dataset.name}_${dataset.year}`, 'original')}.csv`;
+    // Ediciones importadas por el worker: el archivo que se subió, byte por byte,
+    // descomprimido mientras se envía. No pasa por memoria, así que no tiene límite de filas.
+    const kept = this.storage.resolvePath(originalStorageKey(dataset.id));
+    if (
+      await access(kept).then(
+        () => true,
+        () => false,
+      )
+    ) {
+      const gunzip = createGunzip();
+      const file = createReadStream(kept);
+      file.on('error', (err) => gunzip.destroy(err));
+      // Descartado sin leerse (una descarga preparada que vence): suelta el archivo.
+      gunzip.once('close', () => file.destroy());
+      return {
+        filename,
+        contentType: EXPORT_CONTENT_TYPE.csv,
+        body: file.pipe(gunzip),
+      };
+    }
+    // Las demás se reconstruyen del Parquet: DuckDB escribe las líneas (ver harmonized-export.ts)
+    // y el encabezado lo escribe csv-stringify. Un archivo vacío (H-08) no tiene Parquet.
+    const path = dataset.columns.length > 0 ? await this.rawPath(dataset) : null;
+    // El encabezado como arreglo: con objetos, csv-stringify leería `EDAD.1` como ruta anidada.
+    const header = `\ufeff${stringify([dataset.columns])}`;
     return {
-      filename: `${safeFileBase(`original_${dataset.name}_${dataset.year}`, 'original')}.csv`,
+      filename,
       contentType: EXPORT_CONTENT_TYPE.csv,
-      body: Buffer.from(`\ufeff${csv}`, 'utf8'),
+      ...(await this.exportTempFile('csv', (dest) =>
+        this.analysisService.writeInternalLines(
+          path ? [{ alias: 'e0', path }] : [],
+          path ? [originalCsvLinesSql('e0', dataset.columns)] : [],
+          dest,
+          header,
+        ),
+      )),
     };
   }
 
@@ -2569,85 +2838,170 @@ export class HarmonizerService implements OnApplicationBootstrap {
     return format;
   }
 
-  private async exportView(
-    baseName: string,
-    columns: string[],
-    view: HarmonizedView,
-    format: ExportFormat,
-    surveyId: string,
-  ): Promise<ExportFile> {
-    const filename = `${safeFileBase(baseName, 'harmonized')}.${format}`;
-    const contentType = EXPORT_CONTENT_TYPE[format];
-
-    if (format === 'csv') {
-      const csv = stringify(view.rows, {
-        header: true,
-        columns: columns.map((key) => ({ key, header: neutralizeCsvFormula(key) })),
-        cast: { number: (n) => String(n), string: neutralizeCsvFormula },
-      });
-      return {
-        filename,
-        contentType,
-        body: Buffer.from(`\ufeff${csv}`, 'utf8'),
-      };
-    }
-
-    if (columns.length === 0) {
-      throw new BadRequestException({
-        code: 'harmonized_view_empty',
-        message: 'There are no mapped variables to export as Parquet. Map at least one column.',
-      });
-    }
-    const types = await this.parquetTypes(surveyId, view);
-    const tmpPath = join(tmpdir(), `ibero-harmonized-${randomUUID()}.parquet`);
-    try {
-      await this.analysisService.writeRowsToParquet(
-        columns,
-        view.rows,
-        tmpPath,
-        types,
-      );
-      return { filename, contentType, body: await readFile(tmpPath) };
-    } finally {
-      await rm(tmpPath, { force: true });
-    }
+  /**
+   * Las columnas de la vista de una edición (ver harmonized-export.ts) y su Parquet crudo, que
+   * debe existir (`404 harmonizer_dataset_file_missing`). Una edición sin columnas (subida vacía,
+   * H-08) no tiene Parquet: `path` es `null`.
+   */
+  private async exportEdition(
+    dataset: EditionRecord,
+    mappings?: EditionMapping[],
+  ): Promise<ExportEdition> {
+    const [used, path] = await Promise.all([
+      mappings ?? this.editionMappings(dataset.id),
+      dataset.columns.length > 0 ? this.rawPath(dataset) : null,
+    ]);
+    return {
+      dataset,
+      path,
+      roles: new Map(
+        used.flatMap((m) => (m.role ? [[m.canonicalVariable.name, m.role] as const] : [])),
+      ),
+      columns: exportColumns(
+        dataset.columns,
+        used.map((m) => ({
+          sourceColumn: m.sourceColumn,
+          canon: m.canonicalVariable.name,
+          missingCodes: m.missingCodes,
+          valueMap: toValueMap(m.valueMap),
+        })),
+      ),
+    };
   }
 
   /**
-   * Tipo de cada columna en el Parquet: el confirmado en la variable canónica o, si
-   * no hay, el que infieren los valores exportados. Las de origen son fijas.
+   * Tipo de cada columna en el Parquet: el confirmado en la variable canónica o, si no hay, el
+   * que infieren los valores exportados de todas las ediciones. DuckDB revisa los valores sobre
+   * cada Parquet (ver column-checks.ts); las filas no se cargan. Las de origen son fijas.
    */
-  private async parquetTypes(
+  private async exportTypes(
     surveyId: string,
-    view: HarmonizedView,
+    editions: ExportEdition[],
+    headers: string[],
   ): Promise<Record<string, ParquetColumnType>> {
     const confirmed = await this.prisma.harmonizerCanonicalVariable.findMany({
-      where: { surveyId, name: { in: view.headers } },
+      where: { surveyId, name: { in: headers } },
       select: { name: true, dataType: true },
     });
     const confirmedByName = new Map(
       confirmed.map((c) => [c.name, c.dataType as ValueType | null]),
     );
 
+    const headerSet = new Set(headers);
+    const facts = new Map<string, TypeFacts[]>();
+    const bad = new Map<string, string[]>();
+    for (const edition of editions) {
+      if (!edition.path) continue;
+      const columns = edition.columns.filter((c) => headerSet.has(c.canon));
+      const toInfer = columns.filter((c) => !confirmedByName.get(c.canon));
+      const toCheck = columns.filter((c) => {
+        const type = confirmedByName.get(c.canon);
+        return type === 'integer' || type === 'decimal';
+      });
+      const factRows = await cachedColumnChecks(
+        this.prisma,
+        this.analysisService,
+        edition.dataset.id,
+        edition.path,
+        toInfer.map(valueFactsQuery),
+      );
+      toInfer.forEach((c, i) => {
+        facts.set(c.canon, [...(facts.get(c.canon) ?? []), readValueFacts(factRows[i])]);
+      });
+      const badRows = await this.analysisService.runInternalQueries(
+        edition.path,
+        toCheck.map((c) =>
+          notFittingQuery({
+            rawColumn: c.rawColumn,
+            type: confirmedByName.get(c.canon)!,
+            missingCodes: c.missingCodes,
+            valueMap: c.valueMap,
+          }),
+        ),
+      );
+      // Ediciones en orden: los primeros valores de cada una son los primeros de la descarga.
+      toCheck.forEach((c, i) => {
+        bad.set(c.canon, [...(bad.get(c.canon) ?? []), ...readNotFitting(badRows[i])]);
+      });
+    }
+
     const types: Record<string, ParquetColumnType> = {
       _dataset: 'VARCHAR',
       _year: 'BIGINT',
       _row: 'BIGINT',
     };
-    for (const header of view.headers) {
-      const values = view.rows.map((r) => r[header] ?? null);
-      const type = confirmedByName.get(header) ?? inferValueType(values);
+    for (const header of headers) {
+      const type =
+        confirmedByName.get(header) ?? inferredTypeOf(mergeFacts(facts.get(header) ?? []));
       // El mapeo ya valida al guardar; esto cubre ediciones mapeadas sin enviar tipo.
-      const bad = valuesNotFitting(values, type);
-      if (bad.length > 0) {
+      const values = [...new Set(bad.get(header) ?? [])].slice(0, 5);
+      if (values.length > 0) {
         throw new ConflictException({
           code: 'value_type_mismatch',
-          message: `The confirmed type of variable "${header}" requires ${VALUE_TYPE_LABEL[type]}, but it has values that are not: ${quoteList(bad)}.`,
-          params: { source: 'confirmed_type', variable: header, expectedType: type, values: bad },
+          message: `The confirmed type of variable "${header}" requires ${VALUE_TYPE_LABEL[type]}, but it has values that are not: ${quoteList(values)}.`,
+          params: { source: 'confirmed_type', variable: header, expectedType: type, values },
         });
       }
       types[header] = PARQUET_TYPE[type];
     }
     return types;
+  }
+
+  /**
+   * El CSV de una vista armonizada: el BOM y el encabezado (con neutralización de fórmulas) los
+   * escribe csv-stringify, como antes; las filas las escribe DuckDB, ya como líneas de CSV, una
+   * parte (edición) tras otra. Las filas no pasan por JavaScript.
+   */
+  private csvLinesFile(
+    columns: string[],
+    sources: NamedSource[],
+    parts: string[],
+  ): Promise<Pick<ExportFile, 'body' | 'size'>> {
+    const header = `\ufeff${stringify([], {
+      header: true,
+      columns: columns.map((key) => ({ key, header: neutralizeCsvFormula(key) })),
+      cast: { number: (n) => String(n), string: neutralizeCsvFormula },
+    })}`;
+    return this.exportTempFile('csv', (path) =>
+      this.analysisService.writeInternalLines(sources, parts, path, header),
+    );
+  }
+
+  /** The Parquet of a harmonized view, with its source metadata in the footer when it has any. */
+  private parquetExportFile(
+    sources: NamedSource[],
+    parts: string[],
+    metadata: SourceMetadata | null,
+  ): Promise<Pick<ExportFile, 'body' | 'size'>> {
+    return this.exportTempFile('parquet', (path) =>
+      this.analysisService.copyInternalQueryToParquet(
+        sources,
+        parts,
+        path,
+        sourceMetadataFooter(metadata),
+      ),
+    );
+  }
+
+  /**
+   * Escribe la descarga completa en un archivo temporal y la devuelve como stream, con su
+   * tamaño. El stream borra el archivo al cerrarse (también si el cliente corta o si se
+   * descarta sin leerlo). Un error al escribir llega antes de mandar nada, con su código.
+   */
+  private async exportTempFile(
+    ext: ExportFormat,
+    write: (path: string) => Promise<unknown>,
+  ): Promise<Pick<ExportFile, 'body' | 'size'>> {
+    const path = join(tmpdir(), `ibero-harmonized-${randomUUID()}.${ext}`);
+    try {
+      await write(path);
+    } catch (err) {
+      await rm(path, { force: true });
+      throw err;
+    }
+    const { size } = await stat(path);
+    const body = createReadStream(path);
+    body.once('close', () => void rm(path, { force: true }));
+    return { body, size };
   }
 }
