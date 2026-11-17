@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { DatasetVisibility } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { LocalStorageService } from '../storage/local-storage.service.js';
@@ -49,13 +50,15 @@ const PUBLIC_DONE_ANALYSIS = {
   dataset: { visibility: DatasetVisibility.PUBLIC },
 };
 
-const PUBLIC_VISITOR: AuthenticatedUser = {
-  id: 'public',
-  email: 'visitor@public.ibero-data',
-  fullName: 'Public visitor',
-  isSysadmin: false,
-  tokenVersion: 0,
-};
+function publicVisitor(): AuthenticatedUser {
+  return {
+    id: 'public',
+    email: `visitor-${randomUUID()}@public.ibero-data`,
+    fullName: 'Public visitor',
+    isSysadmin: false,
+    tokenVersion: 0,
+  };
+}
 
 @Injectable()
 export class PublicService {
@@ -233,7 +236,7 @@ export class PublicService {
 
     if (analysis.origin === 'VISTRACE' && analysis.vistraceRecipe) {
       const canvas = analysis.vistraceRecipe as unknown as VistraceRecipe;
-      const url = this.handoffService.buildCanvasHandoffUrl(PUBLIC_VISITOR, {
+      const url = this.handoffService.buildCanvasHandoffUrl(publicVisitor(), {
         state: canvas.state,
         tables: canvas.tables.map((t) => ({
           ...t,
@@ -269,7 +272,7 @@ export class PublicService {
     }
 
     const url = this.handoffService.buildAnalysisHandoffUrl(
-      PUBLIC_VISITOR,
+      publicVisitor(),
       { downloadUrl: resultDownloadUrl, filename: `${analysis.title}.parquet` },
       { downloadUrl: sourceDownloadUrl, filename: analysis.sourceResource.filename },
       vistraceRecipe,

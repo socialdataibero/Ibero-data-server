@@ -14,6 +14,10 @@ export interface IberoContext {
   resourceName?: string;
   analysisId?: string;
   analysisTitle?: string;
+  analysisSlug?: string;
+  analysisFolder?: string;
+  analysisVisibility?: string;
+  analysisDescription?: string | null;
   publishToken?: string;
   /** False for users who may open vistrace but not save back to Ibero Data (no publishToken then). */
   canPublish: boolean;
