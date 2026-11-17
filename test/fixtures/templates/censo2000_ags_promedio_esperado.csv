@@ -1,0 +1,115 @@
+fuente,edicion,indicador,nivel,cve,nombre,sexo,ambito,habla,num,den,ee,casos
+censo,2000,Edad promedio (años),entidad,01,Aguascalientes,Todos,Todos,Todos,23343597.0,939065.0,0.198359,87317
+censo,2000,Edad promedio (años),entidad,01,Aguascalientes,Todos,Todos,Habla lengua indígena,59295.0,1793.0,2.718525,148
+censo,2000,Edad promedio (años),entidad,01,Aguascalientes,Todos,Todos,No habla (resto),23014703.0,818035.0,0.171396,75688
+censo,2000,Edad promedio (años),entidad,01,Aguascalientes,Todos,Todos,No especificado,31105.0,2209.0,1.255222,246
+censo,2000,Edad promedio (años),entidad,01,Aguascalientes,Todos,Todos,No aplica (menores de 5 años),238494.0,117028.0,0.013312,11235
+censo,2000,Edad promedio (años),entidad,01,Aguascalientes,Todos,"Rural (menos de 2,500 habitantes)",Todos,4330860.0,184584.0,0.546354,23246
+censo,2000,Edad promedio (años),entidad,01,Aguascalientes,Todos,Urbano,Todos,19012737.0,754481.0,0.173422,64071
+censo,2000,Edad promedio (años),entidad,01,Aguascalientes,Hombre,Todos,Todos,10970870.0,451873.0,0.188783,42023
+censo,2000,Edad promedio (años),entidad,01,Aguascalientes,Hombre,Todos,Habla lengua indígena,31016.0,963.0,2.893452,79
+censo,2000,Edad promedio (años),entidad,01,Aguascalientes,Hombre,Todos,No habla (resto),10801800.0,389851.0,0.166416,36092
+censo,2000,Edad promedio (años),entidad,01,Aguascalientes,Hombre,Todos,No especificado,14087.0,1023.0,1.352206,113
+censo,2000,Edad promedio (años),entidad,01,Aguascalientes,Hombre,Todos,No aplica (menores de 5 años),123967.0,60036.0,0.020645,5739
+censo,2000,Edad promedio (años),entidad,01,Aguascalientes,Mujer,Todos,Todos,12372727.0,487192.0,0.224719,45294
+censo,2000,Edad promedio (años),entidad,01,Aguascalientes,Mujer,Todos,Habla lengua indígena,28279.0,830.0,3.323092,69
+censo,2000,Edad promedio (años),entidad,01,Aguascalientes,Mujer,Todos,No habla (resto),12212903.0,428184.0,0.197115,39596
+censo,2000,Edad promedio (años),entidad,01,Aguascalientes,Mujer,Todos,No especificado,17018.0,1186.0,1.644928,133
+censo,2000,Edad promedio (años),entidad,01,Aguascalientes,Mujer,Todos,No aplica (menores de 5 años),114527.0,56992.0,0.023013,5496
+censo,2000,Edad promedio (años),municipio,01001,Aguascalientes,Todos,Todos,Todos,16334535.0,640404.0,0.281298,46837
+censo,2000,Edad promedio (años),municipio,01001,Aguascalientes,Todos,Todos,Habla lengua indígena,49363.0,1516.0,3.07362,110
+censo,2000,Edad promedio (años),municipio,01001,Aguascalientes,Todos,Todos,No habla (resto),16109248.0,561990.0,0.236076,41024
+censo,2000,Edad promedio (años),municipio,01001,Aguascalientes,Todos,Todos,No especificado,23948.0,1539.0,1.468591,142
+censo,2000,Edad promedio (años),municipio,01001,Aguascalientes,Todos,Todos,No aplica (menores de 5 años),151976.0,75359.0,0.017491,5561
+censo,2000,Edad promedio (años),municipio,01001,Aguascalientes,Todos,"Rural (menos de 2,500 habitantes)",Todos,958823.0,41378.0,1.985274,2944
+censo,2000,Edad promedio (años),municipio,01001,Aguascalientes,Todos,Urbano,Todos,15375712.0,599026.0,0.188774,43893
+censo,2000,Edad promedio (años),municipio,01001,Aguascalientes,Hombre,Todos,Todos,7620536.0,307995.0,0.26061,22459
+censo,2000,Edad promedio (años),municipio,01001,Aguascalientes,Mujer,Todos,Todos,8713999.0,332409.0,0.31974,24378
+censo,2000,Edad promedio (años),municipio,01002,Asientos,Todos,Todos,Todos,800024.0,37513.0,0.287788,3948
+censo,2000,Edad promedio (años),municipio,01002,Asientos,Todos,Todos,Habla lengua indígena,266.0,7.0,0.0,1
+censo,2000,Edad promedio (años),municipio,01002,Asientos,Todos,Todos,No habla (resto),788052.0,31963.0,0.476167,3381
+censo,2000,Edad promedio (años),municipio,01002,Asientos,Todos,Todos,No especificado,567.0,72.0,1.156763,7
+censo,2000,Edad promedio (años),municipio,01002,Asientos,Todos,Todos,No aplica (menores de 5 años),11139.0,5471.0,0.043583,559
+censo,2000,Edad promedio (años),municipio,01002,Asientos,Todos,"Rural (menos de 2,500 habitantes)",Todos,582169.0,27189.0,0.262906,2695
+censo,2000,Edad promedio (años),municipio,01002,Asientos,Todos,Urbano,Todos,217855.0,10324.0,0.775116,1253
+censo,2000,Edad promedio (años),municipio,01002,Asientos,Hombre,Todos,Todos,389115.0,18010.0,0.265065,1915
+censo,2000,Edad promedio (años),municipio,01002,Asientos,Mujer,Todos,Todos,410909.0,19503.0,0.385686,2033
+censo,2000,Edad promedio (años),municipio,01003,Calvillo,Todos,Todos,Todos,1234871.0,50897.0,0.36301,5306
+censo,2000,Edad promedio (años),municipio,01003,Calvillo,Todos,Todos,Habla lengua indígena,4034.0,109.0,1.347559,10
+censo,2000,Edad promedio (años),municipio,01003,Calvillo,Todos,Todos,No habla (resto),1215325.0,43644.0,0.371967,4531
+censo,2000,Edad promedio (años),municipio,01003,Calvillo,Todos,Todos,No especificado,292.0,47.0,0.794938,6
+censo,2000,Edad promedio (años),municipio,01003,Calvillo,Todos,Todos,No aplica (menores de 5 años),15220.0,7097.0,0.03756,759
+censo,2000,Edad promedio (años),municipio,01003,Calvillo,Todos,"Rural (menos de 2,500 habitantes)",Todos,656444.0,26970.0,0.212064,2290
+censo,2000,Edad promedio (años),municipio,01003,Calvillo,Todos,Urbano,Todos,578427.0,23927.0,0.710761,3016
+censo,2000,Edad promedio (años),municipio,01003,Calvillo,Hombre,Todos,Todos,584375.0,24253.0,0.434586,2521
+censo,2000,Edad promedio (años),municipio,01003,Calvillo,Mujer,Todos,Todos,650496.0,26644.0,0.353521,2785
+censo,2000,Edad promedio (años),municipio,01004,Cosío,Todos,Todos,Todos,297096.0,12575.0,1.32796,3613
+censo,2000,Edad promedio (años),municipio,01004,Cosío,Todos,Todos,Habla lengua indígena,158.0,6.0,0.0,3
+censo,2000,Edad promedio (años),municipio,01004,Cosío,Todos,Todos,No habla (resto),292290.0,10687.0,1.318145,3084
+censo,2000,Edad promedio (años),municipio,01004,Cosío,Todos,Todos,No especificado,1174.0,141.0,0.09636,29
+censo,2000,Edad promedio (años),municipio,01004,Cosío,Todos,Todos,No aplica (menores de 5 años),3474.0,1741.0,0.068481,497
+censo,2000,Edad promedio (años),municipio,01004,Cosío,Todos,"Rural (menos de 2,500 habitantes)",Todos,188525.0,8378.0,1.223117,2172
+censo,2000,Edad promedio (años),municipio,01004,Cosío,Todos,Urbano,Todos,108571.0,4197.0,1.646211,1441
+censo,2000,Edad promedio (años),municipio,01004,Cosío,Hombre,Todos,Todos,145396.0,6236.0,1.231836,1775
+censo,2000,Edad promedio (años),municipio,01004,Cosío,Mujer,Todos,Todos,151700.0,6339.0,1.415445,1838
+censo,2000,Edad promedio (años),municipio,01005,Jesús María,Todos,Todos,Todos,1471274.0,63728.0,0.605724,5652
+censo,2000,Edad promedio (años),municipio,01005,Jesús María,Todos,Todos,Habla lengua indígena,1528.0,72.0,5.866367,5
+censo,2000,Edad promedio (años),municipio,01005,Jesús María,Todos,Todos,No habla (resto),1449708.0,54646.0,0.647235,4821
+censo,2000,Edad promedio (años),municipio,01005,Jesús María,Todos,Todos,No especificado,1448.0,102.0,1.659018,8
+censo,2000,Edad promedio (años),municipio,01005,Jesús María,Todos,Todos,No aplica (menores de 5 años),18590.0,8908.0,0.040093,818
+censo,2000,Edad promedio (años),municipio,01005,Jesús María,Todos,"Rural (menos de 2,500 habitantes)",Todos,650362.0,27016.0,0.095282,2419
+censo,2000,Edad promedio (años),municipio,01005,Jesús María,Todos,Urbano,Todos,820912.0,36712.0,0.75554,3233
+censo,2000,Edad promedio (años),municipio,01005,Jesús María,Hombre,Todos,Todos,688511.0,30271.0,0.639795,2687
+censo,2000,Edad promedio (años),municipio,01005,Jesús María,Mujer,Todos,Todos,782763.0,33457.0,0.602965,2965
+censo,2000,Edad promedio (años),municipio,01006,Pabellón de Arteaga,Todos,Todos,Todos,848868.0,34035.0,0.591557,3513
+censo,2000,Edad promedio (años),municipio,01006,Pabellón de Arteaga,Todos,Todos,Habla lengua indígena,1968.0,36.0,3.892943,4
+censo,2000,Edad promedio (años),municipio,01006,Pabellón de Arteaga,Todos,Todos,No habla (resto),837838.0,29819.0,0.514789,3057
+censo,2000,Edad promedio (años),municipio,01006,Pabellón de Arteaga,Todos,Todos,No especificado,440.0,68.0,0.385343,3
+censo,2000,Edad promedio (años),municipio,01006,Pabellón de Arteaga,Todos,Todos,No aplica (menores de 5 años),8622.0,4112.0,0.067422,449
+censo,2000,Edad promedio (años),municipio,01006,Pabellón de Arteaga,Todos,"Rural (menos de 2,500 habitantes)",Todos,180858.0,7523.0,1.348809,1254
+censo,2000,Edad promedio (años),municipio,01006,Pabellón de Arteaga,Todos,Urbano,Todos,668010.0,26512.0,0.584969,2259
+censo,2000,Edad promedio (años),municipio,01006,Pabellón de Arteaga,Hombre,Todos,Todos,400920.0,16354.0,0.691438,1676
+censo,2000,Edad promedio (años),municipio,01006,Pabellón de Arteaga,Mujer,Todos,Todos,447948.0,17681.0,0.658093,1837
+censo,2000,Edad promedio (años),municipio,01007,Rincón de Romos,Todos,Todos,Todos,961702.0,41380.0,1.185705,3527
+censo,2000,Edad promedio (años),municipio,01007,Rincón de Romos,Todos,Todos,No habla (resto),948348.0,34985.0,1.127353,2984
+censo,2000,Edad promedio (años),municipio,01007,Rincón de Romos,Todos,Todos,No especificado,408.0,70.0,0.711374,5
+censo,2000,Edad promedio (años),municipio,01007,Rincón de Romos,Todos,Todos,No aplica (menores de 5 años),12946.0,6325.0,0.062024,538
+censo,2000,Edad promedio (años),municipio,01007,Rincón de Romos,Todos,"Rural (menos de 2,500 habitantes)",Todos,297693.0,12386.0,1.829901,1347
+censo,2000,Edad promedio (años),municipio,01007,Rincón de Romos,Todos,Urbano,Todos,664009.0,28994.0,1.509309,2180
+censo,2000,Edad promedio (años),municipio,01007,Rincón de Romos,Hombre,Todos,Todos,471250.0,20513.0,1.169354,1760
+censo,2000,Edad promedio (años),municipio,01007,Rincón de Romos,Mujer,Todos,Todos,490452.0,20867.0,1.257712,1767
+censo,2000,Edad promedio (años),municipio,01008,San José de Gracia,Todos,Todos,Todos,179869.0,7214.0,0.684507,3510
+censo,2000,Edad promedio (años),municipio,01008,San José de Gracia,Todos,Todos,Habla lengua indígena,48.0,1.0,0.0,1
+censo,2000,Edad promedio (años),municipio,01008,San José de Gracia,Todos,Todos,No habla (resto),176208.0,6195.0,0.749709,3009
+censo,2000,Edad promedio (años),municipio,01008,San José de Gracia,Todos,Todos,No especificado,1587.0,67.0,2.2295,22
+censo,2000,Edad promedio (años),municipio,01008,San José de Gracia,Todos,Todos,No aplica (menores de 5 años),2026.0,951.0,0.066768,478
+censo,2000,Edad promedio (años),municipio,01008,San José de Gracia,Todos,"Rural (menos de 2,500 habitantes)",Todos,86396.0,3346.0,1.218748,2022
+censo,2000,Edad promedio (años),municipio,01008,San José de Gracia,Todos,Urbano,Todos,93473.0,3868.0,0.677111,1488
+censo,2000,Edad promedio (años),municipio,01008,San José de Gracia,Hombre,Todos,Todos,87133.0,3450.0,0.807478,1681
+censo,2000,Edad promedio (años),municipio,01008,San José de Gracia,Mujer,Todos,Todos,92736.0,3764.0,0.683729,1829
+censo,2000,Edad promedio (años),municipio,01009,Tepezalá,Todos,Todos,Todos,407224.0,16411.0,0.350337,3682
+censo,2000,Edad promedio (años),municipio,01009,Tepezalá,Todos,Todos,Habla lengua indígena,9.0,1.0,0.0,1
+censo,2000,Edad promedio (años),municipio,01009,Tepezalá,Todos,Todos,No habla (resto),402982.0,14320.0,0.243618,3206
+censo,2000,Edad promedio (años),municipio,01009,Tepezalá,Todos,Todos,No especificado,203.0,31.0,1.22732,6
+censo,2000,Edad promedio (años),municipio,01009,Tepezalá,Todos,Todos,No aplica (menores de 5 años),4030.0,2059.0,0.02497,469
+censo,2000,Edad promedio (años),municipio,01009,Tepezalá,Todos,"Rural (menos de 2,500 habitantes)",Todos,257463.0,10213.0,0.0,1826
+censo,2000,Edad promedio (años),municipio,01009,Tepezalá,Todos,Urbano,Todos,149761.0,6198.0,0.680332,1856
+censo,2000,Edad promedio (años),municipio,01009,Tepezalá,Hombre,Todos,Todos,194893.0,7916.0,0.714909,1773
+censo,2000,Edad promedio (años),municipio,01009,Tepezalá,Mujer,Todos,Todos,212331.0,8495.0,0.273016,1909
+censo,2000,Edad promedio (años),municipio,01010,El Llano,Todos,Todos,Todos,348500.0,14934.0,0.765335,4024
+censo,2000,Edad promedio (años),municipio,01010,El Llano,Todos,Todos,No habla (resto),343445.0,12796.0,0.814726,3446
+censo,2000,Edad promedio (años),municipio,01010,El Llano,Todos,Todos,No especificado,669.0,49.0,2.767617,13
+censo,2000,Edad promedio (años),municipio,01010,El Llano,Todos,Todos,No aplica (menores de 5 años),4386.0,2089.0,0.02821,565
+censo,2000,Edad promedio (años),municipio,01010,El Llano,Todos,"Rural (menos de 2,500 habitantes)",Todos,250869.0,10773.0,0.884172,2785
+censo,2000,Edad promedio (años),municipio,01010,El Llano,Todos,Urbano,Todos,97631.0,4161.0,1.376869,1239
+censo,2000,Edad promedio (años),municipio,01010,El Llano,Hombre,Todos,Todos,170542.0,7454.0,0.882469,2009
+censo,2000,Edad promedio (años),municipio,01010,El Llano,Mujer,Todos,Todos,177958.0,7480.0,0.674748,2015
+censo,2000,Edad promedio (años),municipio,01011,San Francisco de los Romo,Todos,Todos,Todos,459634.0,19974.0,0.384547,3705
+censo,2000,Edad promedio (años),municipio,01011,San Francisco de los Romo,Todos,Todos,Habla lengua indígena,1921.0,45.0,5.608546,13
+censo,2000,Edad promedio (años),municipio,01011,San Francisco de los Romo,Todos,Todos,No habla (resto),451259.0,16990.0,0.470102,3145
+censo,2000,Edad promedio (años),municipio,01011,San Francisco de los Romo,Todos,Todos,No especificado,369.0,23.0,3.044228,5
+censo,2000,Edad promedio (años),municipio,01011,San Francisco de los Romo,Todos,Todos,No aplica (menores de 5 años),6085.0,2916.0,0.051102,542
+censo,2000,Edad promedio (años),municipio,01011,San Francisco de los Romo,Todos,"Rural (menos de 2,500 habitantes)",Todos,221258.0,9412.0,0.626801,1492
+censo,2000,Edad promedio (años),municipio,01011,San Francisco de los Romo,Todos,Urbano,Todos,238376.0,10562.0,0.44178,2213
+censo,2000,Edad promedio (años),municipio,01011,San Francisco de los Romo,Hombre,Todos,Todos,218199.0,9421.0,0.658962,1767
+censo,2000,Edad promedio (años),municipio,01011,San Francisco de los Romo,Mujer,Todos,Todos,241435.0,10553.0,0.307149,1938

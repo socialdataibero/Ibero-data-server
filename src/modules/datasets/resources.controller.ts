@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   Post,
+  Put,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -23,6 +24,7 @@ import { HandoffService } from '../handoff/handoff.service.js';
 import { ResourcesService } from './resources.service.js';
 import { RunQueryDto } from './dto/run-query.dto.js';
 import { AttachHarmonizedDto } from './dto/attach-harmonized.dto.js';
+import { SetVariableMetadataDto } from './dto/set-variable-metadata.dto.js';
 
 const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
 
@@ -63,6 +65,17 @@ export class ResourcesController {
   @OrgRoles(OrgRole.ADMIN, OrgRole.EDITOR)
   attachHarmonized(@Param('datasetId') datasetId: string, @Body() dto: AttachHarmonizedDto) {
     return this.resourcesService.attachHarmonized(datasetId, dto);
+  }
+
+  /** What the analysis templates need about each variable of the resource (template demo). */
+  @Put(':resourceId/variable-metadata')
+  @OrgRoles(OrgRole.ADMIN, OrgRole.EDITOR)
+  setVariableMetadata(
+    @Param('datasetId') datasetId: string,
+    @Param('resourceId') resourceId: string,
+    @Body() dto: SetVariableMetadataDto,
+  ) {
+    return this.resourcesService.setVariableMetadata(datasetId, resourceId, dto.metadata);
   }
 
   @Post(':resourceId/query')

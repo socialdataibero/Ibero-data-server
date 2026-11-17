@@ -1,0 +1,897 @@
+escenario,fuente,edicion,indicador,nivel,cve,nombre,sexo,ambito,habla,corte,num,den,ee,casos
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,Todos,Sin escolaridad,36568.0,807741.0,0.002224,3609
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,Todos,Básica,594648.0,807741.0,0.008981,56725
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,Todos,Media superior y técnica,112852.0,807741.0,0.005798,9376
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,Todos,Superior,63673.0,807741.0,0.004766,5026
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,Habla lengua indígena,Sin escolaridad,129.0,1767.0,0.020054,12
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,Habla lengua indígena,Básica,1175.0,1767.0,0.058559,95
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,Habla lengua indígena,Media superior y técnica,216.0,1767.0,0.035692,16
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,Habla lengua indígena,Superior,247.0,1767.0,0.041563,23
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,No habla (resto),Sin escolaridad,36352.0,804746.0,0.002227,3589
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,No habla (resto),Básica,592542.0,804746.0,0.008974,56525
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,No habla (resto),Media superior y técnica,112485.0,804746.0,0.005806,9349
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,No habla (resto),Superior,63367.0,804746.0,0.004766,4995
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,No especificado,Sin escolaridad,87.0,1228.0,0.028691,8
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,No especificado,Básica,931.0,1228.0,0.056081,105
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,No especificado,Media superior y técnica,151.0,1228.0,0.044181,11
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,No especificado,Superior,59.0,1228.0,0.01437,8
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,"Rural (menos de 2,500 habitantes)",Todos,Sin escolaridad,11242.0,156349.0,0.008185,1320
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,"Rural (menos de 2,500 habitantes)",Todos,Básica,137732.0,156349.0,0.008681,17493
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,"Rural (menos de 2,500 habitantes)",Todos,Media superior y técnica,6106.0,156349.0,0.006156,769
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,"Rural (menos de 2,500 habitantes)",Todos,Superior,1269.0,156349.0,0.001383,167
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Urbano,Todos,Sin escolaridad,25326.0,651392.0,0.00159,2289
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Urbano,Todos,Básica,456916.0,651392.0,0.006441,39232
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Urbano,Todos,Media superior y técnica,106746.0,651392.0,0.003895,8607
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Urbano,Todos,Superior,62404.0,651392.0,0.004183,4859
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,Todos,Sin escolaridad,16982.0,385636.0,0.002747,1692
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,Todos,Básica,286143.0,385636.0,0.008881,27220
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,Todos,Media superior y técnica,48371.0,385636.0,0.005405,4053
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,Todos,Superior,34140.0,385636.0,0.005517,2676
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,Habla lengua indígena,Sin escolaridad,56.0,951.0,0.030245,5
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,Habla lengua indígena,Básica,601.0,951.0,0.078691,48
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,Habla lengua indígena,Media superior y técnica,116.0,951.0,0.043923,8
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,Habla lengua indígena,Superior,178.0,951.0,0.054801,17
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,No habla (resto),Sin escolaridad,16900.0,384075.0,0.002761,1685
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,No habla (resto),Básica,285079.0,384075.0,0.008869,27125
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,No habla (resto),Media superior y técnica,48175.0,384075.0,0.005427,4040
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,No habla (resto),Superior,33921.0,384075.0,0.005513,2654
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,No especificado,Sin escolaridad,26.0,610.0,0.030171,2
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,No especificado,Básica,463.0,610.0,0.081726,47
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,No especificado,Media superior y técnica,80.0,610.0,0.069278,5
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,No especificado,Superior,41.0,610.0,0.028223,5
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,Todos,Sin escolaridad,19586.0,422105.0,0.002096,1917
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,Todos,Básica,308505.0,422105.0,0.009452,29505
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,Todos,Media superior y técnica,64481.0,422105.0,0.006435,5323
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,Todos,Superior,29533.0,422105.0,0.004348,2350
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,Habla lengua indígena,Sin escolaridad,73.0,816.0,0.031548,7
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,Habla lengua indígena,Básica,574.0,816.0,0.060062,47
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,Habla lengua indígena,Media superior y técnica,100.0,816.0,0.051983,8
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,Habla lengua indígena,Superior,69.0,816.0,0.043213,6
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,No habla (resto),Sin escolaridad,19452.0,420671.0,0.002085,1904
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,No habla (resto),Básica,307463.0,420671.0,0.009452,29400
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,No habla (resto),Media superior y técnica,64310.0,420671.0,0.006433,5309
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,No habla (resto),Superior,29446.0,420671.0,0.004358,2341
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,No especificado,Sin escolaridad,61.0,618.0,0.046346,6
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,No especificado,Básica,468.0,618.0,0.061823,58
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,No especificado,Media superior y técnica,71.0,618.0,0.044938,6
+excluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,No especificado,Superior,18.0,618.0,0.01343,3
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,Todos,Sin escolaridad,20345.0,555752.0,0.001714,1511
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,Todos,Básica,384642.0,555752.0,0.011171,27949
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,Todos,Media superior y técnica,93731.0,555752.0,0.006804,6914
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,Todos,Superior,57034.0,555752.0,0.005811,4173
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,Habla lengua indígena,Sin escolaridad,84.0,1502.0,0.021941,5
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,Habla lengua indígena,Básica,985.0,1502.0,0.067566,71
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,Habla lengua indígena,Media superior y técnica,211.0,1502.0,0.042902,14
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,Habla lengua indígena,Superior,222.0,1502.0,0.048428,19
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,No habla (resto),Sin escolaridad,20201.0,553304.0,0.001731,1501
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,No habla (resto),Básica,382930.0,553304.0,0.011164,27809
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,No habla (resto),Media superior y técnica,93413.0,553304.0,0.006822,6891
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,No habla (resto),Superior,56760.0,553304.0,0.005813,4148
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,No especificado,Sin escolaridad,60.0,946.0,0.032086,5
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,No especificado,Básica,727.0,946.0,0.059755,69
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,No especificado,Media superior y técnica,107.0,946.0,0.040054,9
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,No especificado,Superior,52.0,946.0,0.017234,6
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,"Rural (menos de 2,500 habitantes)",Todos,Sin escolaridad,2736.0,34600.0,0.023989,194
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,"Rural (menos de 2,500 habitantes)",Todos,Básica,30936.0,34600.0,0.02408,2201
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,"Rural (menos de 2,500 habitantes)",Todos,Media superior y técnica,717.0,34600.0,0.000214,51
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,"Rural (menos de 2,500 habitantes)",Todos,Superior,211.0,34600.0,0.000122,15
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Urbano,Todos,Sin escolaridad,17609.0,521152.0,0.001843,1317
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Urbano,Todos,Básica,353706.0,521152.0,0.007504,25748
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Urbano,Todos,Media superior y técnica,93014.0,521152.0,0.004596,6863
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Urbano,Todos,Superior,56823.0,521152.0,0.005018,4158
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Hombre,Todos,Todos,Sin escolaridad,8634.0,265610.0,0.002039,638
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Hombre,Todos,Todos,Básica,186661.0,265610.0,0.011523,13535
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Hombre,Todos,Todos,Media superior y técnica,39629.0,265610.0,0.006575,2894
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Hombre,Todos,Todos,Superior,30686.0,265610.0,0.006901,2237
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Mujer,Todos,Todos,Sin escolaridad,11711.0,290142.0,0.002014,873
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Mujer,Todos,Todos,Básica,197981.0,290142.0,0.011326,14414
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Mujer,Todos,Todos,Media superior y técnica,54102.0,290142.0,0.00736,4020
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Mujer,Todos,Todos,Superior,26348.0,290142.0,0.005264,1936
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,Todos,Sin escolaridad,2112.0,31571.0,0.006963,218
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,Todos,Básica,27704.0,31571.0,0.013641,2899
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,Todos,Media superior y técnica,1562.0,31571.0,0.009341,188
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,Todos,Superior,193.0,31571.0,0.002272,26
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,Habla lengua indígena,Sin escolaridad,0.0,7.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,Habla lengua indígena,Básica,7.0,7.0,0.0,1
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,Habla lengua indígena,Media superior y técnica,0.0,7.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,Habla lengua indígena,Superior,0.0,7.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,No habla (resto),Sin escolaridad,2089.0,31521.0,0.006765,216
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,No habla (resto),Básica,27677.0,31521.0,0.013366,2896
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,No habla (resto),Media superior y técnica,1562.0,31521.0,0.009393,188
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,No habla (resto),Superior,193.0,31521.0,0.002278,26
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,No especificado,Sin escolaridad,23.0,43.0,0.140452,2
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,No especificado,Básica,20.0,43.0,0.140452,2
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,No especificado,Media superior y técnica,0.0,43.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,No especificado,Superior,0.0,43.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,"Rural (menos de 2,500 habitantes)",Todos,Sin escolaridad,1447.0,23100.0,0.006398,146
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,"Rural (menos de 2,500 habitantes)",Todos,Básica,20733.0,23100.0,0.017261,2042
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,"Rural (menos de 2,500 habitantes)",Todos,Media superior y técnica,886.0,23100.0,0.010982,86
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,"Rural (menos de 2,500 habitantes)",Todos,Superior,34.0,23100.0,0.000201,4
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Urbano,Todos,Sin escolaridad,665.0,8471.0,0.01854,72
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Urbano,Todos,Básica,6971.0,8471.0,0.00923,857
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Urbano,Todos,Media superior y técnica,676.0,8471.0,0.01795,102
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Urbano,Todos,Superior,159.0,8471.0,0.005505,22
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Hombre,Todos,Todos,Sin escolaridad,1037.0,15037.0,0.008068,103
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Hombre,Todos,Todos,Básica,13130.0,15037.0,0.019409,1389
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Hombre,Todos,Todos,Media superior y técnica,785.0,15037.0,0.016769,95
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Hombre,Todos,Todos,Superior,85.0,15037.0,0.002013,10
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Mujer,Todos,Todos,Sin escolaridad,1075.0,16534.0,0.007707,115
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Mujer,Todos,Todos,Básica,14574.0,16534.0,0.00957,1510
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Mujer,Todos,Todos,Media superior y técnica,777.0,16534.0,0.005422,93
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Mujer,Todos,Todos,Superior,108.0,16534.0,0.002799,16
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,Todos,Sin escolaridad,4205.0,42568.0,0.008939,418
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,Todos,Básica,35552.0,42568.0,0.013177,3661
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,Todos,Media superior y técnica,2047.0,42568.0,0.013945,249
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,Todos,Superior,764.0,42568.0,0.007384,104
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,Habla lengua indígena,Sin escolaridad,20.0,97.0,0.057419,2
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,Habla lengua indígena,Básica,68.0,97.0,0.159207,6
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,Habla lengua indígena,Media superior y técnica,0.0,97.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,Habla lengua indígena,Superior,9.0,97.0,0.103234,1
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,No habla (resto),Sin escolaridad,4185.0,42471.0,0.008948,416
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,No habla (resto),Básica,35484.0,42471.0,0.013095,3655
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,No habla (resto),Media superior y técnica,2047.0,42471.0,0.013948,249
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,No habla (resto),Superior,755.0,42471.0,0.007314,103
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,"Rural (menos de 2,500 habitantes)",Todos,Sin escolaridad,2621.0,22473.0,0.002574,221
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,"Rural (menos de 2,500 habitantes)",Todos,Básica,19150.0,22473.0,0.009745,1637
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,"Rural (menos de 2,500 habitantes)",Todos,Media superior y técnica,560.0,22473.0,0.007698,44
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,"Rural (menos de 2,500 habitantes)",Todos,Superior,142.0,22473.0,0.004473,9
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Urbano,Todos,Sin escolaridad,1584.0,20095.0,0.005106,197
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Urbano,Todos,Básica,16402.0,20095.0,0.013763,2024
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Urbano,Todos,Media superior y técnica,1487.0,20095.0,0.01039,205
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Urbano,Todos,Superior,622.0,20095.0,0.005652,95
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Hombre,Todos,Todos,Sin escolaridad,2275.0,19959.0,0.011387,223
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Hombre,Todos,Todos,Básica,16246.0,19959.0,0.015376,1679
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Hombre,Todos,Todos,Media superior y técnica,974.0,19959.0,0.014952,113
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Hombre,Todos,Todos,Superior,464.0,19959.0,0.009903,62
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Mujer,Todos,Todos,Sin escolaridad,1930.0,22609.0,0.008339,195
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Mujer,Todos,Todos,Básica,19306.0,22609.0,0.01266,1982
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Mujer,Todos,Todos,Media superior y técnica,1073.0,22609.0,0.013796,136
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Mujer,Todos,Todos,Superior,300.0,22609.0,0.005378,42
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,Todos,Sin escolaridad,459.0,10617.0,0.002825,134
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,Todos,Básica,8917.0,10617.0,0.034555,2520
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,Todos,Media superior y técnica,931.0,10617.0,0.02255,296
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,Todos,Superior,310.0,10617.0,0.013327,114
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,Habla lengua indígena,Sin escolaridad,0.0,6.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,Habla lengua indígena,Básica,0.0,6.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,Habla lengua indígena,Media superior y técnica,2.0,6.0,0.0,1
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,Habla lengua indígena,Superior,4.0,6.0,0.0,2
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,No habla (resto),Sin escolaridad,459.0,10596.0,0.002818,134
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,No habla (resto),Básica,8902.0,10596.0,0.034157,2517
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,No habla (resto),Media superior y técnica,929.0,10596.0,0.022432,295
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,No habla (resto),Superior,306.0,10596.0,0.01302,112
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,No especificado,Sin escolaridad,0.0,15.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,No especificado,Básica,15.0,15.0,0.0,3
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,No especificado,Media superior y técnica,0.0,15.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,No especificado,Superior,0.0,15.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,"Rural (menos de 2,500 habitantes)",Todos,Sin escolaridad,317.0,6996.0,0.001247,86
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,"Rural (menos de 2,500 habitantes)",Todos,Básica,6195.0,6996.0,0.021052,1602
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,"Rural (menos de 2,500 habitantes)",Todos,Media superior y técnica,398.0,6996.0,0.014328,104
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,"Rural (menos de 2,500 habitantes)",Todos,Superior,86.0,6996.0,0.005833,23
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Urbano,Todos,Sin escolaridad,142.0,3621.0,0.007859,48
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Urbano,Todos,Básica,2722.0,3621.0,0.032498,918
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Urbano,Todos,Media superior y técnica,533.0,3621.0,0.013509,192
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Urbano,Todos,Superior,224.0,3621.0,0.021701,91
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Hombre,Todos,Todos,Sin escolaridad,239.0,5202.0,0.005286,69
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Hombre,Todos,Todos,Básica,4318.0,5202.0,0.039368,1209
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Hombre,Todos,Todos,Media superior y técnica,499.0,5202.0,0.026464,155
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Hombre,Todos,Todos,Superior,146.0,5202.0,0.012912,54
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Mujer,Todos,Todos,Sin escolaridad,220.0,5415.0,0.004084,65
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Mujer,Todos,Todos,Básica,4599.0,5415.0,0.030843,1311
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Mujer,Todos,Todos,Media superior y técnica,432.0,5415.0,0.020249,141
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Mujer,Todos,Todos,Superior,164.0,5415.0,0.014164,60
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,Todos,Sin escolaridad,2902.0,54028.0,0.003346,284
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,Todos,Básica,45776.0,54028.0,0.014202,4009
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,Todos,Media superior y técnica,4092.0,54028.0,0.006312,361
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,Todos,Superior,1258.0,54028.0,0.007708,125
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,Habla lengua indígena,Sin escolaridad,0.0,72.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,Habla lengua indígena,Básica,72.0,72.0,0.0,5
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,Habla lengua indígena,Media superior y técnica,0.0,72.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,Habla lengua indígena,Superior,0.0,72.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,No habla (resto),Sin escolaridad,2902.0,53868.0,0.003383,284
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,No habla (resto),Básica,45658.0,53868.0,0.014202,3999
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,No habla (resto),Media superior y técnica,4050.0,53868.0,0.006457,360
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,No habla (resto),Superior,1258.0,53868.0,0.007733,125
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,No especificado,Sin escolaridad,0.0,88.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,No especificado,Básica,46.0,88.0,0.284827,5
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,No especificado,Media superior y técnica,42.0,88.0,0.284827,1
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,No especificado,Superior,0.0,88.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,"Rural (menos de 2,500 habitantes)",Todos,Sin escolaridad,1261.0,23241.0,0.002063,117
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,"Rural (menos de 2,500 habitantes)",Todos,Básica,20237.0,23241.0,0.001289,1813
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,"Rural (menos de 2,500 habitantes)",Todos,Media superior y técnica,1514.0,23241.0,0.001769,132
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,"Rural (menos de 2,500 habitantes)",Todos,Superior,229.0,23241.0,0.001875,22
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Urbano,Todos,Sin escolaridad,1641.0,30787.0,0.00572,167
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Urbano,Todos,Básica,25539.0,30787.0,0.018976,2196
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Urbano,Todos,Media superior y técnica,2578.0,30787.0,0.009518,229
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Urbano,Todos,Superior,1029.0,30787.0,0.009311,103
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Hombre,Todos,Todos,Sin escolaridad,1387.0,25372.0,0.003774,140
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Hombre,Todos,Todos,Básica,21454.0,25372.0,0.013562,1879
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Hombre,Todos,Todos,Media superior y técnica,1849.0,25372.0,0.005336,163
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Hombre,Todos,Todos,Superior,682.0,25372.0,0.009702,64
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Mujer,Todos,Todos,Sin escolaridad,1515.0,28656.0,0.004523,144
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Mujer,Todos,Todos,Básica,24322.0,28656.0,0.015626,2130
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Mujer,Todos,Todos,Media superior y técnica,2243.0,28656.0,0.008437,198
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Mujer,Todos,Todos,Superior,576.0,28656.0,0.006445,61
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,Todos,Sin escolaridad,1752.0,28894.0,0.006967,164
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,Todos,Básica,21942.0,28894.0,0.015959,2274
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,Todos,Media superior y técnica,3605.0,28894.0,0.010674,364
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,Todos,Superior,1595.0,28894.0,0.007159,178
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,Habla lengua indígena,Sin escolaridad,12.0,36.0,0.27716,2
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,Habla lengua indígena,Básica,12.0,36.0,0.13858,1
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,Habla lengua indígena,Media superior y técnica,0.0,36.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,Habla lengua indígena,Superior,12.0,36.0,0.13858,1
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,No habla (resto),Sin escolaridad,1740.0,28814.0,0.006912,162
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,No habla (resto),Básica,21886.0,28814.0,0.01579,2272
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,No habla (resto),Media superior y técnica,3605.0,28814.0,0.010692,364
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,No habla (resto),Superior,1583.0,28814.0,0.007042,177
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,No especificado,Sin escolaridad,0.0,44.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,No especificado,Básica,44.0,44.0,0.0,1
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,No especificado,Media superior y técnica,0.0,44.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,No especificado,Superior,0.0,44.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,"Rural (menos de 2,500 habitantes)",Todos,Sin escolaridad,258.0,6396.0,0.005843,42
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,"Rural (menos de 2,500 habitantes)",Todos,Básica,5529.0,6396.0,0.035788,905
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,"Rural (menos de 2,500 habitantes)",Todos,Media superior y técnica,460.0,6396.0,0.026348,93
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,"Rural (menos de 2,500 habitantes)",Todos,Superior,149.0,6396.0,0.012018,34
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Urbano,Todos,Sin escolaridad,1494.0,22498.0,0.007942,122
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Urbano,Todos,Básica,16413.0,22498.0,0.017231,1369
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Urbano,Todos,Media superior y técnica,3145.0,22498.0,0.011336,271
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Urbano,Todos,Superior,1446.0,22498.0,0.009554,144
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Hombre,Todos,Todos,Sin escolaridad,930.0,13590.0,0.011316,82
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Hombre,Todos,Todos,Básica,10306.0,13590.0,0.019102,1069
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Hombre,Todos,Todos,Media superior y técnica,1535.0,13590.0,0.013907,150
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Hombre,Todos,Todos,Superior,819.0,13590.0,0.009753,94
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Mujer,Todos,Todos,Sin escolaridad,822.0,15304.0,0.007618,82
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Mujer,Todos,Todos,Básica,11636.0,15304.0,0.016682,1205
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Mujer,Todos,Todos,Media superior y técnica,2070.0,15304.0,0.011732,214
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Mujer,Todos,Todos,Superior,776.0,15304.0,0.005605,84
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,Todos,Sin escolaridad,1890.0,34556.0,0.010673,154
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,Todos,Básica,27019.0,34556.0,0.034153,2393
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,Todos,Media superior y técnica,3996.0,34556.0,0.017808,295
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,Todos,Superior,1651.0,34556.0,0.015605,101
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,No habla (resto),Sin escolaridad,1890.0,34554.0,0.010674,154
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,No habla (resto),Básica,27019.0,34554.0,0.034162,2393
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,No habla (resto),Media superior y técnica,3994.0,34554.0,0.01782,294
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,No habla (resto),Superior,1651.0,34554.0,0.015606,101
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,No especificado,Sin escolaridad,0.0,2.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,No especificado,Básica,0.0,2.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,No especificado,Media superior y técnica,2.0,2.0,0.0,1
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,No especificado,Superior,0.0,2.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,"Rural (menos de 2,500 habitantes)",Todos,Sin escolaridad,715.0,10491.0,0.032961,64
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,"Rural (menos de 2,500 habitantes)",Todos,Básica,8840.0,10491.0,0.022538,995
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,"Rural (menos de 2,500 habitantes)",Todos,Media superior y técnica,725.0,10491.0,0.020819,68
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,"Rural (menos de 2,500 habitantes)",Todos,Superior,211.0,10491.0,0.005726,14
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Urbano,Todos,Sin escolaridad,1175.0,24065.0,0.007564,90
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Urbano,Todos,Básica,18179.0,24065.0,0.042421,1398
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Urbano,Todos,Media superior y técnica,3271.0,24065.0,0.020929,227
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Urbano,Todos,Superior,1440.0,24065.0,0.020064,87
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Hombre,Todos,Todos,Sin escolaridad,1010.0,17165.0,0.009363,83
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Hombre,Todos,Todos,Básica,13608.0,17165.0,0.029619,1204
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Hombre,Todos,Todos,Media superior y técnica,1713.0,17165.0,0.012284,137
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Hombre,Todos,Todos,Superior,834.0,17165.0,0.016113,51
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Mujer,Todos,Todos,Sin escolaridad,880.0,17391.0,0.013131,71
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Mujer,Todos,Todos,Básica,13411.0,17391.0,0.040221,1189
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Mujer,Todos,Todos,Media superior y técnica,2283.0,17391.0,0.024697,158
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Mujer,Todos,Todos,Superior,817.0,17391.0,0.015966,50
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,Todos,Sin escolaridad,276.0,6196.0,0.004064,148
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,Todos,Básica,5342.0,6196.0,0.015855,2616
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,Todos,Media superior y técnica,431.0,6196.0,0.011858,174
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,Todos,Superior,147.0,6196.0,0.005554,54
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,Habla lengua indígena,Sin escolaridad,0.0,1.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,Habla lengua indígena,Básica,1.0,1.0,0.0,1
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,Habla lengua indígena,Media superior y técnica,0.0,1.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,Habla lengua indígena,Superior,0.0,1.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,No habla (resto),Sin escolaridad,276.0,6131.0,0.004049,148
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,No habla (resto),Básica,5280.0,6131.0,0.016135,2595
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,No habla (resto),Media superior y técnica,431.0,6131.0,0.012077,174
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,No habla (resto),Superior,144.0,6131.0,0.005631,53
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,No especificado,Sin escolaridad,0.0,64.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,No especificado,Básica,61.0,64.0,0.05121,20
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,No especificado,Media superior y técnica,0.0,64.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,No especificado,Superior,3.0,64.0,0.05121,1
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,"Rural (menos de 2,500 habitantes)",Todos,Sin escolaridad,169.0,2886.0,0.006738,105
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,"Rural (menos de 2,500 habitantes)",Todos,Básica,2639.0,2886.0,0.005845,1577
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,"Rural (menos de 2,500 habitantes)",Todos,Media superior y técnica,61.0,2886.0,0.005238,35
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,"Rural (menos de 2,500 habitantes)",Todos,Superior,17.0,2886.0,0.001165,8
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Urbano,Todos,Sin escolaridad,107.0,3310.0,0.005598,43
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Urbano,Todos,Básica,2703.0,3310.0,0.016547,1039
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Urbano,Todos,Media superior y técnica,370.0,3310.0,0.011364,139
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Urbano,Todos,Superior,130.0,3310.0,0.006715,46
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Hombre,Todos,Todos,Sin escolaridad,122.0,2949.0,0.005035,68
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Hombre,Todos,Todos,Básica,2558.0,2949.0,0.016512,1248
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Hombre,Todos,Todos,Media superior y técnica,202.0,2949.0,0.013287,83
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Hombre,Todos,Todos,Superior,67.0,2949.0,0.005958,25
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Mujer,Todos,Todos,Sin escolaridad,154.0,3247.0,0.005606,80
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Mujer,Todos,Todos,Básica,2784.0,3247.0,0.017691,1368
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Mujer,Todos,Todos,Media superior y técnica,229.0,3247.0,0.013436,91
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Mujer,Todos,Todos,Superior,80.0,3247.0,0.006309,29
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,Todos,Sin escolaridad,821.0,14149.0,0.012248,173
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,Todos,Básica,12283.0,14149.0,0.015865,2773
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,Todos,Media superior y técnica,835.0,14149.0,0.019382,188
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,Todos,Superior,210.0,14149.0,0.00828,38
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,Habla lengua indígena,Sin escolaridad,0.0,1.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,Habla lengua indígena,Básica,1.0,1.0,0.0,1
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,Habla lengua indígena,Media superior y técnica,0.0,1.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,Habla lengua indígena,Superior,0.0,1.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,No habla (resto),Sin escolaridad,821.0,14146.0,0.012243,173
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,No habla (resto),Básica,12280.0,14146.0,0.015884,2771
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,No habla (resto),Media superior y técnica,835.0,14146.0,0.019394,188
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,No habla (resto),Superior,210.0,14146.0,0.008283,38
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,No especificado,Sin escolaridad,0.0,2.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,No especificado,Básica,2.0,2.0,0.0,1
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,No especificado,Media superior y técnica,0.0,2.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,No especificado,Superior,0.0,2.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,"Rural (menos de 2,500 habitantes)",Todos,Sin escolaridad,687.0,8884.0,0.0,124
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,"Rural (menos de 2,500 habitantes)",Todos,Básica,7915.0,8884.0,0.0,1418
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,"Rural (menos de 2,500 habitantes)",Todos,Media superior y técnica,253.0,8884.0,0.0,44
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,"Rural (menos de 2,500 habitantes)",Todos,Superior,29.0,8884.0,0.0,5
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Urbano,Todos,Sin escolaridad,134.0,5265.0,0.006369,49
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Urbano,Todos,Básica,4368.0,5265.0,0.015791,1355
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Urbano,Todos,Media superior y técnica,582.0,5265.0,0.006967,144
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Urbano,Todos,Superior,181.0,5265.0,0.009149,33
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Hombre,Todos,Todos,Sin escolaridad,494.0,6760.0,0.015494,97
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Hombre,Todos,Todos,Básica,5784.0,6760.0,0.012669,1308
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Hombre,Todos,Todos,Media superior y técnica,383.0,6760.0,0.018874,92
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Hombre,Todos,Todos,Superior,99.0,6760.0,0.006644,20
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Mujer,Todos,Todos,Sin escolaridad,327.0,7389.0,0.009742,76
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Mujer,Todos,Todos,Básica,6499.0,7389.0,0.019896,1465
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Mujer,Todos,Todos,Media superior y técnica,452.0,7389.0,0.020001,96
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Mujer,Todos,Todos,Superior,111.0,7389.0,0.00983,18
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,Todos,Sin escolaridad,766.0,12572.0,0.00696,204
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,Todos,Básica,11216.0,12572.0,0.016597,3007
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,Todos,Media superior y técnica,418.0,12572.0,0.005777,114
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,Todos,Superior,172.0,12572.0,0.004839,50
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,No habla (resto),Sin escolaridad,762.0,12562.0,0.007083,203
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,No habla (resto),Básica,11210.0,12562.0,0.016745,3005
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,No habla (resto),Media superior y técnica,418.0,12562.0,0.005777,114
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,No habla (resto),Superior,172.0,12562.0,0.004841,50
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,No especificado,Sin escolaridad,4.0,10.0,0.169706,1
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,No especificado,Básica,6.0,10.0,0.169706,2
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,No especificado,Media superior y técnica,0.0,10.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,No especificado,Superior,0.0,10.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,"Rural (menos de 2,500 habitantes)",Todos,Sin escolaridad,540.0,9222.0,0.005601,140
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,"Rural (menos de 2,500 habitantes)",Todos,Básica,8390.0,9222.0,0.008905,2170
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,"Rural (menos de 2,500 habitantes)",Todos,Media superior y técnica,233.0,9222.0,0.001972,61
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,"Rural (menos de 2,500 habitantes)",Todos,Superior,59.0,9222.0,0.001333,16
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Urbano,Todos,Sin escolaridad,226.0,3350.0,0.016701,64
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Urbano,Todos,Básica,2826.0,3350.0,0.02305,837
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Urbano,Todos,Media superior y técnica,185.0,3350.0,0.006467,53
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Urbano,Todos,Superior,113.0,3350.0,0.007369,34
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Hombre,Todos,Todos,Sin escolaridad,371.0,6173.0,0.0125,98
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Hombre,Todos,Todos,Básica,5523.0,6173.0,0.021422,1481
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Hombre,Todos,Todos,Media superior y técnica,193.0,6173.0,0.006159,53
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Hombre,Todos,Todos,Superior,86.0,6173.0,0.004236,25
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Mujer,Todos,Todos,Sin escolaridad,395.0,6399.0,0.003758,106
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Mujer,Todos,Todos,Básica,5693.0,6399.0,0.012355,1526
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Mujer,Todos,Todos,Media superior y técnica,225.0,6399.0,0.005891,61
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Mujer,Todos,Todos,Superior,86.0,6399.0,0.005524,25
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,Todos,Sin escolaridad,1040.0,16838.0,0.007848,201
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,Todos,Básica,14255.0,16838.0,0.018099,2624
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,Todos,Media superior y técnica,1204.0,16838.0,0.012136,233
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,Todos,Superior,339.0,16838.0,0.003408,63
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,Habla lengua indígena,Sin escolaridad,13.0,45.0,0.165035,3
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,Habla lengua indígena,Básica,29.0,45.0,0.154816,9
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,Habla lengua indígena,Media superior y técnica,3.0,45.0,0.061004,1
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,Habla lengua indígena,Superior,0.0,45.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,No habla (resto),Sin escolaridad,1027.0,16779.0,0.007613,198
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,No habla (resto),Básica,14216.0,16779.0,0.017936,2613
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,No habla (resto),Media superior y técnica,1201.0,16779.0,0.012196,232
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,No habla (resto),Superior,335.0,16779.0,0.003323,62
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,No especificado,Sin escolaridad,0.0,14.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,No especificado,Básica,10.0,14.0,0.288615,2
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,No especificado,Media superior y técnica,0.0,14.0,0.0,0
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,No especificado,Superior,4.0,14.0,0.288615,1
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,"Rural (menos de 2,500 habitantes)",Todos,Sin escolaridad,491.0,8060.0,0.013737,81
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,"Rural (menos de 2,500 habitantes)",Todos,Básica,7168.0,8060.0,0.013066,1133
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,"Rural (menos de 2,500 habitantes)",Todos,Media superior y técnica,299.0,8060.0,0.00366,51
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,"Rural (menos de 2,500 habitantes)",Todos,Superior,102.0,8060.0,0.001247,17
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Urbano,Todos,Sin escolaridad,549.0,8778.0,0.007727,120
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Urbano,Todos,Básica,7087.0,8778.0,0.012715,1491
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Urbano,Todos,Media superior y técnica,905.0,8778.0,0.013453,182
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Urbano,Todos,Superior,237.0,8778.0,0.005395,46
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Hombre,Todos,Todos,Sin escolaridad,483.0,7819.0,0.006072,91
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Hombre,Todos,Todos,Básica,6555.0,7819.0,0.015615,1219
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Hombre,Todos,Todos,Media superior y técnica,609.0,7819.0,0.011897,118
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Hombre,Todos,Todos,Superior,172.0,7819.0,0.005227,34
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Mujer,Todos,Todos,Sin escolaridad,557.0,9019.0,0.01056,110
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Mujer,Todos,Todos,Básica,7700.0,9019.0,0.021139,1405
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Mujer,Todos,Todos,Media superior y técnica,595.0,9019.0,0.013445,115
+excluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Mujer,Todos,Todos,Superior,167.0,9019.0,0.003603,29
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,Todos,Sin escolaridad,36568.0,819168.0,0.002176,3609
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,Todos,Básica,594648.0,819168.0,0.008721,56725
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,Todos,Media superior y técnica,112852.0,819168.0,0.005762,9376
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,Todos,Superior,63673.0,819168.0,0.004718,5026
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,Todos,No especificado,11427.0,819168.0,0.001019,1083
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,Habla lengua indígena,Sin escolaridad,129.0,1767.0,0.020054,12
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,Habla lengua indígena,Básica,1175.0,1767.0,0.058559,95
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,Habla lengua indígena,Media superior y técnica,216.0,1767.0,0.035692,16
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,Habla lengua indígena,Superior,247.0,1767.0,0.041563,23
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,Habla lengua indígena,No especificado,0.0,1767.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,No habla (resto),Sin escolaridad,36352.0,815062.0,0.002181,3589
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,No habla (resto),Básica,592542.0,815062.0,0.008769,56525
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,No habla (resto),Media superior y técnica,112485.0,815062.0,0.00577,9349
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,No habla (resto),Superior,63367.0,815062.0,0.004721,4995
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,No habla (resto),No especificado,10316.0,815062.0,0.001,952
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,No especificado,Sin escolaridad,87.0,2339.0,0.014047,8
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,No especificado,Básica,931.0,2339.0,0.063435,105
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,No especificado,Media superior y técnica,151.0,2339.0,0.023803,11
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,No especificado,Superior,59.0,2339.0,0.008692,8
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Todos,No especificado,No especificado,1111.0,2339.0,0.066083,131
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,"Rural (menos de 2,500 habitantes)",Todos,Sin escolaridad,11242.0,158973.0,0.007897,1320
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,"Rural (menos de 2,500 habitantes)",Todos,Básica,137732.0,158973.0,0.009239,17493
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,"Rural (menos de 2,500 habitantes)",Todos,Media superior y técnica,6106.0,158973.0,0.006146,769
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,"Rural (menos de 2,500 habitantes)",Todos,Superior,1269.0,158973.0,0.001373,167
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,"Rural (menos de 2,500 habitantes)",Todos,No especificado,2624.0,158973.0,0.003615,309
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Urbano,Todos,Sin escolaridad,25326.0,660195.0,0.001574,2289
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Urbano,Todos,Básica,456916.0,660195.0,0.006363,39232
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Urbano,Todos,Media superior y técnica,106746.0,660195.0,0.00384,8607
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Urbano,Todos,Superior,62404.0,660195.0,0.004131,4859
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Todos,Urbano,Todos,No especificado,8803.0,660195.0,0.000869,774
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,Todos,Sin escolaridad,16982.0,390394.0,0.002695,1692
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,Todos,Básica,286143.0,390394.0,0.008663,27220
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,Todos,Media superior y técnica,48371.0,390394.0,0.005378,4053
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,Todos,Superior,34140.0,390394.0,0.00547,2676
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,Todos,No especificado,4758.0,390394.0,0.000955,493
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,Habla lengua indígena,Sin escolaridad,56.0,951.0,0.030245,5
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,Habla lengua indígena,Básica,601.0,951.0,0.078691,48
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,Habla lengua indígena,Media superior y técnica,116.0,951.0,0.043923,8
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,Habla lengua indígena,Superior,178.0,951.0,0.054801,17
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,Habla lengua indígena,No especificado,0.0,951.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,No habla (resto),Sin escolaridad,16900.0,388310.0,0.002711,1685
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,No habla (resto),Básica,285079.0,388310.0,0.00872,27125
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,No habla (resto),Media superior y técnica,48175.0,388310.0,0.0054,4040
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,No habla (resto),Superior,33921.0,388310.0,0.005468,2654
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,No habla (resto),No especificado,4235.0,388310.0,0.00097,426
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,No especificado,Sin escolaridad,26.0,1133.0,0.016372,2
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,No especificado,Básica,463.0,1133.0,0.069181,47
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,No especificado,Media superior y técnica,80.0,1133.0,0.038927,5
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,No especificado,Superior,41.0,1133.0,0.016122,5
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Hombre,Todos,No especificado,No especificado,523.0,1133.0,0.072325,67
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,Todos,Sin escolaridad,19586.0,428774.0,0.002053,1917
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,Todos,Básica,308505.0,428774.0,0.009177,29505
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,Todos,Media superior y técnica,64481.0,428774.0,0.006383,5323
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,Todos,Superior,29533.0,428774.0,0.004295,2350
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,Todos,No especificado,6669.0,428774.0,0.001275,590
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,Habla lengua indígena,Sin escolaridad,73.0,816.0,0.031548,7
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,Habla lengua indígena,Básica,574.0,816.0,0.060062,47
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,Habla lengua indígena,Media superior y técnica,100.0,816.0,0.051983,8
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,Habla lengua indígena,Superior,69.0,816.0,0.043213,6
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,Habla lengua indígena,No especificado,0.0,816.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,No habla (resto),Sin escolaridad,19452.0,426752.0,0.002044,1904
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,No habla (resto),Básica,307463.0,426752.0,0.009216,29400
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,No habla (resto),Media superior y técnica,64310.0,426752.0,0.006383,5309
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,No habla (resto),Superior,29446.0,426752.0,0.004308,2341
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,No habla (resto),No especificado,6081.0,426752.0,0.001214,526
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,No especificado,Sin escolaridad,61.0,1206.0,0.021841,6
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,No especificado,Básica,468.0,1206.0,0.077301,58
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,No especificado,Media superior y técnica,71.0,1206.0,0.023938,6
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,No especificado,Superior,18.0,1206.0,0.00783,3
+incluir,censo,2000,"Escolaridad, población de 5 años y más",entidad,01,Aguascalientes,Mujer,Todos,No especificado,No especificado,588.0,1206.0,0.080838,64
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,Todos,Sin escolaridad,20345.0,563028.0,0.001697,1511
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,Todos,Básica,384642.0,563028.0,0.010861,27949
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,Todos,Media superior y técnica,93731.0,563028.0,0.006755,6914
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,Todos,Superior,57034.0,563028.0,0.00576,4173
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,Todos,No especificado,7276.0,563028.0,0.000947,593
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,Habla lengua indígena,Sin escolaridad,84.0,1502.0,0.021941,5
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,Habla lengua indígena,Básica,985.0,1502.0,0.067566,71
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,Habla lengua indígena,Media superior y técnica,211.0,1502.0,0.042902,14
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,Habla lengua indígena,Superior,222.0,1502.0,0.048428,19
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,Habla lengua indígena,No especificado,0.0,1502.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,No habla (resto),Sin escolaridad,20201.0,559941.0,0.001716,1501
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,No habla (resto),Básica,382930.0,559941.0,0.010939,27809
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,No habla (resto),Media superior y técnica,93413.0,559941.0,0.006761,6891
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,No habla (resto),Superior,56760.0,559941.0,0.005758,4148
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,No habla (resto),No especificado,6637.0,559941.0,0.00088,535
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,No especificado,Sin escolaridad,60.0,1585.0,0.018248,5
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,No especificado,Básica,727.0,1585.0,0.075447,69
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,No especificado,Media superior y técnica,107.0,1585.0,0.023774,9
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,No especificado,Superior,52.0,1585.0,0.011726,6
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Todos,No especificado,No especificado,639.0,1585.0,0.075768,58
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,"Rural (menos de 2,500 habitantes)",Todos,Sin escolaridad,2736.0,35218.0,0.023709,194
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,"Rural (menos de 2,500 habitantes)",Todos,Básica,30936.0,35218.0,0.022054,2201
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,"Rural (menos de 2,500 habitantes)",Todos,Media superior y técnica,717.0,35218.0,0.000247,51
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,"Rural (menos de 2,500 habitantes)",Todos,Superior,211.0,35218.0,0.000109,15
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,"Rural (menos de 2,500 habitantes)",Todos,No especificado,618.0,35218.0,0.001793,44
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Urbano,Todos,Sin escolaridad,17609.0,527810.0,0.001825,1317
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Urbano,Todos,Básica,353706.0,527810.0,0.007381,25748
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Urbano,Todos,Media superior y técnica,93014.0,527810.0,0.004541,6863
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Urbano,Todos,Superior,56823.0,527810.0,0.004964,4158
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Todos,Urbano,Todos,No especificado,6658.0,527810.0,0.000966,549
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Hombre,Todos,Todos,Sin escolaridad,8634.0,268563.0,0.002017,638
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Hombre,Todos,Todos,Básica,186661.0,268563.0,0.011308,13535
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Hombre,Todos,Todos,Media superior y técnica,39629.0,268563.0,0.006521,2894
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Hombre,Todos,Todos,Superior,30686.0,268563.0,0.006842,2237
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Hombre,Todos,Todos,No especificado,2953.0,268563.0,0.000885,250
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Mujer,Todos,Todos,Sin escolaridad,11711.0,294465.0,0.001996,873
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Mujer,Todos,Todos,Básica,197981.0,294465.0,0.010952,14414
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Mujer,Todos,Todos,Media superior y técnica,54102.0,294465.0,0.007312,4020
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Mujer,Todos,Todos,Superior,26348.0,294465.0,0.005209,1936
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01001,Aguascalientes,Mujer,Todos,Todos,No especificado,4323.0,294465.0,0.001306,343
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,Todos,Sin escolaridad,2112.0,31940.0,0.006955,218
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,Todos,Básica,27704.0,31940.0,0.012464,2899
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,Todos,Media superior y técnica,1562.0,31940.0,0.009283,188
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,Todos,Superior,193.0,31940.0,0.002245,26
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,Todos,No especificado,369.0,31940.0,0.001683,42
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,Habla lengua indígena,Sin escolaridad,0.0,7.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,Habla lengua indígena,Básica,7.0,7.0,0.0,1
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,Habla lengua indígena,Media superior y técnica,0.0,7.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,Habla lengua indígena,Superior,0.0,7.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,Habla lengua indígena,No especificado,0.0,7.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,No habla (resto),Sin escolaridad,2089.0,31793.0,0.006821,216
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,No habla (resto),Básica,27677.0,31793.0,0.011519,2896
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,No habla (resto),Media superior y técnica,1562.0,31793.0,0.009404,188
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,No habla (resto),Superior,193.0,31793.0,0.002255,26
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,No habla (resto),No especificado,272.0,31793.0,0.002603,33
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,No especificado,Sin escolaridad,23.0,140.0,0.062623,2
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,No especificado,Básica,20.0,140.0,0.051061,2
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,No especificado,Media superior y técnica,0.0,140.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,No especificado,Superior,0.0,140.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Todos,No especificado,No especificado,97.0,140.0,0.073871,9
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,"Rural (menos de 2,500 habitantes)",Todos,Sin escolaridad,1447.0,23412.0,0.006421,146
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,"Rural (menos de 2,500 habitantes)",Todos,Básica,20733.0,23412.0,0.015523,2042
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,"Rural (menos de 2,500 habitantes)",Todos,Media superior y técnica,886.0,23412.0,0.010901,86
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,"Rural (menos de 2,500 habitantes)",Todos,Superior,34.0,23412.0,0.000196,4
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,"Rural (menos de 2,500 habitantes)",Todos,No especificado,312.0,23412.0,0.00192,34
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Urbano,Todos,Sin escolaridad,665.0,8528.0,0.018482,72
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Urbano,Todos,Básica,6971.0,8528.0,0.010357,857
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Urbano,Todos,Media superior y técnica,676.0,8528.0,0.01777,102
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Urbano,Todos,Superior,159.0,8528.0,0.005431,22
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Todos,Urbano,Todos,No especificado,57.0,8528.0,0.003266,8
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Hombre,Todos,Todos,Sin escolaridad,1037.0,15253.0,0.008027,103
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Hombre,Todos,Todos,Básica,13130.0,15253.0,0.01667,1389
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Hombre,Todos,Todos,Media superior y técnica,785.0,15253.0,0.016691,95
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Hombre,Todos,Todos,Superior,85.0,15253.0,0.00198,10
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Hombre,Todos,Todos,No especificado,216.0,15253.0,0.003756,24
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Mujer,Todos,Todos,Sin escolaridad,1075.0,16687.0,0.007603,115
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Mujer,Todos,Todos,Básica,14574.0,16687.0,0.009677,1510
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Mujer,Todos,Todos,Media superior y técnica,777.0,16687.0,0.005382,93
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Mujer,Todos,Todos,Superior,108.0,16687.0,0.002778,16
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01002,Asientos,Mujer,Todos,Todos,No especificado,153.0,16687.0,0.001427,18
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,Todos,Sin escolaridad,4205.0,43638.0,0.008059,418
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,Todos,Básica,35552.0,43638.0,0.008791,3661
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,Todos,Media superior y técnica,2047.0,43638.0,0.013919,249
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,Todos,Superior,764.0,43638.0,0.007317,104
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,Todos,No especificado,1070.0,43638.0,0.007446,105
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,Habla lengua indígena,Sin escolaridad,20.0,97.0,0.057419,2
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,Habla lengua indígena,Básica,68.0,97.0,0.159207,6
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,Habla lengua indígena,Media superior y técnica,0.0,97.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,Habla lengua indígena,Superior,9.0,97.0,0.103234,1
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,Habla lengua indígena,No especificado,0.0,97.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,No habla (resto),Sin escolaridad,4185.0,43494.0,0.008056,416
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,No habla (resto),Básica,35484.0,43494.0,0.008675,3655
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,No habla (resto),Media superior y técnica,2047.0,43494.0,0.013946,249
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,No habla (resto),Superior,755.0,43494.0,0.007258,103
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,No habla (resto),No especificado,1023.0,43494.0,0.007657,99
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,No especificado,Sin escolaridad,0.0,47.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,No especificado,Básica,0.0,47.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,No especificado,Media superior y técnica,0.0,47.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,No especificado,Superior,0.0,47.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Todos,No especificado,No especificado,47.0,47.0,0.0,6
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,"Rural (menos de 2,500 habitantes)",Todos,Sin escolaridad,2621.0,23292.0,0.002477,221
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,"Rural (menos de 2,500 habitantes)",Todos,Básica,19150.0,23292.0,0.008187,1637
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,"Rural (menos de 2,500 habitantes)",Todos,Media superior y técnica,560.0,23292.0,0.00748,44
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,"Rural (menos de 2,500 habitantes)",Todos,Superior,142.0,23292.0,0.004329,9
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,"Rural (menos de 2,500 habitantes)",Todos,No especificado,819.0,23292.0,0.004864,72
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Urbano,Todos,Sin escolaridad,1584.0,20346.0,0.005054,197
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Urbano,Todos,Básica,16402.0,20346.0,0.013489,2024
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Urbano,Todos,Media superior y técnica,1487.0,20346.0,0.01031,205
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Urbano,Todos,Superior,622.0,20346.0,0.005584,95
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Todos,Urbano,Todos,No especificado,251.0,20346.0,0.00344,33
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Hombre,Todos,Todos,Sin escolaridad,2275.0,20474.0,0.01061,223
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Hombre,Todos,Todos,Básica,16246.0,20474.0,0.011617,1679
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Hombre,Todos,Todos,Media superior y técnica,974.0,20474.0,0.014812,113
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Hombre,Todos,Todos,Superior,464.0,20474.0,0.009772,62
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Hombre,Todos,Todos,No especificado,515.0,20474.0,0.006087,52
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Mujer,Todos,Todos,Sin escolaridad,1930.0,23164.0,0.007471,195
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Mujer,Todos,Todos,Básica,19306.0,23164.0,0.008497,1982
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Mujer,Todos,Todos,Media superior y técnica,1073.0,23164.0,0.013839,136
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Mujer,Todos,Todos,Superior,300.0,23164.0,0.005347,42
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01003,Calvillo,Mujer,Todos,Todos,No especificado,555.0,23164.0,0.008741,53
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,Todos,Sin escolaridad,459.0,10800.0,0.002775,134
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,Todos,Básica,8917.0,10800.0,0.028689,2520
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,Todos,Media superior y técnica,931.0,10800.0,0.022743,296
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,Todos,Superior,310.0,10800.0,0.013267,114
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,Todos,No especificado,183.0,10800.0,0.007067,42
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,Habla lengua indígena,Sin escolaridad,0.0,6.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,Habla lengua indígena,Básica,0.0,6.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,Habla lengua indígena,Media superior y técnica,2.0,6.0,0.0,1
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,Habla lengua indígena,Superior,4.0,6.0,0.0,2
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,Habla lengua indígena,No especificado,0.0,6.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,No habla (resto),Sin escolaridad,459.0,10653.0,0.002799,134
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,No habla (resto),Básica,8902.0,10653.0,0.033444,2517
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,No habla (resto),Media superior y técnica,929.0,10653.0,0.022361,295
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,No habla (resto),Superior,306.0,10653.0,0.012971,112
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,No habla (resto),No especificado,57.0,10653.0,0.000992,16
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,No especificado,Sin escolaridad,0.0,141.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,No especificado,Básica,15.0,141.0,0.005544,3
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,No especificado,Media superior y técnica,0.0,141.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,No especificado,Superior,0.0,141.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Todos,No especificado,No especificado,126.0,141.0,0.005544,26
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,"Rural (menos de 2,500 habitantes)",Todos,Sin escolaridad,317.0,7158.0,0.001513,86
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,"Rural (menos de 2,500 habitantes)",Todos,Básica,6195.0,7158.0,0.013636,1602
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,"Rural (menos de 2,500 habitantes)",Todos,Media superior y técnica,398.0,7158.0,0.014448,104
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,"Rural (menos de 2,500 habitantes)",Todos,Superior,86.0,7158.0,0.005797,23
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,"Rural (menos de 2,500 habitantes)",Todos,No especificado,162.0,7158.0,0.007876,36
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Urbano,Todos,Sin escolaridad,142.0,3642.0,0.007795,48
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Urbano,Todos,Básica,2722.0,3642.0,0.030982,918
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Urbano,Todos,Media superior y técnica,533.0,3642.0,0.013661,192
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Urbano,Todos,Superior,224.0,3642.0,0.021691,91
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Todos,Urbano,Todos,No especificado,21.0,3642.0,0.002008,6
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Hombre,Todos,Todos,Sin escolaridad,239.0,5285.0,0.005419,69
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Hombre,Todos,Todos,Básica,4318.0,5285.0,0.033774,1209
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Hombre,Todos,Todos,Media superior y técnica,499.0,5285.0,0.026598,155
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Hombre,Todos,Todos,Superior,146.0,5285.0,0.012852,54
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Hombre,Todos,Todos,No especificado,83.0,5285.0,0.006843,19
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Mujer,Todos,Todos,Sin escolaridad,220.0,5515.0,0.003755,65
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Mujer,Todos,Todos,Básica,4599.0,5515.0,0.024996,1311
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Mujer,Todos,Todos,Media superior y técnica,432.0,5515.0,0.020434,141
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Mujer,Todos,Todos,Superior,164.0,5515.0,0.01409,60
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01004,Cosío,Mujer,Todos,Todos,No especificado,100.0,5515.0,0.007388,23
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,Todos,Sin escolaridad,2902.0,54619.0,0.003297,284
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,Todos,Básica,45776.0,54619.0,0.016551,4009
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,Todos,Media superior y técnica,4092.0,54619.0,0.006047,361
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,Todos,Superior,1258.0,54619.0,0.007566,125
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,Todos,No especificado,591.0,54619.0,0.004277,32
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,Habla lengua indígena,Sin escolaridad,0.0,72.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,Habla lengua indígena,Básica,72.0,72.0,0.0,5
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,Habla lengua indígena,Media superior y técnica,0.0,72.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,Habla lengua indígena,Superior,0.0,72.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,Habla lengua indígena,No especificado,0.0,72.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,No habla (resto),Sin escolaridad,2902.0,54445.0,0.003335,284
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,No habla (resto),Básica,45658.0,54445.0,0.016696,3999
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,No habla (resto),Media superior y técnica,4050.0,54445.0,0.006177,360
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,No habla (resto),Superior,1258.0,54445.0,0.007589,125
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,No habla (resto),No especificado,577.0,54445.0,0.004363,30
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,No especificado,Sin escolaridad,0.0,102.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,No especificado,Básica,46.0,102.0,0.221637,5
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,No especificado,Media superior y técnica,42.0,102.0,0.276108,1
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,No especificado,Superior,0.0,102.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Todos,No especificado,No especificado,14.0,102.0,0.108014,2
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,"Rural (menos de 2,500 habitantes)",Todos,Sin escolaridad,1261.0,23314.0,0.002072,117
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,"Rural (menos de 2,500 habitantes)",Todos,Básica,20237.0,23314.0,0.001063,1813
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,"Rural (menos de 2,500 habitantes)",Todos,Media superior y técnica,1514.0,23314.0,0.001745,132
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,"Rural (menos de 2,500 habitantes)",Todos,Superior,229.0,23314.0,0.00187,22
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,"Rural (menos de 2,500 habitantes)",Todos,No especificado,73.0,23314.0,0.000293,6
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Urbano,Todos,Sin escolaridad,1641.0,31305.0,0.005627,167
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Urbano,Todos,Básica,25539.0,31305.0,0.020818,2196
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Urbano,Todos,Media superior y técnica,2578.0,31305.0,0.009157,229
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Urbano,Todos,Superior,1029.0,31305.0,0.00911,103
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Todos,Urbano,Todos,No especificado,518.0,31305.0,0.005693,26
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Hombre,Todos,Todos,Sin escolaridad,1387.0,25481.0,0.003738,140
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Hombre,Todos,Todos,Básica,21454.0,25481.0,0.013835,1879
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Hombre,Todos,Todos,Media superior y técnica,1849.0,25481.0,0.005295,163
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Hombre,Todos,Todos,Superior,682.0,25481.0,0.009654,64
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Hombre,Todos,Todos,No especificado,109.0,25481.0,0.000967,10
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Mujer,Todos,Todos,Sin escolaridad,1515.0,29138.0,0.004358,144
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Mujer,Todos,Todos,Básica,24322.0,29138.0,0.019804,2130
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Mujer,Todos,Todos,Media superior y técnica,2243.0,29138.0,0.008034,198
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Mujer,Todos,Todos,Superior,576.0,29138.0,0.006257,61
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01005,Jesús María,Mujer,Todos,Todos,No especificado,482.0,29138.0,0.007926,22
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,Todos,Sin escolaridad,1752.0,29769.0,0.006704,164
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,Todos,Básica,21942.0,29769.0,0.01767,2274
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,Todos,Media superior y técnica,3605.0,29769.0,0.010327,364
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,Todos,Superior,1595.0,29769.0,0.006797,178
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,Todos,No especificado,875.0,29769.0,0.006228,69
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,Habla lengua indígena,Sin escolaridad,12.0,36.0,0.27716,2
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,Habla lengua indígena,Básica,12.0,36.0,0.13858,1
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,Habla lengua indígena,Media superior y técnica,0.0,36.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,Habla lengua indígena,Superior,12.0,36.0,0.13858,1
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,Habla lengua indígena,No especificado,0.0,36.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,No habla (resto),Sin escolaridad,1740.0,29677.0,0.006667,162
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,No habla (resto),Básica,21886.0,29677.0,0.017539,2272
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,No habla (resto),Media superior y técnica,3605.0,29677.0,0.010338,364
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,No habla (resto),Superior,1583.0,29677.0,0.006679,177
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,No habla (resto),No especificado,863.0,29677.0,0.006304,68
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,No especificado,Sin escolaridad,0.0,56.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,No especificado,Básica,44.0,56.0,0.238107,1
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,No especificado,Media superior y técnica,0.0,56.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,No especificado,Superior,0.0,56.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Todos,No especificado,No especificado,12.0,56.0,0.238107,1
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,"Rural (menos de 2,500 habitantes)",Todos,Sin escolaridad,258.0,6530.0,0.005906,42
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,"Rural (menos de 2,500 habitantes)",Todos,Básica,5529.0,6530.0,0.031801,905
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,"Rural (menos de 2,500 habitantes)",Todos,Media superior y técnica,460.0,6530.0,0.026088,93
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,"Rural (menos de 2,500 habitantes)",Todos,Superior,149.0,6530.0,0.011845,34
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,"Rural (menos de 2,500 habitantes)",Todos,No especificado,134.0,6530.0,0.008853,19
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Urbano,Todos,Sin escolaridad,1494.0,23239.0,0.007612,122
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Urbano,Todos,Básica,16413.0,23239.0,0.01993,1369
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Urbano,Todos,Media superior y técnica,3145.0,23239.0,0.010851,271
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Urbano,Todos,Superior,1446.0,23239.0,0.009004,144
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Todos,Urbano,Todos,No especificado,741.0,23239.0,0.007517,50
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Hombre,Todos,Todos,Sin escolaridad,930.0,13987.0,0.010849,82
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Hombre,Todos,Todos,Básica,10306.0,13987.0,0.021422,1069
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Hombre,Todos,Todos,Media superior y técnica,1535.0,13987.0,0.01355,150
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Hombre,Todos,Todos,Superior,819.0,13987.0,0.00926,94
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Hombre,Todos,Todos,No especificado,397.0,13987.0,0.006796,32
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Mujer,Todos,Todos,Sin escolaridad,822.0,15782.0,0.007403,82
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Mujer,Todos,Todos,Básica,11636.0,15782.0,0.017419,1205
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Mujer,Todos,Todos,Media superior y técnica,2070.0,15782.0,0.011328,214
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Mujer,Todos,Todos,Superior,776.0,15782.0,0.005385,84
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01006,Pabellón de Arteaga,Mujer,Todos,Todos,No especificado,478.0,15782.0,0.006359,37
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,Todos,Sin escolaridad,1890.0,35042.0,0.010623,154
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,Todos,Básica,27019.0,35042.0,0.032803,2393
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,Todos,Media superior y técnica,3996.0,35042.0,0.017613,295
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,Todos,Superior,1651.0,35042.0,0.015438,101
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,Todos,No especificado,486.0,35042.0,0.003296,38
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,No habla (resto),Sin escolaridad,1890.0,34972.0,0.010635,154
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,No habla (resto),Básica,27019.0,34972.0,0.033168,2393
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,No habla (resto),Media superior y técnica,3994.0,34972.0,0.017617,294
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,No habla (resto),Superior,1651.0,34972.0,0.015453,101
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,No habla (resto),No especificado,418.0,34972.0,0.003033,34
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,No especificado,Sin escolaridad,0.0,70.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,No especificado,Básica,0.0,70.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,No especificado,Media superior y técnica,2.0,70.0,0.033474,1
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,No especificado,Superior,0.0,70.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Todos,No especificado,No especificado,68.0,70.0,0.033474,4
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,"Rural (menos de 2,500 habitantes)",Todos,Sin escolaridad,715.0,10707.0,0.032639,64
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,"Rural (menos de 2,500 habitantes)",Todos,Básica,8840.0,10707.0,0.018735,995
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,"Rural (menos de 2,500 habitantes)",Todos,Media superior y técnica,725.0,10707.0,0.020102,68
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,"Rural (menos de 2,500 habitantes)",Todos,Superior,211.0,10707.0,0.005697,14
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,"Rural (menos de 2,500 habitantes)",Todos,No especificado,216.0,10707.0,0.006225,20
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Urbano,Todos,Sin escolaridad,1175.0,24335.0,0.007534,90
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Urbano,Todos,Básica,18179.0,24335.0,0.041893,1398
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Urbano,Todos,Media superior y técnica,3271.0,24335.0,0.020679,227
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Urbano,Todos,Superior,1440.0,24335.0,0.019845,87
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Todos,Urbano,Todos,No especificado,270.0,24335.0,0.00276,18
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Hombre,Todos,Todos,Sin escolaridad,1010.0,17325.0,0.009367,83
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Hombre,Todos,Todos,Básica,13608.0,17325.0,0.028496,1204
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Hombre,Todos,Todos,Media superior y técnica,1713.0,17325.0,0.012207,137
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Hombre,Todos,Todos,Superior,834.0,17325.0,0.016012,51
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Hombre,Todos,Todos,No especificado,160.0,17325.0,0.00262,13
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Mujer,Todos,Todos,Sin escolaridad,880.0,17717.0,0.01299,71
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Mujer,Todos,Todos,Básica,13411.0,17717.0,0.038623,1189
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Mujer,Todos,Todos,Media superior y técnica,2283.0,17717.0,0.024298,158
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Mujer,Todos,Todos,Superior,817.0,17717.0,0.015726,50
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01007,Rincón de Romos,Mujer,Todos,Todos,No especificado,326.0,17717.0,0.004476,25
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,Todos,Sin escolaridad,276.0,6273.0,0.004034,148
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,Todos,Básica,5342.0,6273.0,0.016644,2616
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,Todos,Media superior y técnica,431.0,6273.0,0.011642,174
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,Todos,Superior,147.0,6273.0,0.005465,54
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,Todos,No especificado,77.0,6273.0,0.002679,41
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,Habla lengua indígena,Sin escolaridad,0.0,1.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,Habla lengua indígena,Básica,1.0,1.0,0.0,1
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,Habla lengua indígena,Media superior y técnica,0.0,1.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,Habla lengua indígena,Superior,0.0,1.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,Habla lengua indígena,No especificado,0.0,1.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,No habla (resto),Sin escolaridad,276.0,6205.0,0.00402,148
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,No habla (resto),Básica,5280.0,6205.0,0.016884,2595
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,No habla (resto),Media superior y técnica,431.0,6205.0,0.011864,174
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,No habla (resto),Superior,144.0,6205.0,0.005543,53
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,No habla (resto),No especificado,74.0,6205.0,0.002539,40
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,No especificado,Sin escolaridad,0.0,67.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,No especificado,Básica,61.0,67.0,0.077167,20
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,No especificado,Media superior y técnica,0.0,67.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,No especificado,Superior,3.0,67.0,0.048389,1
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Todos,No especificado,No especificado,3.0,67.0,0.051388,1
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,"Rural (menos de 2,500 habitantes)",Todos,Sin escolaridad,169.0,2921.0,0.006523,105
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,"Rural (menos de 2,500 habitantes)",Todos,Básica,2639.0,2921.0,0.006785,1577
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,"Rural (menos de 2,500 habitantes)",Todos,Media superior y técnica,61.0,2921.0,0.005237,35
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,"Rural (menos de 2,500 habitantes)",Todos,Superior,17.0,2921.0,0.001153,8
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,"Rural (menos de 2,500 habitantes)",Todos,No especificado,35.0,2921.0,0.003803,25
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Urbano,Todos,Sin escolaridad,107.0,3352.0,0.005543,43
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Urbano,Todos,Básica,2703.0,3352.0,0.016375,1039
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Urbano,Todos,Media superior y técnica,370.0,3352.0,0.011228,139
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Urbano,Todos,Superior,130.0,3352.0,0.006648,46
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Todos,Urbano,Todos,No especificado,42.0,3352.0,0.003675,16
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Hombre,Todos,Todos,Sin escolaridad,122.0,2995.0,0.004962,68
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Hombre,Todos,Todos,Básica,2558.0,2995.0,0.017246,1248
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Hombre,Todos,Todos,Media superior y técnica,202.0,2995.0,0.013044,83
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Hombre,Todos,Todos,Superior,67.0,2995.0,0.00584,25
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Hombre,Todos,Todos,No especificado,46.0,2995.0,0.003272,26
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Mujer,Todos,Todos,Sin escolaridad,154.0,3278.0,0.005578,80
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Mujer,Todos,Todos,Básica,2784.0,3278.0,0.018257,1368
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Mujer,Todos,Todos,Media superior y técnica,229.0,3278.0,0.013257,91
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Mujer,Todos,Todos,Superior,80.0,3278.0,0.006233,29
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01008,San José de Gracia,Mujer,Todos,Todos,No especificado,31.0,3278.0,0.00289,15
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,Todos,Sin escolaridad,821.0,14318.0,0.011982,173
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,Todos,Básica,12283.0,14318.0,0.013906,2773
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,Todos,Media superior y técnica,835.0,14318.0,0.019279,188
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,Todos,Superior,210.0,14318.0,0.008212,38
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,Todos,No especificado,169.0,14318.0,0.002195,30
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,Habla lengua indígena,Sin escolaridad,0.0,1.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,Habla lengua indígena,Básica,1.0,1.0,0.0,1
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,Habla lengua indígena,Media superior y técnica,0.0,1.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,Habla lengua indígena,Superior,0.0,1.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,Habla lengua indígena,No especificado,0.0,1.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,No habla (resto),Sin escolaridad,821.0,14286.0,0.012044,173
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,No habla (resto),Básica,12280.0,14286.0,0.014548,2771
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,No habla (resto),Media superior y técnica,835.0,14286.0,0.019286,188
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,No habla (resto),Superior,210.0,14286.0,0.008222,38
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,No habla (resto),No especificado,140.0,14286.0,0.001468,25
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,No especificado,Sin escolaridad,0.0,31.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,No especificado,Básica,2.0,31.0,0.085353,1
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,No especificado,Media superior y técnica,0.0,31.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,No especificado,Superior,0.0,31.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Todos,No especificado,No especificado,29.0,31.0,0.085353,5
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,"Rural (menos de 2,500 habitantes)",Todos,Sin escolaridad,687.0,9021.0,0.0,124
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,"Rural (menos de 2,500 habitantes)",Todos,Básica,7915.0,9021.0,0.0,1418
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,"Rural (menos de 2,500 habitantes)",Todos,Media superior y técnica,253.0,9021.0,0.0,44
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,"Rural (menos de 2,500 habitantes)",Todos,Superior,29.0,9021.0,0.0,5
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,"Rural (menos de 2,500 habitantes)",Todos,No especificado,137.0,9021.0,0.0,25
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Urbano,Todos,Sin escolaridad,134.0,5297.0,0.006343,49
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Urbano,Todos,Básica,4368.0,5297.0,0.015415,1355
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Urbano,Todos,Media superior y técnica,582.0,5297.0,0.006901,144
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Urbano,Todos,Superior,181.0,5297.0,0.00911,33
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Todos,Urbano,Todos,No especificado,32.0,5297.0,0.001002,5
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Hombre,Todos,Todos,Sin escolaridad,494.0,6847.0,0.015192,97
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Hombre,Todos,Todos,Básica,5784.0,6847.0,0.010221,1308
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Hombre,Todos,Todos,Media superior y técnica,383.0,6847.0,0.018754,92
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Hombre,Todos,Todos,Superior,99.0,6847.0,0.006598,20
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Hombre,Todos,Todos,No especificado,87.0,6847.0,0.002981,16
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Mujer,Todos,Todos,Sin escolaridad,327.0,7471.0,0.009539,76
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Mujer,Todos,Todos,Básica,6499.0,7471.0,0.017938,1465
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Mujer,Todos,Todos,Media superior y técnica,452.0,7471.0,0.019928,96
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Mujer,Todos,Todos,Superior,111.0,7471.0,0.009745,18
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01009,Tepezalá,Mujer,Todos,Todos,No especificado,82.0,7471.0,0.002789,14
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,Todos,Sin escolaridad,766.0,12808.0,0.006695,204
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,Todos,Básica,11216.0,12808.0,0.019359,3007
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,Todos,Media superior y técnica,418.0,12808.0,0.00559,114
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,Todos,Superior,172.0,12808.0,0.004714,50
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,Todos,No especificado,236.0,12808.0,0.00635,70
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,No habla (resto),Sin escolaridad,762.0,12731.0,0.006813,203
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,No habla (resto),Básica,11210.0,12731.0,0.020085,3005
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,No habla (resto),Media superior y técnica,418.0,12731.0,0.005604,114
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,No habla (resto),Superior,172.0,12731.0,0.004735,50
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,No habla (resto),No especificado,169.0,12731.0,0.006699,53
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,No especificado,Sin escolaridad,4.0,77.0,0.022518,1
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,No especificado,Básica,6.0,77.0,0.038674,2
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,No especificado,Media superior y técnica,0.0,77.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,No especificado,Superior,0.0,77.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Todos,No especificado,No especificado,67.0,77.0,0.041671,17
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,"Rural (menos de 2,500 habitantes)",Todos,Sin escolaridad,540.0,9321.0,0.005548,140
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,"Rural (menos de 2,500 habitantes)",Todos,Básica,8390.0,9321.0,0.008708,2170
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,"Rural (menos de 2,500 habitantes)",Todos,Media superior y técnica,233.0,9321.0,0.001953,61
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,"Rural (menos de 2,500 habitantes)",Todos,Superior,59.0,9321.0,0.00132,16
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,"Rural (menos de 2,500 habitantes)",Todos,No especificado,99.0,9321.0,0.000113,25
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Urbano,Todos,Sin escolaridad,226.0,3487.0,0.01631,64
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Urbano,Todos,Básica,2826.0,3487.0,0.022029,837
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Urbano,Todos,Media superior y técnica,185.0,3487.0,0.00688,53
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Urbano,Todos,Superior,113.0,3487.0,0.007277,34
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Todos,Urbano,Todos,No especificado,137.0,3487.0,0.019062,45
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Hombre,Todos,Todos,Sin escolaridad,371.0,6304.0,0.012169,98
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Hombre,Todos,Todos,Básica,5523.0,6304.0,0.02255,1481
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Hombre,Todos,Todos,Media superior y técnica,193.0,6304.0,0.006009,53
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Hombre,Todos,Todos,Superior,86.0,6304.0,0.004137,25
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Hombre,Todos,Todos,No especificado,131.0,6304.0,0.005674,39
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Mujer,Todos,Todos,Sin escolaridad,395.0,6504.0,0.003796,106
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Mujer,Todos,Todos,Básica,5693.0,6504.0,0.016393,1526
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Mujer,Todos,Todos,Media superior y técnica,225.0,6504.0,0.005656,61
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Mujer,Todos,Todos,Superior,86.0,6504.0,0.005378,25
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01010,El Llano,Mujer,Todos,Todos,No especificado,105.0,6504.0,0.007555,31
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,Todos,Sin escolaridad,1040.0,16933.0,0.00777,201
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,Todos,Básica,14255.0,16933.0,0.018728,2624
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,Todos,Media superior y técnica,1204.0,16933.0,0.012014,233
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,Todos,Superior,339.0,16933.0,0.00338,63
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,Todos,No especificado,95.0,16933.0,0.001419,21
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,Habla lengua indígena,Sin escolaridad,13.0,45.0,0.165035,3
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,Habla lengua indígena,Básica,29.0,45.0,0.154816,9
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,Habla lengua indígena,Media superior y técnica,3.0,45.0,0.061004,1
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,Habla lengua indígena,Superior,0.0,45.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,Habla lengua indígena,No especificado,0.0,45.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,No habla (resto),Sin escolaridad,1027.0,16865.0,0.007545,198
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,No habla (resto),Básica,14216.0,16865.0,0.01845,2613
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,No habla (resto),Media superior y técnica,1201.0,16865.0,0.012091,232
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,No habla (resto),Superior,335.0,16865.0,0.003299,62
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,No habla (resto),No especificado,86.0,16865.0,0.001318,19
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,No especificado,Sin escolaridad,0.0,23.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,No especificado,Básica,10.0,23.0,0.280131,2
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,No especificado,Media superior y técnica,0.0,23.0,0.0,0
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,No especificado,Superior,4.0,23.0,0.174471,1
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Todos,No especificado,No especificado,9.0,23.0,0.255292,2
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,"Rural (menos de 2,500 habitantes)",Todos,Sin escolaridad,491.0,8079.0,0.013686,81
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,"Rural (menos de 2,500 habitantes)",Todos,Básica,7168.0,8079.0,0.013078,1133
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,"Rural (menos de 2,500 habitantes)",Todos,Media superior y técnica,299.0,8079.0,0.003682,51
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,"Rural (menos de 2,500 habitantes)",Todos,Superior,102.0,8079.0,0.001253,17
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,"Rural (menos de 2,500 habitantes)",Todos,No especificado,19.0,8079.0,0.000851,3
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Urbano,Todos,Sin escolaridad,549.0,8854.0,0.007683,120
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Urbano,Todos,Básica,7087.0,8854.0,0.01364,1491
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Urbano,Todos,Media superior y técnica,905.0,8854.0,0.013226,182
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Urbano,Todos,Superior,237.0,8854.0,0.005336,46
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Todos,Urbano,Todos,No especificado,76.0,8854.0,0.002404,18
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Hombre,Todos,Todos,Sin escolaridad,483.0,7880.0,0.00601,91
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Hombre,Todos,Todos,Básica,6555.0,7880.0,0.016218,1219
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Hombre,Todos,Todos,Media superior y técnica,609.0,7880.0,0.011751,118
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Hombre,Todos,Todos,Superior,172.0,7880.0,0.005179,34
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Hombre,Todos,Todos,No especificado,61.0,7880.0,0.002073,12
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Mujer,Todos,Todos,Sin escolaridad,557.0,9053.0,0.010477,110
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Mujer,Todos,Todos,Básica,7700.0,9053.0,0.021942,1405
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Mujer,Todos,Todos,Media superior y técnica,595.0,9053.0,0.013333,115
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Mujer,Todos,Todos,Superior,167.0,9053.0,0.003583,29
+incluir,censo,2000,"Escolaridad, población de 5 años y más",municipio,01011,San Francisco de los Romo,Mujer,Todos,Todos,No especificado,34.0,9053.0,0.001733,9

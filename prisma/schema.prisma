@@ -143,21 +143,25 @@ model Dataset {
 }
 
 model Resource {
-  id             String   @id @default(uuid())
-  datasetId      String
-  filename       String
-  format         String
-  sizeBytes      BigInt
-  storageKey     String
+  id               String   @id @default(uuid())
+  datasetId        String
+  filename         String
+  format           String
+  sizeBytes        BigInt
+  storageKey       String
   /// Schema del parquet capturado al subir: [{ name, type }]. Se usa para
   /// poblar el selector de columnas del step-builder y validar el recipe
   /// antes de correrlo (igual que parquet_schema en ckanext-duckdb).
-  columns        Json?
+  columns          Json?
   /// Metadata of the harmonized source (design, unit, missing codes and roles per column), copied
   /// when the resource is saved from the harmonizer. A snapshot: it does not follow later changes
   /// to the edition. Null on uploaded files and on resources created before it existed.
-  sourceMetadata Json?
-  createdAt      DateTime @default(now())
+  sourceMetadata   Json?
+  /// What the analysis templates need about each variable (role, label, categories, "not
+  /// specified" codes, universe), loaded with `PUT …/variable-metadata`. Null until it is loaded.
+  /// See analysis/variable-metadata.ts.
+  variableMetadata Json?
+  createdAt        DateTime @default(now())
 
   dataset  Dataset    @relation(fields: [datasetId], references: [id], onDelete: Cascade)
   analyses Analysis[]
