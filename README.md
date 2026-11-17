@@ -319,7 +319,7 @@ A resource saved from the harmonizer keeps what was declared about its source in
 
 ### Variable metadata
 
-What the [analysis templates](#analysis-templates-demo) need to know about each variable of a resource: its role, label, categories, "not specified" codes and universe. Every resource object has `variableMetadata`, `null` until it is loaded. For now it is loaded by hand with `PUT .../resources/:resourceId/variable-metadata` and the body `{ metadata }`, which replaces what the resource had; later the harmonizer will write it when a view is saved as a resource (plan in `planes-pendientes/plantillas-analisis.md` of the workspace). Labels and texts are Spanish because they are shown to the user as they are.
+What the [analysis templates](#analysis-templates-demo) need to know about each variable of a resource: its role, label, categories, "not specified" codes and universe. Every resource object has `variableMetadata`, `null` until it is loaded. For now it is loaded by hand with `PUT .../resources/:resourceId/variable-metadata` and the body `{ metadata }`, which replaces what the resource had (the web app's dataset page sends a JSON file the user picks, «Subir descripción de variables (JSON)»); later the harmonizer will write it when a view is saved as a resource (plan in `planes-pendientes/plantillas-analisis.md` of the workspace). Labels and texts are Spanish because they are shown to the user as they are.
 
 ```json
 {
