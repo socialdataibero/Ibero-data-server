@@ -542,13 +542,13 @@ Every harmonizer endpoint needs a session. Any logged-in user can read every sur
 | `GET` | `/harmonizer/surveys` | List with editions and mapping progress. Ordered by name. `limit`, `offset`. |
 | `POST` | `/harmonizer/surveys` | Create: `{ name, description?, organizationId }`. Only the sysadmin or an `ADMIN`/`EDITOR` of that organization. |
 | `GET` | `/harmonizer/surveys/:surveyId` | One survey. |
-| `PATCH` | `/harmonizer/surveys/:surveyId` | Change `name` and/or `description`. |
+| `PATCH` | `/harmonizer/surveys/:surveyId` | Change `name`, `description` and/or `shortName`. |
 | `DELETE` | `/harmonizer/surveys/:surveyId` | Delete the survey and everything in it, including the stored files of its editions. Returns `204`. |
 | `POST` | `/harmonizer/uploads` | Start an upload of an edition with tus (CSV, `.csv.gz` or DBF). See [Upload](#upload). |
 | `HEAD`, `PATCH`, `DELETE` | `/harmonizer/uploads/:importId` | Continue (tus `PATCH`), check (`HEAD`) or cancel (`DELETE`) an upload. |
 | `GET` | `/harmonizer/imports/:importId` | Status of an upload and of its import. See [Imports](#imports). |
 | `POST` | `/harmonizer/upload` | Upload an edition in one request (multipart), as CSV or DBF. Up to 200 MB, read in memory. The web app uses tus instead. |
-| `PATCH` | `/harmonizer/datasets/:datasetId` | Change the source `design` and/or `unit` of an edition. See [Source design](#source-design). |
+| `PATCH` | `/harmonizer/datasets/:datasetId` | Change the source `design`, `unit` and/or `coverage` of an edition. See [Source design](#source-design). |
 | `DELETE` | `/harmonizer/datasets/:datasetId` | Delete one edition, its mapping and its stored file. Returns `204`. |
 | `GET` | `/harmonizer/datasets/:datasetId/mapping` | Columns of an edition with saved or suggested mappings. |
 | `PUT` | `/harmonizer/datasets/:datasetId/mapping` | Save the mapping of an edition. |
@@ -569,6 +569,7 @@ Every harmonizer endpoint needs a session. Any logged-in user can read every sur
 | `POST` | `/harmonizer/surveys/:surveyId/variables/:variableId/review` | Mark the current differences as reviewed. |
 | `DELETE` | `/harmonizer/surveys/:surveyId/variables/:variableId/review` | Remove the review. Returns `204`. |
 | `PUT` | `/harmonizer/surveys/:surveyId/variables/:variableId/recoding` | Save the catalog of the variable and the recoding of its editions. |
+| `PUT` | `/harmonizer/surveys/:surveyId/variables/:variableId/analysis` | How the variable is used in analysis: role, universe, "yes" code, level, unit and groups. See [Use in analysis](#use-in-analysis). |
 | `GET` | `/harmonizer/surveys/:surveyId/catalog.csv` | Catalog of categories of every variable that has one. |
 | `GET` | `/harmonizer/surveys/:surveyId/harmonized` | Harmonized view of all editions, one page at a time (`limit`, `offset`). Optional `variables`. |
 | `GET` | `/harmonizer/surveys/:surveyId/harmonized.csv` | Same, as CSV. Also `.parquet`. |
@@ -581,6 +582,7 @@ Every harmonizer endpoint needs a session. Any logged-in user can read every sur
 - Names are unique. Creating or renaming to a taken name returns `409 survey_name_taken`.
 - Creating a survey requires `organizationId` (`400 validation_error` without it). An organization that does not exist returns `404 organization_not_found`, and a user who is not the sysadmin nor an `ADMIN`/`EDITOR` of it gets `403 survey_org_role_required`. The organization cannot be changed afterwards.
 - Sending an empty `description` in `PATCH` clears it.
+- `shortName` is the short name of the source for the notes of an analysis and its `fuente` column ("Censo 2000"). It is optional, on create and in `PATCH`; it is trimmed and an empty one clears it (`null`). Every survey object has it.
 - Renaming a survey does not change its editions, canonical variables or mappings.
 - Deleting a survey also deletes its editions, their stored Parquet files, their mappings and its canonical variables. A missing survey returns `404 survey_not_found`.
 - If the file of any of its editions cannot be removed, nothing is deleted and the survey returns `409 harmonizer_file_in_use`, naming that edition. See [Deleting an edition](#deleting-an-edition).
@@ -645,6 +647,7 @@ Rules:
 - Both are required in both upload ways. An upload without one or both returns `400 source_info_required`, with `params: { missing }` listing `design`, `unit` or both, and a `message` naming each one (for example "Missing the source design (census or sample) and the unit of analysis (person, dwelling or household)."). An empty field counts as missing. Any other value returns `400 validation_error` (`design must be one of: census, sample.`). Both checks run with the other field checks, before permissions and before any byte of a tus upload.
 - `PATCH /harmonizer/datasets/:datasetId` with `{ design?, unit? }` changes them (same permission as saving the mapping). Switching to `census` removes every role of the edition's mapping. Switching to `sample` keeps the mapping as it is; it cannot be saved again until a column is marked as `weight`. It returns the edition's `dataset` object.
 - Editions uploaded before these fields existed have `design: null` and `unit: null`. Their mapping saves as before, without roles, and `PATCH` sets them.
+- `coverage` is the place the whole edition covers, for the total row of an analysis: `{ level, code, label }`, with `level` one of the territorial levels of [Use in analysis](#use-in-analysis) (`{ "level": "state", "code": "01", "label": "Aguascalientes" }`). It is not asked at upload: `PATCH` sets it and `null` clears it. Another level, or a missing code or label, returns `400 validation_error`; a code or label of only spaces returns `400 coverage_invalid`. Every edition object (`dataset`) has it, `null` when not given.
 
 In a `sample` edition the mapping can give a column a sample design role (`role` in `PUT .../mapping`):
 
@@ -769,7 +772,7 @@ A canonical name is a column of the harmonized view and of the exported Parquet,
 
 The rules apply when a canonical is created (`__new__` in `PUT .../mapping`) and when it is renamed. Names created before the rules are kept and still work; `GET .../variables` marks them with `nameValid: false` so they can be renamed.
 
-`GET /harmonizer/surveys/:surveyId/variables` returns `{ survey: { id, name }, items }`. Each item is `{ id, name, dataType, nameValid, usages }`, ordered by name, and `usages` lists `{ datasetId, datasetName, year, column }` for each edition that maps it (`[]` when none does).
+`GET /harmonizer/surveys/:surveyId/variables` returns `{ survey: { id, name }, items }`. Each item is `{ id, name, description, dataType, categories, analysis, sampleRole, suggestedRole, comparison, nameValid, usages }` (see [Use in analysis](#use-in-analysis) for `analysis` and `suggestedRole`; `sampleRole` is the sample design role, `weight`, `stratum` or `psu`, that a mapping gives the variable, or `null`), ordered by name, and `usages` lists `{ datasetId, datasetName, year, column }` for each edition that maps it (`[]` when none does).
 
 `PATCH .../variables/:variableId` takes `{ name }`:
 
@@ -781,6 +784,31 @@ The rules apply when a canonical is created (`__new__` in `PUT .../mapping`) and
 `DELETE .../variables/:variableId` deletes a canonical that no edition maps and returns `204`. If any edition maps it, it returns `409 canonical_variable_in_use`, the `message` lists the editions and columns, and nothing is deleted.
 
 For these three endpoints, an unknown survey returns `404 survey_not_found` and a variable that does not belong to the survey returns `404 canonical_variable_not_found`.
+
+### Use in analysis
+
+Each canonical variable says how analyses (the templates) may use it. It belongs to the variable, not to an edition: the "yes" of a yes/no question is the same every year. The sample design roles (`weight`, `stratum`, `psu`) are not here: they stay in the mapping of each edition (see [Source design](#source-design)) and win over these. The label of the variable for charts and notes is its `description`.
+
+`PUT /harmonizer/surveys/:surveyId/variables/:variableId/analysis` (same permission as the other variable changes) takes:
+
+| Field | Meaning |
+| --- | --- |
+| `role` | One of `category` (groups without order), `ordinal` (groups with an order), `dichotomous` (yes/no), `geographic` (territorial key), `label` (name next to a key), `temporal` (year or period), `measure` (quantity), `socioeconomic_stratum`, `key` (to join tables), `identifier` (record id), `free_text`. `null` clears everything. |
+| `universe` | Who was asked, e.g. "población de 3 años y más". The rule is always "the question was asked": an empty cell is outside it. |
+| `positiveValue` | `dichotomous` only, required: the code that counts as "yes". |
+| `geoLevel` | `geographic` only, required: `country`, `state`, `municipality`, `locality`, `ageb` or `block`. |
+| `unit` | `measure` only, optional: e.g. "años". |
+| `disaggregation` | Optional, for splitting a result by it: `{ summable, cuts?, notApplicableLabel?, maxLevel? }`. `summable` says whether its groups add up to the whole. `cuts` (`measure` only) are the groups it is cut into, `[{ from, to, label }]` with inclusive bounds and `to: null` for an open last group ("65 años y más"). `notApplicableLabel` names an empty cell ("No aplica (menores de 12 años)"). `maxLevel` (`geographic` only) is the most detailed level the source is representative at. Not allowed for `label`, `key`, `identifier` and `free_text`. |
+
+- It replaces what was saved: a field left out is cleared. Texts are trimmed and an empty one counts as not given.
+- A field that does not go with the role, or a missing required one, returns `400 variable_analysis_invalid` with `params: { field, problem }` (`problem`: `not_for_role`, `required`, `role_required`, `unknown`, or for a group `label_required`, `bounds`, `overlap`, `open_not_last`, `not_a_number`). The groups must be in order and must not overlap.
+- The role must fit the confirmed type of the variable: a `measure` needs `integer` or `decimal`; a role of codes (`category`, `ordinal`, `dichotomous`, `geographic`, `socioeconomic_stratum`, `key`, `identifier`) needs `text` or no confirmed type. Otherwise `409 variable_role_type_mismatch` with `params: { variable, role, dataType }`. The type is never changed silently. Saving a mapping that confirms a type against the role (`PUT .../mapping`) returns the same error and saves nothing.
+- `positiveValue` must be one of the variable's codes: those of its common catalog or, without one, the values seen in its editions (their stored value profiles, without their "not specified" codes and after their recoding). Otherwise `400 variable_positive_value_unknown` with `params: { value, known }` (up to 20 codes).
+- It returns `{ id, name, analysis }`.
+
+In `GET .../variables` and in the `variable` of `GET .../comparison`, `analysis` is `{ role, universe, positiveValue, geoLevel, unit, disaggregation }` (every field `null` when not described) and `suggestedRole` is the role the data suggest, for the user to confirm, or `null`. It comes from the dictionary of the first edition (by year, then upload) that describes a column mapped to the variable: a catalog (such as the states') is `geographic`, two coded values `dichotomous`, more `category`, a range of values `measure`. Without a dictionary, from the common catalog (two codes `dichotomous`, more `category`) or a confirmed numeric type (`measure`). The `variable` of `GET .../comparison` also has `knownCodes`, the codes `positiveValue` may take.
+
+A variable of codes keeps its codes in the downloads: when its type is not confirmed, its Parquet column is `VARCHAR` instead of the inferred type, so a municipality `001` is not downloaded as `1` (see [Harmonized views](#harmonized-views)).
 
 ### Variable types
 
@@ -829,7 +857,7 @@ Exports:
 - The survey export puts `_dataset`, `_year` and `_row` first. The edition export does not include them.
 - CSV is UTF-8 with a BOM, so Excel opens it correctly. Missing values are empty.
 - In CSV, values and headers that start with `=`, `+`, `-`, `@`, a tab or a carriage return get a leading `'`, so spreadsheets do not run them as formulas (report H-12). Plain numbers such as `-5` or `+3.2` are left as they are. Parquet is not changed.
-- Parquet columns take the canonical variable's confirmed type, or the type inferred from the exported values when it is not confirmed (the same rules as `inferredType`, applied to all exported editions together): `text` → `VARCHAR`, `integer` → `BIGINT`, `decimal` → `DOUBLE`. Numbers are converted from the trimmed text, trimmed as everywhere in the harmonizer (see [Mapping](#mapping)), so a value such as `\ufeff1` or `1` followed by a tab, which the type checks accept as an integer, becomes `1` (before 2026-11-12 only spaces were trimmed here and the export failed with `400 parquet_write_failed`). `_dataset` is `VARCHAR`, and `_year` and `_row` are `BIGINT`. Missing values are `NULL`, so they are distinct from any value. This lets analyses sum, average, multiply and compare these columns (before, every column was text and `SUM` failed).
+- Parquet columns take the canonical variable's confirmed type, or, when it is not confirmed, `text` for a variable whose analysis role is one of codes ([Use in analysis](#use-in-analysis)) and otherwise the type inferred from the exported values (the same rules as `inferredType`, applied to all exported editions together): `text` → `VARCHAR`, `integer` → `BIGINT`, `decimal` → `DOUBLE`. Numbers are converted from the trimmed text, trimmed as everywhere in the harmonizer (see [Mapping](#mapping)), so a value such as `\ufeff1` or `1` followed by a tab, which the type checks accept as an integer, becomes `1` (before 2026-11-12 only spaces were trimmed here and the export failed with `400 parquet_write_failed`). `_dataset` is `VARCHAR`, and `_year` and `_row` are `BIGINT`. Missing values are `NULL`, so they are distinct from any value. This lets analyses sum, average, multiply and compare these columns (before, every column was text and `SUM` failed).
 - If a confirmed numeric variable has a value that does not fit (possible only for an edition saved without `dataType`), the Parquet export returns `409 value_type_mismatch` with the variable and the offending values.
 - Exporting an edition with no mappings as Parquet returns `400 harmonized_view_empty`.
 - The Parquet carries its [source metadata](#source-metadata) in its footer, as JSON under the key `socialdata_metadata` (DuckDB `KV_METADATA`), so the file describes itself outside the platform too. Views without metadata (an edition without design or unit, or a survey whose editions differ) have no such key.

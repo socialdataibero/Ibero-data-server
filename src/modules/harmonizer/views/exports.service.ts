@@ -62,6 +62,7 @@ import {
 } from '../mapping/mapping-types.service.js';
 import { safeFileBase } from '../export-file.js';
 import { HarmonizerLookupService } from '../lookup.service.js';
+import { unconfirmedTypeOf } from '../variables/variable-role.js';
 
 /** Una edición lista para descargarse (ver `exportEdition`). */
 export interface ExportEdition {
@@ -327,10 +328,15 @@ export class ExportsService {
   ): Promise<Record<string, ParquetColumnType>> {
     const confirmed = await this.prisma.harmonizerCanonicalVariable.findMany({
       where: { surveyId, name: { in: headers } },
-      select: { name: true, dataType: true },
+      select: { name: true, dataType: true, role: true },
     });
+    // A variable of codes (category, geographic…) with no confirmed type stays text, so `001`
+    // is not downloaded as `1` (variables/variable-role.ts).
     const confirmedByName = new Map(
-      confirmed.map((c) => [c.name, c.dataType as ValueType | null]),
+      confirmed.map((c) => [
+        c.name,
+        (c.dataType as ValueType | null) ?? unconfirmedTypeOf(c.role),
+      ]),
     );
 
     const headerSet = new Set(headers);

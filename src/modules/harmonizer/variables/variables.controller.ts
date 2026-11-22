@@ -20,6 +20,7 @@ import { sendExportFile } from '../export-response.js';
 import { SurveyAccessService } from '../survey-access.service.js';
 import { RenameCanonicalVariableDto } from '../dto/rename-canonical-variable.dto.js';
 import { SaveRecodingDto } from '../dto/save-recoding.dto.js';
+import { SaveVariableAnalysisDto } from '../dto/save-variable-analysis.dto.js';
 import { VariablesService } from './variables.service.js';
 
 /** Canonical variables of a survey: list, rename, delete, codes between editions, review, recoding, catalog. */
@@ -96,6 +97,18 @@ export class VariablesController {
   ) {
     await this.access.assertCanEditSurvey(user, surveyId);
     return this.variables.saveRecoding(surveyId, variableId, dto);
+  }
+
+  /** How the variable is used in analysis: role, universe, "yes" code, level, unit, groups. */
+  @Put('surveys/:surveyId/variables/:variableId/analysis')
+  async saveAnalysis(
+    @Param('surveyId') surveyId: string,
+    @Param('variableId') variableId: string,
+    @Body() dto: SaveVariableAnalysisDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.access.assertCanEditSurvey(user, surveyId);
+    return this.variables.saveAnalysis(surveyId, variableId, dto);
   }
 
   @Get('surveys/:surveyId/catalog.csv')

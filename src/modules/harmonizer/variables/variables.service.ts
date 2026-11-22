@@ -34,6 +34,14 @@ import {
 } from '../mapping/mapping-types.service.js';
 import { safeFileBase } from '../export-file.js';
 import { toCatalog, toValueMap } from '../editions/edition-reader.service.js';
+import type { CodebookCategory } from '../codebook.js';
+import type { SaveVariableAnalysisDto } from '../dto/save-variable-analysis.dto.js';
+import {
+  checkAnalysis,
+  readAnalysis,
+  suggestRole,
+  type VariableAnalysis,
+} from './variable-role.js';
 
 /**
  * Canonical variables of a survey: list, rename, delete, compare their codes between editions,
@@ -58,12 +66,14 @@ export class VariablesService {
         mappings: {
           select: {
             sourceColumn: true,
+            role: true,
             dataset: { select: { id: true, name: true, year: true } },
           },
         },
       },
     });
     const comparisons = await this.variableComparisons(surveyId);
+    const dictionaries = await this.dictionaries(surveyId);
     return {
       survey: { id: survey.id, name: survey.name },
       items: variables.map((v) => ({
@@ -72,6 +82,15 @@ export class VariablesService {
         description: v.description,
         dataType: v.dataType,
         categories: toCatalog(v.categories),
+        analysis: readAnalysis(v),
+        // The sample design role a mapping gives it (weight, stratum, PSU), if any: such a
+        // variable needs no analysis role.
+        sampleRole: v.mappings.find((m) => m.role !== null)?.role ?? null,
+        suggestedRole: suggestRole(
+          dictionaries.get(v.id) ?? null,
+          toCatalog(v.categories),
+          v.dataType as ValueType | null,
+        ),
         comparison: this.comparisonSummary(
           comparisons.get(v.id)?.comparison,
           v.reviewedSignature,
@@ -208,6 +227,13 @@ export class VariablesService {
         categories: catalog,
         reviewedAt: variable.reviewedSignature ? variable.reviewedAt : null,
         reviewedBy: variable.reviewedSignature ? variable.reviewedBy : null,
+        analysis: readAnalysis(variable),
+        suggestedRole: suggestRole(
+          (await this.dictionaries(surveyId)).get(variable.id) ?? null,
+          catalog,
+          variable.dataType as ValueType | null,
+        ),
+        knownCodes: await this.knownCodes(variable.id, catalog),
       },
       status: comparisonStatus(comparison, variable.reviewedSignature),
       categorical: comparison.categorical,
@@ -416,6 +442,106 @@ export class VariablesService {
       contentType: EXPORT_CONTENT_TYPE.csv,
       body: Buffer.from(`\ufeff${csv}`, 'utf8'),
     };
+  }
+
+  /**
+   * Saves how a variable is used in analysis (role, universe, "yes" code, level, unit,
+   * disaggregation). It replaces what was saved. The rules are in variable-role.ts.
+   */
+  async saveAnalysis(
+    surveyId: string,
+    variableId: string,
+    dto: SaveVariableAnalysisDto,
+  ): Promise<{ id: string; name: string; analysis: VariableAnalysis }> {
+    const variable = await this.getCanonicalVariable(surveyId, variableId);
+    const analysis = checkAnalysis(dto, {
+      name: variable.name,
+      dataType: variable.dataType as ValueType | null,
+      known:
+        dto.role === 'dichotomous'
+          ? await this.knownCodes(variable.id, toCatalog(variable.categories))
+          : [],
+    });
+    const saved = await this.prisma.harmonizerCanonicalVariable.update({
+      where: { id: variable.id },
+      data: {
+        role: analysis.role,
+        universe: analysis.universe,
+        positiveValue: analysis.positiveValue,
+        geoLevel: analysis.geoLevel,
+        unit: analysis.unit,
+        disaggregation:
+          analysis.disaggregation === null
+            ? Prisma.DbNull
+            : (analysis.disaggregation as unknown as Prisma.InputJsonObject),
+      },
+    });
+    return { id: saved.id, name: saved.name, analysis: readAnalysis(saved) };
+  }
+
+  /**
+   * The codes a variable takes: those of its common catalog or, without one, the values seen in
+   * the editions that map it, without their "not specified" codes and after their recoding (from
+   * the stored value profiles, so at most 200 distinct values per column).
+   */
+  private async knownCodes(
+    variableId: string,
+    catalog: { code: string }[],
+  ): Promise<string[]> {
+    if (catalog.length > 0) return catalog.map((c) => c.code);
+    const mappings = await this.prisma.harmonizerMapping.findMany({
+      where: { canonicalVariableId: variableId },
+      select: {
+        sourceColumn: true,
+        missingCodes: true,
+        valueMap: true,
+        dataset: { select: { id: true, columns: true } },
+      },
+    });
+    const profiles = await this.profiles.columnProfiles(
+      mappings.map((m) => ({ dataset: m.dataset, column: m.sourceColumn })),
+    );
+    const codes = new Set<string>();
+    for (const m of mappings) {
+      const missing = new Set(m.missingCodes);
+      const recode = toValueMap(m.valueMap);
+      for (const { value } of profiles.get(m.dataset.id)?.get(m.sourceColumn)?.values ?? []) {
+        if (missing.has(value)) continue;
+        codes.add(recode.get(value) ?? value);
+      }
+    }
+    return [...codes].sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
+  }
+
+  /**
+   * The dictionary categories of each variable of a survey: those of the first edition (by
+   * year, then upload) whose dictionary describes a column mapped to it. For the role
+   * suggestion.
+   */
+  private async dictionaries(
+    surveyId: string,
+  ): Promise<Map<string, CodebookCategory[]>> {
+    const datasets = await this.prisma.harmonizerDataset.findMany({
+      where: { surveyId, codebookId: { not: null } },
+      orderBy: [{ year: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+      select: {
+        id: true,
+        columns: true,
+        codebookId: true,
+        codebookTable: true,
+        mappings: { select: { sourceColumn: true, canonicalVariableId: true } },
+      },
+    });
+    const byColumn = await this.codebooks.codebookByColumn(datasets);
+    const out = new Map<string, CodebookCategory[]>();
+    for (const d of datasets) {
+      for (const m of d.mappings) {
+        if (out.has(m.canonicalVariableId)) continue;
+        const info = byColumn.get(d.id)?.get(m.sourceColumn);
+        if (info) out.set(m.canonicalVariableId, info.categories);
+      }
+    }
+    return out;
   }
 
   private async getCanonicalVariable(surveyId: string, variableId: string) {

@@ -13,6 +13,7 @@ import {
 } from '../column-checks.js';
 import { type ColumnValues, type ValueType } from '../harmonized-view.js';
 import {
+  CANONICAL_PREFIX,
   NEW_CANONICAL,
   type MappingChoiceDto,
 } from '../dto/mapping-choice.dto.js';
@@ -38,6 +39,11 @@ import {
   newCanonicalsToCreate,
   resolveChoices,
 } from './mapping-save-steps.js';
+import {
+  isRole,
+  roleAllowsType,
+  roleTypeMismatch,
+} from '../variables/variable-role.js';
 import { MappingTypesService } from './mapping-types.service.js';
 import { toDatasetInfo } from '../harmonizer-types.js';
 import { HarmonizerLookupService } from '../lookup.service.js';
@@ -368,6 +374,7 @@ export class MappingService {
       where: { datasetId },
     });
     const savedByColumn = new Map(saved.map((m) => [m.sourceColumn, m]));
+    await this.assertRoleTypes(dataset, choiceByColumn);
     // Fuera de la transacción: leer los Parquet puede tardar más que su timeout.
     await this.types.assertValueTypes(dataset, choiceByColumn, savedByColumn);
     const columnCodebook =
@@ -460,6 +467,50 @@ export class MappingService {
     );
 
     return { ok: true, datasetId };
+  }
+
+  /**
+   * A confirmed type must fit the analysis role of its canonical (variables/variable-role.ts): a
+   * measure is a number and a variable of codes stays text. Otherwise
+   * `409 variable_role_type_mismatch`, and nothing is saved.
+   */
+  private async assertRoleTypes(
+    dataset: { surveyId: string; columns: string[] },
+    choiceByColumn: Map<string, MappingChoiceDto>,
+  ): Promise<void> {
+    const typed = dataset.columns
+      .map((column) => choiceByColumn.get(column))
+      .filter(
+        (c): c is MappingChoiceDto & { dataType: ValueType } =>
+          c !== undefined && c.dataType !== undefined && isMappedChoice(c),
+      );
+    if (typed.length === 0) return;
+    const canonicals = await this.prisma.harmonizerCanonicalVariable.findMany({
+      where: {
+        surveyId: dataset.surveyId,
+        role: { not: null },
+        OR: [
+          { id: { in: typed.map((c) => c.choice.slice(CANONICAL_PREFIX.length)) } },
+          { name: { in: typed.map((c) => c.newName?.trim() ?? '') } },
+        ],
+      },
+      select: { id: true, name: true, role: true },
+    });
+    for (const choice of typed) {
+      const canonical =
+        choice.choice === NEW_CANONICAL
+          ? canonicals.find((c) => c.name === choice.newName?.trim())
+          : canonicals.find(
+              (c) => c.id === choice.choice.slice(CANONICAL_PREFIX.length),
+            );
+      if (
+        canonical &&
+        isRole(canonical.role) &&
+        !roleAllowsType(canonical.role, choice.dataType)
+      ) {
+        throw roleTypeMismatch(canonical.name, canonical.role, choice.dataType);
+      }
+    }
   }
 
   /**

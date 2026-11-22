@@ -53,6 +53,7 @@ export class SurveysService {
       id: s.id,
       name: s.name,
       description: s.description,
+      shortName: s.shortName,
       organizationId: s.organizationId,
       datasets: s.datasets.map((d) => ({
         id: d.id,
@@ -88,6 +89,7 @@ export class SurveysService {
       data: {
         name,
         description: dto.description?.trim() || null,
+        shortName: dto.shortName?.trim() || null,
         organizationId: dto.organizationId,
         createdById,
       },
@@ -148,6 +150,10 @@ export class SurveysService {
       data.description = dto.description.trim() || null;
     }
 
+    if (dto.shortName !== undefined) {
+      data.shortName = dto.shortName.trim() || null;
+    }
+
     const updated = await this.prisma.harmonizerSurvey.update({
       where: { id: surveyId },
       data,
@@ -159,12 +165,14 @@ export class SurveysService {
     id: string;
     name: string;
     description: string | null;
+    shortName: string | null;
     organizationId: string | null;
   }) {
     return {
       id: survey.id,
       name: survey.name,
       description: survey.description,
+      shortName: survey.shortName,
       organizationId: survey.organizationId,
     };
   }

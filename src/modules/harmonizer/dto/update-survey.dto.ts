@@ -9,4 +9,9 @@ export class UpdateSurveyDto {
   @IsOptional()
   @IsString({ message: 'description must be a string.' })
   description?: string;
+
+  /** Short name of the source, e.g. "Censo 2000"; empty clears it. */
+  @IsOptional()
+  @IsString({ message: 'shortName must be a string.' })
+  shortName?: string;
 }

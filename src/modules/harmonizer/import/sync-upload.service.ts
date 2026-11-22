@@ -129,6 +129,7 @@ export class SyncUploadService {
         columnCount: dataset.columns.length,
         design: dataset.design as SourceDesign | null,
         unit: dataset.unit as AnalysisUnit | null,
+        coverage: null,
       },
       renamedColumns: renamed,
       source,

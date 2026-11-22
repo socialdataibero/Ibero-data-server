@@ -10,6 +10,10 @@ export class CreateSurveyDto {
   description?: string;
 
   /** Owning organization (SDI-91); the caller must be its ADMIN/EDITOR or the sysadmin. */
+  @IsOptional()
+  @IsString({ message: 'shortName must be a string.' })
+  shortName?: string;
+
   @IsString({ message: 'organizationId must be a string.' })
   @MinLength(1, { message: 'organizationId must not be empty.' })
   organizationId!: string;

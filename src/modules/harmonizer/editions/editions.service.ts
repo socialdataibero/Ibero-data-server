@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { LocalStorageService } from '../../storage/local-storage.service.js';
 import type { UpdateDatasetDto } from '../dto/update-dataset.dto.js';
@@ -37,7 +38,7 @@ export class EditionsService {
   }
 
   /**
-   * Changes the source design or unit of an edition. Census editions do not take sample design
+   * Changes the source design, the unit or the covered place of an edition. Census editions do not take sample design
    * roles, so switching to census clears them; switching to sample leaves the weight to be
    * marked in the mapping, which cannot be saved without it.
    */
@@ -46,6 +47,19 @@ export class EditionsService {
     dto: UpdateDatasetDto,
   ): Promise<DatasetInfo> {
     await this.lookup.getDataset(datasetId);
+    let coverage: Prisma.InputJsonValue | typeof Prisma.DbNull | undefined;
+    if (dto.coverage === null) coverage = Prisma.DbNull;
+    else if (dto.coverage) {
+      const code = dto.coverage.code.trim();
+      const label = dto.coverage.label.trim();
+      if (!code || !label) {
+        throw new BadRequestException({
+          code: 'coverage_invalid',
+          message: 'The code and the name of the place an edition covers must not be blank.',
+        });
+      }
+      coverage = { level: dto.coverage.level, code, label };
+    }
     const dataset = await this.prisma.$transaction(async (tx) => {
       if (dto.design === 'census') {
         await tx.harmonizerMapping.updateMany({
@@ -55,7 +69,7 @@ export class EditionsService {
       }
       return tx.harmonizerDataset.update({
         where: { id: datasetId },
-        data: { design: dto.design, unit: dto.unit },
+        data: { design: dto.design, unit: dto.unit, coverage },
         include: { survey: true },
       });
     });
