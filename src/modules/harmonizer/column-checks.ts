@@ -4,7 +4,7 @@ import type { ValueType } from './harmonized-view.js';
 /**
  * Value checks of a source column, as DuckDB SQL over the edition's raw Parquet, so that
  * mapping does not load the rows into Node. Each query must give exactly what the JavaScript
- * rules in `harmonized-view.ts` (`inferValueType`, `valuesNotFitting`) and `codebook.ts`
+ * rules in `harmonized-view.testing.ts` (`inferValueType`, `valuesNotFitting`) and `codebook.ts`
  * (`codeKey`) give over the same values; `column-checks.spec.ts` compares them.
  *
  * Every query first groups the column by its raw value and only then trims and checks the

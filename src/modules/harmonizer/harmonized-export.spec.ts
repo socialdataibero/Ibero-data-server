@@ -15,13 +15,12 @@ import {
   surveyParquetSql,
   type ExportColumn,
 } from './harmonized-export.js';
+import { neutralizeCsvFormula, type RawData } from './harmonized-view.js';
 import {
   buildDatasetView,
   buildSurveyView,
-  neutralizeCsvFormula,
   type DatasetEdition,
-  type RawData,
-} from './harmonized-view.js';
+} from './harmonized-view.testing.js';
 
 // Values the view treats in different ways: empty, whitespace JavaScript trims and DuckDB's trim
 // does not, missing codes with spaces around, recoded values, quotes, line breaks, NULL cells.

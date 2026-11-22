@@ -1,13 +1,92 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { AnalysisService } from '../analysis/analysis.service.js';
+import { editionPageSql, exportColumns } from './harmonized-export.js';
+import { neutralizeCsvFormula } from './harmonized-view.js';
 import {
-  buildDatasetView,
-  buildSurveyView,
   columnValues,
   inferValueType,
-  neutralizeCsvFormula,
   sourceColumnValues,
   valuesNotFitting,
   type DatasetEdition,
-} from './harmonized-view.js';
+} from './harmonized-view.testing.js';
+import {
+  editionView,
+  pageRows,
+  surveyView,
+  type SurveyViewPage,
+  type View,
+} from './views/view-rows.js';
+
+/*
+ * The views run as the server runs them (views.service.ts): each edition is stored as the
+ * harmonizer stores it (positional all-text Parquet) and its page is read with the SQL of the
+ * downloads (`editionPageSql`). The cases and their expected results are those the JavaScript
+ * view had before (refactor R4).
+ */
+const analysis = new AnalysisService({ threads: '2' });
+let dir: string;
+let stored = 0;
+beforeAll(async () => {
+  dir = await mkdtemp(join(tmpdir(), 'harmonized-view-'));
+});
+afterAll(async () => {
+  await rm(dir, { recursive: true, force: true });
+});
+
+function columnsOf(e: DatasetEdition, canons?: Set<string>) {
+  return exportColumns(
+    e.columns,
+    [...e.columnToCanonical]
+      .filter(([, canon]) => !canons || canons.has(canon))
+      .map(([sourceColumn, canon]) => ({
+        sourceColumn,
+        canon,
+        missingCodes: [...(e.missingCodes?.get(sourceColumn) ?? [])],
+        valueMap: e.valueMaps?.get(sourceColumn) ?? new Map<string, string>(),
+      })),
+  );
+}
+
+async function readPage(e: DatasetEdition, columns: ReturnType<typeof columnsOf>) {
+  if (columns.length === 0) return [];
+  const path = join(dir, `e${stored++}.parquet`);
+  const positional = e.columns.map((_, i) => `c${i}`);
+  await analysis.writeRowsToParquet(
+    positional,
+    e.rows.map((row) => Object.fromEntries(e.columns.map((c, i) => [positional[i], row[c]]))),
+    path,
+  );
+  const [rows] = await analysis.runInternalQueries(path, [
+    editionPageSql('data', columns, 0, e.rows.length),
+  ]);
+  return pageRows(columns, rows);
+}
+
+/** The view by edition (`getDatasetHarmonized`). */
+async function buildDatasetView(e: DatasetEdition): Promise<View> {
+  const columns = columnsOf(e);
+  return editionView(columns, await readPage(e, columns));
+}
+
+/** The view by survey (`getSurveyHarmonized`): only the editions with a requested variable. */
+async function buildSurveyView(editions: DatasetEdition[], wanted: string[]): Promise<View> {
+  const pages: SurveyViewPage[] = [];
+  for (const e of editions) {
+    const used = new Set(wanted);
+    if (![...e.columnToCanonical.values()].some((c) => used.has(c))) continue;
+    const columns = columnsOf(e, used);
+    pages.push({
+      name: e.name,
+      year: e.year,
+      rowOffset: e.rowOffset ?? 0,
+      columns,
+      rows: await readPage(e, columns),
+    });
+  }
+  return surveyView(pages, wanted);
+}
 
 function edition(
   partial: Partial<DatasetEdition> & Pick<DatasetEdition, 'columns' | 'rows'>,
@@ -24,16 +103,16 @@ function edition(
   };
 }
 
-describe('harmonizer: buildDatasetView', () => {
-  it('sin mapeos devuelve headers y rows vacíos', () => {
-    const view = buildDatasetView(
+describe('harmonizer: vista por edición (SQL)', () => {
+  it('sin mapeos devuelve headers y rows vacíos', async () => {
+    const view = await buildDatasetView(
       edition({ columns: ['a'], rows: [{ a: '1' }] }),
     );
     expect(view).toEqual({ headers: [], rows: [] });
   });
 
-  it('proyecta solo columnas mapeadas, renombradas, en el orden del CSV', () => {
-    const view = buildDatasetView(
+  it('proyecta solo columnas mapeadas, renombradas, en el orden del CSV', async () => {
+    const view = await buildDatasetView(
       edition({
         columns: ['folio', 'age', 'sexo', 'extra'],
         columnToCanonical: new Map([
@@ -53,8 +132,8 @@ describe('harmonizer: buildDatasetView', () => {
     ]);
   });
 
-  it('vacío, solo espacios y códigos de no especificado salen como null; el cero se conserva', () => {
-    const view = buildDatasetView(
+  it('vacío, solo espacios y códigos de no especificado salen como null; el cero se conserva', async () => {
+    const view = await buildDatasetView(
       edition({
         columns: ['EDAD', 'NIVACAD'],
         columnToCanonical: new Map([
@@ -85,8 +164,8 @@ describe('harmonizer: buildDatasetView', () => {
     ]);
   });
 
-  it('la recodificación cambia el valor recortado después de quitar los no especificados', () => {
-    const view = buildDatasetView(
+  it('la recodificación cambia el valor recortado después de quitar los no especificados', async () => {
+    const view = await buildDatasetView(
       edition({
         columns: ['SEXO'],
         columnToCanonical: new Map([['SEXO', 'sexo']]),
@@ -102,8 +181,8 @@ describe('harmonizer: buildDatasetView', () => {
     ).toEqual(['100', '7']);
   });
 
-  it('dos columnas a la misma canónica: un solo header y en la fila gana la última', () => {
-    const view = buildDatasetView(
+  it('dos columnas a la misma canónica: un solo header y en la fila gana la última', async () => {
+    const view = await buildDatasetView(
       edition({
         columns: ['edad_a', 'edad_b'],
         columnToCanonical: new Map([
@@ -118,7 +197,7 @@ describe('harmonizer: buildDatasetView', () => {
   });
 });
 
-describe('harmonizer: buildSurveyView', () => {
+describe('harmonizer: vista por encuesta (SQL)', () => {
   const editions: DatasetEdition[] = [
     edition({
       name: 'ENIGH 2020',
@@ -139,8 +218,8 @@ describe('harmonizer: buildSurveyView', () => {
     }),
   ];
 
-  it('une ediciones y antepone _dataset/_year/_row', () => {
-    const view = buildSurveyView(editions, ['edad', 'sexo']);
+  it('une ediciones y antepone _dataset/_year/_row', async () => {
+    const view = await buildSurveyView(editions, ['edad', 'sexo']);
     expect(view.headers).toEqual(['edad', 'sexo']);
     expect(view.rows).toEqual([
       { edad: '30', sexo: 'M', _dataset: 'ENIGH 2020', _year: 2020, _row: 1 },
@@ -148,7 +227,7 @@ describe('harmonizer: buildSurveyView', () => {
     ]);
   });
 
-  it('_row numera los registros de cada archivo, así que _dataset + _row es única aunque el id se repita', () => {
+  it('_row numera los registros de cada archivo, así que _dataset + _row es única aunque el id se repita', async () => {
     const sameIds = (name: string) =>
       edition({
         name,
@@ -162,7 +241,7 @@ describe('harmonizer: buildSurveyView', () => {
           { id: '0002', sexo: '2' },
         ],
       });
-    const view = buildSurveyView([sameIds('A'), sameIds('B')], ['id', 'sexo']);
+    const view = await buildSurveyView([sameIds('A'), sameIds('B')], ['id', 'sexo']);
     expect(view.rows.map((r) => [r._dataset, r._row, r.id])).toEqual([
       ['A', 1, '0001'],
       ['A', 2, '0002'],
@@ -171,7 +250,7 @@ describe('harmonizer: buildSurveyView', () => {
     ]);
   });
 
-  it('con rowOffset (una página de la edición), _row sigue contando desde el inicio del archivo', () => {
+  it('con rowOffset (una página de la edición), _row sigue contando desde el inicio del archivo', async () => {
     const page = edition({
       name: 'A',
       columns: ['id'],
@@ -179,15 +258,15 @@ describe('harmonizer: buildSurveyView', () => {
       rows: [{ id: '0101' }, { id: '0102' }],
       rowOffset: 100,
     });
-    const view = buildSurveyView([page], ['id']);
+    const view = await buildSurveyView([page], ['id']);
     expect(view.rows.map((r) => [r._row, r.id])).toEqual([
       [101, '0101'],
       [102, '0102'],
     ]);
   });
 
-  it('los valores faltantes de cada edición llegan como null a la vista por encuesta', () => {
-    const view = buildSurveyView(
+  it('los valores faltantes de cada edición llegan como null a la vista por encuesta', async () => {
+    const view = await buildSurveyView(
       [
         edition({
           name: 'A',
@@ -210,21 +289,21 @@ describe('harmonizer: buildSurveyView', () => {
     expect(view.rows.map((r) => r.hli)).toEqual(['1', null, '9', null]);
   });
 
-  it('una fila que no aporta ninguna variable pedida se omite', () => {
-    const view = buildSurveyView(editions, ['sexo']);
+  it('una fila que no aporta ninguna variable pedida se omite', async () => {
+    const view = await buildSurveyView(editions, ['sexo']);
     expect(view.rows).toEqual([
       { sexo: 'M', _dataset: 'ENIGH 2020', _year: 2020, _row: 1 },
     ]);
   });
 
-  it('headers devuelve wanted tal cual aunque no exista en ningún dataset', () => {
-    const view = buildSurveyView(editions, ['edad', 'inexistente']);
+  it('headers devuelve wanted tal cual aunque no exista en ningún dataset', async () => {
+    const view = await buildSurveyView(editions, ['edad', 'inexistente']);
     expect(view.headers).toEqual(['edad', 'inexistente']);
     expect(view.rows.every((r) => !('inexistente' in r))).toBe(true);
   });
 
-  it('wanted vacío -> vista vacía', () => {
-    expect(buildSurveyView(editions, [])).toEqual({ headers: [], rows: [] });
+  it('wanted vacío -> vista vacía', async () => {
+    expect(await buildSurveyView(editions, [])).toEqual({ headers: [], rows: [] });
   });
 });
 

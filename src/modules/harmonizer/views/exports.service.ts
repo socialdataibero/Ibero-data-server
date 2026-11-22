@@ -31,7 +31,6 @@ import {
 import {
   editionCsvLinesSql,
   editionParquetSql,
-  exportColumns,
   originalCsvLinesSql,
   surveyParquetSql,
   type ExportColumn,
@@ -56,7 +55,7 @@ import {
   type EditionMapping,
   type EditionRecord,
 } from '../editions/edition-reader.service.js';
-import { toValueMap } from '../editions/edition-reader.service.js';
+import { editionColumns } from '../editions/edition-reader.service.js';
 import {
   VALUE_TYPE_LABEL,
   quoteList,
@@ -312,15 +311,7 @@ export class ExportsService {
           m.role ? [[m.canonicalVariable.name, m.role] as const] : [],
         ),
       ),
-      columns: exportColumns(
-        dataset.columns,
-        used.map((m) => ({
-          sourceColumn: m.sourceColumn,
-          canon: m.canonicalVariable.name,
-          missingCodes: m.missingCodes,
-          valueMap: toValueMap(m.valueMap),
-        })),
-      ),
+      columns: editionColumns(dataset, used),
     };
   }
 

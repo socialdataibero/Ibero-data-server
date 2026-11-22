@@ -5,10 +5,11 @@ import { PLAIN_NUMBER, jsTrimNullableSql, jsTrimSql, sqlString } from './column-
 import { neutralizeCsvFormula } from './harmonized-view.js';
 
 /**
- * The harmonized exports as DuckDB SQL over an edition's raw Parquet (positional columns
- * `c0…cN` plus `file_row_number`), so a download never loads the rows into Node. The values are
- * exactly those of `buildDatasetView` / `buildSurveyView` in harmonized-view.ts;
- * `harmonized-export.spec.ts` compares them.
+ * The harmonized view as DuckDB SQL over an edition's raw Parquet (positional columns `c0…cN`
+ * plus `file_row_number`): the one implementation of a harmonized cell. The paged views on
+ * screen, the downloads and "use in a dataset" all read it, so the rows are never loaded into
+ * Node whole and what the screen shows is what is downloaded. `harmonized-export.spec.ts`
+ * compares it with the JavaScript reference in harmonized-view.testing.ts.
  */
 
 /** One column of an edition's harmonized view. */
@@ -57,7 +58,7 @@ export function exportColumns(
 }
 
 /**
- * `cellValue` of harmonized-view.ts: empty after trimming, or a missing code, is `NULL`; then a
+ * The value of a harmonized cell (`cellValue` of harmonized-view.testing.ts): empty after trimming, or a missing code, is `NULL`; then a
  * recoded value becomes its code; anything else stays as stored (not trimmed). `r` is the raw
  * value (`''` for a `NULL` cell, as the paged view reads it) and `t` its JavaScript trim.
  */
@@ -115,6 +116,22 @@ export function editionSelectSql(
     return `${expr} AS ${quoteIdent(canon)}`;
   });
   return `SELECT ${['_ibero_rn', ...outer].join(', ')} FROM (SELECT ${inner.join(', ')} FROM ${quoteIdent(source)})`;
+}
+
+/**
+ * One page of an edition's harmonized view: `editionSelectSql` over the rows `offset` to
+ * `offset + limit` of `source`, in file order (DuckDB `LIMIT`/`OFFSET`, as the views read
+ * the page before). The page is cut before the cells are computed, so the rows it skips are not
+ * harmonized. First column `_ibero_rn`, then one per entry of `columns`.
+ */
+export function editionPageSql(
+  source: string,
+  columns: ExportColumn[],
+  offset: number,
+  limit: number,
+): string {
+  const page = `SELECT * FROM ${quoteIdent(source)} LIMIT ${Math.max(Math.trunc(limit), 0)} OFFSET ${Math.max(Math.trunc(offset), 0)}`;
+  return `WITH _ibero_page AS (${page}) ${editionSelectSql('_ibero_page', columns, columns.map((c) => c.canon))}`;
 }
 
 export interface SurveyExportEdition {

@@ -1,19 +1,21 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AnalysisService } from '../../analysis/analysis.service.js';
-import {
-  buildDatasetView,
-  buildSurveyView,
-  type DatasetEdition,
-  type RawData,
-} from '../harmonized-view.js';
+import { editionPageSql, type ExportColumn } from '../harmonized-export.js';
 import { EditionFilesService } from '../editions/edition-files.service.js';
 import {
   EditionReaderService,
   type EditionMapping,
   type EditionRecord,
 } from '../editions/edition-reader.service.js';
-import { toValueMap } from '../editions/edition-reader.service.js';
+import { editionColumns } from '../editions/edition-reader.service.js';
+import {
+  editionView,
+  pageRows,
+  surveyView,
+  type SurveyViewPage,
+  type ViewRow,
+} from './view-rows.js';
 import { VariablesService } from '../variables/variables.service.js';
 import { toDatasetInfo } from '../harmonizer-types.js';
 import { HarmonizerLookupService } from '../lookup.service.js';
@@ -35,28 +37,6 @@ function viewPage(params: ViewPageParams): ViewPage {
   return { limit, offset };
 }
 
-function toEdition(
-  dataset: EditionRecord,
-  mappings: EditionMapping[],
-  rows: RawData[],
-): DatasetEdition {
-  return {
-    name: dataset.name,
-    year: dataset.year,
-    columns: dataset.columns,
-    columnToCanonical: new Map(
-      mappings.map((m) => [m.sourceColumn, m.canonicalVariable.name]),
-    ),
-    missingCodes: new Map(
-      mappings.map((m) => [m.sourceColumn, new Set(m.missingCodes)]),
-    ),
-    valueMaps: new Map(
-      mappings.map((m) => [m.sourceColumn, toValueMap(m.valueMap)]),
-    ),
-    rows,
-  };
-}
-
 /** The harmonized views on screen, one page at a time: by edition and by survey. */
 @Injectable()
 export class ViewsService {
@@ -70,41 +50,33 @@ export class ViewsService {
   ) {}
 
   /**
-   * Edición con solo una página de filas y solo las columnas de `mappings` (vistas
-   * en pantalla). DuckDB lee ese tramo del Parquet; el resto no se carga.
+   * One page of an edition with only the columns of `mappings`, harmonized by DuckDB with the
+   * SQL of the downloads (`editionPageSql`). Only that stretch of the Parquet is read.
    */
   private async loadEditionPage(
     dataset: EditionRecord,
     mappings: EditionMapping[],
     page: ViewPage,
-  ): Promise<DatasetEdition> {
-    const columns = mappings
-      .map((m) => m.sourceColumn)
-      .filter((column) => dataset.columns.includes(column));
-    let rows: RawData[] = [];
-    if (columns.length > 0 && page.limit > 0) {
-      const sliced = await this.analysisService.readParquetSlice(
-        await this.files.rawPath(dataset),
-        columns.map((column) => `c${dataset.columns.indexOf(column)}`),
-        page.offset,
-        page.limit,
-      );
-      rows = sliced.map((values) =>
-        Object.fromEntries(
-          columns.map((column, i) => [column, String(values[i] ?? '')]),
-        ),
-      );
-    }
-    return { ...toEdition(dataset, mappings, rows), rowOffset: page.offset };
+  ): Promise<{ columns: ExportColumn[]; rows: ViewRow[] }> {
+    const columns = editionColumns(dataset, mappings);
+    if (columns.length === 0 || page.limit <= 0) return { columns, rows: [] };
+    const [rows] = await this.analysisService.runInternalQueries(
+      await this.files.rawPath(dataset),
+      [editionPageSql('data', columns, page.offset, page.limit)],
+    );
+    return { columns, rows: pageRows(columns, rows) };
   }
 
   async getDatasetHarmonized(datasetId: string, params: ViewPageParams = {}) {
     const dataset = await this.lookup.getDataset(datasetId);
     const page = viewPage(params);
     const mappings = await this.reader.editionMappings(dataset.id);
-    const view = buildDatasetView(
-      await this.loadEditionPage(dataset, mappings, page),
+    const { columns, rows } = await this.loadEditionPage(
+      dataset,
+      mappings,
+      page,
     );
+    const view = editionView(columns, rows);
     return {
       dataset: toDatasetInfo(dataset),
       headers: view.headers,
@@ -139,7 +111,7 @@ export class ViewsService {
     const datasets = await this.reader.surveyEditions(surveyId);
 
     let total = 0;
-    const editions: DatasetEdition[] = [];
+    const pages: SurveyViewPage[] = [];
     for (const { mappings, ...dataset } of datasets) {
       const used = mappings.filter((m) =>
         wantedSet.has(m.canonicalVariable.name),
@@ -150,16 +122,19 @@ export class ViewsService {
       const start = Math.max(page.offset - total, 0);
       const end = Math.min(page.offset + page.limit - total, dataset.rowCount);
       if (start < end) {
-        editions.push(
-          await this.loadEditionPage(dataset, used, {
+        pages.push({
+          name: dataset.name,
+          year: dataset.year,
+          rowOffset: start,
+          ...(await this.loadEditionPage(dataset, used, {
             offset: start,
             limit: end - start,
-          }),
-        );
+          })),
+        });
       }
       total += dataset.rowCount;
     }
-    const view = buildSurveyView(editions, wanted);
+    const view = surveyView(pages, wanted);
 
     // Variables de la vista cuyos códigos difieren entre ediciones y nadie ha revisado (SDI-50).
     const wantedVariables =

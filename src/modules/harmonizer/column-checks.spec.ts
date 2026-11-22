@@ -20,12 +20,14 @@ import {
   type ValueFactsCheck,
 } from './column-checks.js';
 import {
-  inferValueType,
-  sourceColumnValues,
-  valuesNotFitting,
   type RawData,
   type ValueType,
 } from './harmonized-view.js';
+import {
+  inferValueType,
+  sourceColumnValues,
+  valuesNotFitting,
+} from './harmonized-view.testing.js';
 
 // Values that the JavaScript rules treat in different ways: whitespace JavaScript trims and
 // DuckDB's trim does not, leading zeros, more than 15 digits, beyond BIGINT, beyond DOUBLE,

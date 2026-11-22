@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { parseVariables } from '../matching.js';
 import type { CatalogCategory } from '../comparison.js';
+import { exportColumns, type ExportColumn } from '../harmonized-export.js';
 
 export interface EditionRecord {
   id: string;
@@ -45,6 +46,22 @@ export function toCatalog(
     typeof c.code === 'string'
       ? [{ code: c.code, label: typeof c.label === 'string' ? c.label : '' }]
       : [],
+  );
+}
+
+/** The columns of an edition's harmonized view for these of its mappings (see `exportColumns`). */
+export function editionColumns(
+  dataset: EditionRecord,
+  mappings: EditionMapping[],
+): ExportColumn[] {
+  return exportColumns(
+    dataset.columns,
+    mappings.map((m) => ({
+      sourceColumn: m.sourceColumn,
+      canon: m.canonicalVariable.name,
+      missingCodes: m.missingCodes,
+      valueMap: toValueMap(m.valueMap),
+    })),
   );
 }
 

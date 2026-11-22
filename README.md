@@ -799,6 +799,7 @@ Paging:
 - The two JSON views return one page of rows. `limit` is the page size: 100 by default, at most 500 (the web app offers 50, 100 and 500). `offset` is the number of rows to skip, 0 by default. Like the survey list, invalid values are not rejected: `limit` is clamped to 1–500 and a negative or non-numeric `offset` becomes 0.
 - The response adds `total` (rows of the whole view), `limit` and `offset`. An `offset` past the end returns no rows and the same `total`.
 - Only the rows of the page and the mapped columns are read from the stored Parquet (DuckDB `LIMIT`/`OFFSET`, which keeps file order). `total` comes from the stored `rowCount` of each edition, so nothing is counted.
+- The values of a page come from the same SQL as the exports (`harmonized-export.ts`): there is one implementation of a harmonized cell, so the screen shows exactly what is downloaded. On the national census (91 columns), a page of 500 rows takes about 0.12 s, most of it in preparing the query.
 - In the survey view, editions are stacked in the same order as the export, so a page can end in one edition and continue in the next. Row `n` of the view is the same row in every page size and in the CSV export.
 - Exports (`.csv`, `.parquet`) are not paged: they contain the whole view. They do not load it into the server's memory either (see Exports below).
 
