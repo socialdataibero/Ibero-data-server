@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Utf8LineChecker, firstInvalidUtf8 } from './utf8-check.js';
 
-/** The line the synchronous upload reports (`decodeUtf8` in harmonizer.service.ts), or null. */
+/** The line the synchronous upload reports (`decodeUtf8` in upload-parse.ts), or null. */
 function referenceLine(buf: Buffer): number | null {
   try {
     new TextDecoder('utf-8', { fatal: true }).decode(buf);

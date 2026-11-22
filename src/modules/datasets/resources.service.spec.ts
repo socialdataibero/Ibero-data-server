@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { Readable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
-import type { ExportFile } from '../harmonizer/harmonizer.service.js';
+import type { ExportFile } from '../harmonizer/export-file.js';
 import { ResourcesService, toResourceResponse } from './resources.service.js';
 
 function setup(file: Partial<ExportFile> = {}) {

@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import { HarmonizerService } from '../harmonizer.service.js';
+import { createHarmonizerServices } from '../harmonizer.testing.js';
 import { readCsvRows } from './csv-rows.js';
 import { ImportError } from './import-error.js';
 
@@ -9,13 +9,13 @@ type Outcome =
   | { ok: true; columns: string[]; renamed: unknown[]; rows: string[][] }
   | { ok: false; code: string; message: string; params?: unknown };
 
-/** The synchronous upload's parser (`HarmonizerService.parseCsv`), as the reference. */
+/** The synchronous upload's parser (`SyncUploadService.parseCsv`), as the reference. */
 function synchronous(text: string): Outcome {
-  const service = new HarmonizerService(
+  const service = createHarmonizerServices(
     null as never,
     null as never,
     null as never,
-  );
+  ).upload;
   try {
     const { columns, rows, renamed } = (
       service as unknown as {

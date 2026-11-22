@@ -10,21 +10,20 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { LocalStorageService } from '../../storage/local-storage.service.js';
 import { AnalysisService } from '../../analysis/analysis.service.js';
 import { WorkerDuckDb } from '../../../worker/worker-duckdb.js';
+import { ColumnProfilesService } from '../profiles/column-profiles.service.js';
+import { originalStorageKey, rawStorageKey } from '../edition-files.js';
+import { datasetNameTaken } from '../harmonizer-errors.js';
+import type { DatasetInfo } from '../harmonizer-types.js';
 import {
-  PROFILE_MAX_VALUES,
-  datasetNameTaken,
-  originalStorageKey,
   parseDbfUpload,
-  rawStorageKey,
-  type DatasetInfo,
   type RenamedColumn,
   type UploadSource,
-} from '../harmonizer.service.js';
+} from './upload-parse.js';
 import type { AnalysisUnit, SourceDesign } from '../source-metadata.js';
 import type { UploadEncoding } from '../dto/upload-dataset.dto.js';
 import { importCsvFile, type ImportPhase } from './csv-file.js';
 import { cachedColumnChecks } from '../column-check-store.js';
-import { columnTypeQuery, jsTrimSql } from '../column-checks.js';
+import { columnTypeQuery } from '../column-checks.js';
 import {
   ImportError,
   importErrorBody,
@@ -74,7 +73,7 @@ interface ReadFile {
 
 /**
  * Turns a finished tus upload into an edition, in the worker process. It does what the
- * synchronous upload (`HarmonizerService.uploadDataset`) does, with the same checks, error
+ * synchronous upload (`SyncUploadService.uploadDataset`) does, with the same checks, error
  * codes and result, but reading the file from disk instead of from memory. The outcome is
  * written to the `HarmonizerImport` row, which the client polls.
  */
@@ -90,6 +89,7 @@ export class HarmonizerImportProcessor {
     private readonly analysis: AnalysisService,
     private readonly duckdb: WorkerDuckDb,
     @Inject(UPLOAD_STORAGE) private readonly uploads: UploadStorage,
+    private readonly profiles: ColumnProfilesService,
   ) {}
 
   async process(
@@ -401,22 +401,7 @@ export class HarmonizerImportProcessor {
       );
     }
     try {
-      const counts = await this.analysis.columnValueCounts(
-        this.storage.resolvePath(rawStorageKey(datasetId)),
-        columns.map((_, i) => `c${i}`),
-        PROFILE_MAX_VALUES,
-        jsTrimSql,
-      );
-      await this.prisma.harmonizerColumnProfile.createMany({
-        data: columns.map((column, i) => ({
-          datasetId,
-          sourceColumn: column,
-          values: counts[i].values,
-          distinctCapped: counts[i].capped,
-          empty: counts[i].empty,
-        })),
-        skipDuplicates: true,
-      });
+      await this.profiles.columnProfiles([{ dataset: { id: datasetId, columns }, column: null }]);
     } catch (err) {
       this.logger.warn(
         `Could not profile edition ${datasetId}: ${(err as Error).message}`,

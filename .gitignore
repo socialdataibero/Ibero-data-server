@@ -11,3 +11,5 @@ coverage/
 
 prisma/generated/
 /storage/
+test/harmonizer.e2e-spec.ts
+test/__snapshots__/

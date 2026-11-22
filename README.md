@@ -116,7 +116,7 @@ CORS is open to every origin. The `Content-Disposition` header is exposed so the
 | `jobs:check` | Add a test job and wait for a worker to run it. Uses `dist/` (built by `start:dev` or `build`). |
 | `build` | Compile to `dist/`. |
 | `test` | Unit tests with Vitest. |
-| `test:e2e` | End-to-end tests. Needs a running database. |
+| `test:e2e` | End-to-end tests. Needs the database and Redis of `start:dev`. `test/harmonizer.e2e-spec.ts` walks the whole harmonizer path (survey, tus and one-request uploads, mapping, variables, recoding, review, dictionary, views, downloads, attach to a dataset, delete) with its own API and worker in the test process, and compares every response with the files in `test/__snapshots__/harmonizer/` (ids, dates and download tokens replaced by placeholders). It leaves the organization «Prueba e2e del armonizador» and three `e2e-armonizador-*@ibero.mx` users, and deletes the rest. Accept a deliberate change with `npm run test:e2e -- -u`. |
 | `lint` | oxlint over `src/` and `test/`. |
 | `format` | Prettier over `src/` and `test/`. |
 | `prisma:migrate` | Create and apply a new migration in development. |
@@ -535,12 +535,12 @@ Concepts:
 - **Mapping**: "column `edad1` of this edition is canonical `edad`".
 - **Dictionary** (called `codebook` in the API): what each column of a file means and what each of its codes means, for example an INEGI census descriptor. It belongs to a survey and can describe many editions.
 
-Every harmonizer endpoint needs a session, and any logged-in user can read and change every survey. Surveys do not belong to organizations. The one exception to the session is `GET /harmonizer/downloads/:token` (see [Direct downloads](#direct-downloads)).
+Every harmonizer endpoint needs a session. Any logged-in user can read every survey. Each survey belongs to an organization (`organizationId`), and only the sysadmin or an `ADMIN`/`EDITOR` of that organization can change the survey or anything under it (editions, uploads, mappings, variables, recoding, reviews, dictionaries); anyone else gets `403 survey_not_editable`. Surveys created before ownership existed have no organization, so only the sysadmin can change them. The one exception to the session is `GET /harmonizer/downloads/:token` (see [Direct downloads](#direct-downloads)).
 
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/harmonizer/surveys` | List with editions and mapping progress. Ordered by name. `limit`, `offset`. |
-| `POST` | `/harmonizer/surveys` | Create: `{ name, description? }`. |
+| `POST` | `/harmonizer/surveys` | Create: `{ name, description?, organizationId }`. Only the sysadmin or an `ADMIN`/`EDITOR` of that organization. |
 | `GET` | `/harmonizer/surveys/:surveyId` | One survey. |
 | `PATCH` | `/harmonizer/surveys/:surveyId` | Change `name` and/or `description`. |
 | `DELETE` | `/harmonizer/surveys/:surveyId` | Delete the survey and everything in it, including the stored files of its editions. Returns `204`. |
@@ -579,6 +579,7 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 
 - The name is trimmed and cannot be empty (`400 survey_name_required`).
 - Names are unique. Creating or renaming to a taken name returns `409 survey_name_taken`.
+- Creating a survey requires `organizationId` (`400 validation_error` without it). An organization that does not exist returns `404 organization_not_found`, and a user who is not the sysadmin nor an `ADMIN`/`EDITOR` of it gets `403 survey_org_role_required`. The organization cannot be changed afterwards.
 - Sending an empty `description` in `PATCH` clears it.
 - Renaming a survey does not change its editions, canonical variables or mappings.
 - Deleting a survey also deletes its editions, their stored Parquet files, their mappings and its canonical variables. A missing survey returns `404 survey_not_found`.
@@ -962,7 +963,6 @@ When the server starts, it cleans `storage/harmonizer/` (report SDI-100). It del
 The code currently behaves as described below. It is not yet decided whether each behavior is intended. When one is decided, update the relevant section and remove it from this list.
 
 - **Private datasets.** `PRIVATE` only hides a dataset from the public catalog. Any logged-in user can still list and read it.
-- **Harmonizer access.** Surveys are not tied to organizations, so every logged-in user can read and change all of them.
 - **Login errors.** Different codes for an unknown email and a wrong password reveal which emails are registered.
 - **Email format.** Registration only requires a non-empty email; the format is not checked.
 - **Unused pieces.** `SysadminGuard` and the `PENDING` analysis status exist but are not used.

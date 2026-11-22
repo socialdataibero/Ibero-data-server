@@ -6,7 +6,7 @@ import type { AuthenticatedUser } from '../auth/jwt-payload.interface.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { LocalStorageService } from '../storage/local-storage.service.js';
 import { AnalysisService } from '../analysis/analysis.service.js';
-import { HarmonizerService } from '../harmonizer/harmonizer.service.js';
+import { ExportsService } from '../harmonizer/views/exports.service.js';
 import type { AttachHarmonizedDto } from './dto/attach-harmonized.dto.js';
 import {
   parseSourceMetadata,
@@ -60,7 +60,7 @@ export class ResourcesService {
     private readonly prisma: PrismaService,
     private readonly storage: LocalStorageService,
     private readonly analysisService: AnalysisService,
-    private readonly harmonizer: HarmonizerService,
+    private readonly harmonizerExports: ExportsService,
   ) {}
 
   async findAll(datasetId: string) {
@@ -153,8 +153,8 @@ export class ResourcesService {
       });
     }
     const file = dto.editionId
-      ? await this.harmonizer.exportDataset(dto.editionId, 'parquet')
-      : await this.harmonizer.exportSurvey(dto.surveyId!, 'parquet', dto.variables);
+      ? await this.harmonizerExports.exportDataset(dto.editionId, 'parquet')
+      : await this.harmonizerExports.exportSurvey(dto.surveyId!, 'parquet', dto.variables);
     const size = file.size ?? (Buffer.isBuffer(file.body) ? file.body.length : 0);
     const body = Buffer.isBuffer(file.body) ? Readable.from([file.body]) : file.body;
     const storageKey = await this.storage.saveStream(datasetId, file.filename, body);

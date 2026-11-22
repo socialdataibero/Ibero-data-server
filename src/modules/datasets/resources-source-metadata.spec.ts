@@ -5,7 +5,8 @@ import { Prisma } from '@prisma/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AnalysisService } from '../analysis/analysis.service.js';
 import { LocalStorageService } from '../storage/local-storage.service.js';
-import { HarmonizerService, rawStorageKey } from '../harmonizer/harmonizer.service.js';
+import { createHarmonizerServices } from '../harmonizer/harmonizer.testing.js';
+import { rawStorageKey } from '../harmonizer/edition-files.js';
 import { SOURCE_METADATA_KEY } from '../harmonizer/source-metadata.js';
 import { ResourcesService } from './resources.service.js';
 
@@ -93,7 +94,7 @@ async function setup() {
       findMany: vi.fn(async () => resources),
     },
   };
-  const harmonizer = new HarmonizerService(prisma as never, analysis, storage);
+  const harmonizer = createHarmonizerServices(prisma as never, analysis, storage).exports;
   const service = new ResourcesService(prisma as never, storage, analysis, harmonizer);
   return { service, prisma, edition, mappings, storage, analysis };
 }

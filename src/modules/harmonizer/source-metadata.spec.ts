@@ -3,7 +3,7 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { UploadDatasetDto } from './dto/upload-dataset.dto.js';
 import { MappingChoiceDto } from './dto/mapping-choice.dto.js';
-import { HarmonizerService } from './harmonizer.service.js';
+import { createHarmonizerServices } from './harmonizer.testing.js';
 import {
   assertSourceRoles,
   buildSourceMetadata,
@@ -172,7 +172,7 @@ describe('saveMapping with roles', () => {
       },
       $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
     };
-    return { service: new HarmonizerService(prisma, {} as any, {} as any), prisma };
+    return { service: createHarmonizerServices(prisma, {} as any, {} as any).mapping, prisma };
   }
 
   const columns = (roles: Record<string, string>) =>
