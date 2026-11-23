@@ -104,6 +104,27 @@ export class ResourcesService {
   }
 
   /**
+   * Whether the harmonizer changed after a resource was saved from it (`GET …/source-status`):
+   * the signature of its view is computed again from the harmonizer and compared with the one in
+   * its metadata (`origin.signature`). Resources without an origin (uploaded files, copies of
+   * version 1) answer `{ linked: false, stale: false, reason: null }`; a survey or edition that no
+   * longer exists, `{ linked: true, stale: true, reason: 'source_missing' }`.
+   */
+  async sourceStatus(datasetId: string, resourceId: string) {
+    const resource = await this.findOne(datasetId, resourceId);
+    const origin = parseSourceMetadata(resource.sourceMetadata)?.origin ?? null;
+    if (!origin) return { linked: false, stale: false, reason: null };
+    const now = await this.harmonizerExports.originSignature(
+      origin.surveyId,
+      origin.editionId,
+      origin.variables,
+    );
+    if (now === null) return { linked: true, stale: true, reason: 'source_missing' };
+    const stale = now !== origin.signature;
+    return { linked: true, stale, reason: stale ? 'changed' : null };
+  }
+
+  /**
    * Stores what the analysis templates need about each variable of a resource, replacing what it
    * had. Every column it describes must exist in the file (`400 variable_metadata_invalid`).
    */

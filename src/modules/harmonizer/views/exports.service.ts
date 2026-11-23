@@ -44,9 +44,16 @@ import { neutralizeCsvFormula, type ValueType } from '../harmonized-view.js';
 import {
   buildSourceMetadata,
   sourceMetadataFooter,
+  sourceSignature,
   type MetadataEdition,
+  type MetadataVariable,
   type SourceMetadata,
 } from '../source-metadata.js';
+import { comparisonStatus } from '../comparison.js';
+import { readCoverage } from '../harmonizer-types.js';
+import { toCatalog } from '../editions/edition-reader.service.js';
+import { VariablesService } from '../variables/variables.service.js';
+import { variableCategories } from './metadata-categories.js';
 import {
   EXPORT_CONTENT_TYPE,
   isExportFormat,
@@ -67,7 +74,7 @@ import {
 } from '../mapping/mapping-types.service.js';
 import { safeFileBase } from '../export-file.js';
 import { HarmonizerLookupService } from '../lookup.service.js';
-import { unconfirmedTypeOf } from '../variables/variable-role.js';
+import { readAnalysis, unconfirmedTypeOf } from '../variables/variable-role.js';
 
 /** Una edición lista para descargarse (ver `exportEdition`). */
 export interface ExportEdition {
@@ -91,8 +98,11 @@ function metadataEdition(
 ): MetadataEdition {
   return {
     id: edition.dataset.id,
+    name: edition.dataset.name,
+    year: edition.dataset.year,
     design: edition.dataset.design,
     unit: edition.dataset.unit,
+    coverage: readCoverage(edition.dataset.coverage),
     columns: columns.map((c) => {
       const areNull = !c.keepMissingCodes;
       return {
@@ -148,6 +158,7 @@ export class ExportsService {
     private readonly lookup: HarmonizerLookupService,
     private readonly files: EditionFilesService,
     private readonly reader: EditionReaderService,
+    private readonly variables: VariablesService,
   ) {}
 
   async exportDataset(datasetId: string, fmt: string): Promise<ExportFile> {
@@ -179,16 +190,12 @@ export class ExportsService {
       });
     }
     const types = await this.exportTypes(dataset.surveyId, [edition], headers);
-    const metadata = buildSourceMetadata(
-      [
-        metadataEdition(
-          edition,
-          edition.columns,
-          await this.missingCounts(edition, edition.columns),
-        ),
-      ],
+    const metadata = await this.sourceMetadata(
+      dataset.surveyId,
+      [{ edition, columns: edition.columns }],
       headers,
       types,
+      dataset.id,
     );
     return {
       ...file,
@@ -256,20 +263,12 @@ export class ExportsService {
       alias: `e${n}`,
       path: i.edition.path!,
     }));
-    const editionsMetadata: MetadataEdition[] = [];
-    for (const i of included) {
-      editionsMetadata.push(
-        metadataEdition(
-          i.edition,
-          i.columns,
-          await this.missingCounts(i.edition, i.columns),
-        ),
-      );
-    }
-    const metadata = buildSourceMetadata(
-      editionsMetadata,
+    const metadata = await this.sourceMetadata(
+      survey.id,
+      included,
       ['_dataset', '_year', '_row', ...wanted],
       types,
+      null,
     );
     return {
       ...file,
@@ -374,6 +373,142 @@ export class ExportsService {
       ),
       columns: editionColumns(dataset, used),
     };
+  }
+
+  /**
+   * The source metadata of a harmonized view (version 2, `source-metadata.ts`): the survey, the
+   * editions with their codes and counts, and per variable its label, use in analysis, categories
+   * and (survey views) the state of its codes between editions, plus the signature of what defined
+   * the view. `editionId` is the edition of an edition view, `null` for a survey view.
+   */
+  private async sourceMetadata(
+    surveyId: string,
+    included: { edition: ExportEdition; columns: ExportColumn[] }[],
+    headers: string[],
+    types: Record<string, ParquetColumnType>,
+    editionId: string | null,
+  ): Promise<SourceMetadata | null> {
+    const survey = await this.lookup.getSurvey(surveyId);
+    const editions: MetadataEdition[] = [];
+    for (const i of included) {
+      editions.push(
+        metadataEdition(i.edition, i.columns, await this.missingCounts(i.edition, i.columns)),
+      );
+    }
+    const names = [...new Set(included.flatMap((i) => i.columns.map((c) => c.canon)))];
+    const canonicals = await this.prisma.harmonizerCanonicalVariable.findMany({
+      where: { surveyId, name: { in: names } },
+    });
+    const comparisons = await this.variables.variableComparisons(
+      surveyId,
+      canonicals.map((c) => c.id),
+    );
+    const variables = new Map<string, MetadataVariable>();
+    for (const c of canonicals) {
+      const inView = new Set(
+        included.filter((i) => i.columns.some((col) => col.canon === c.name)).map((i) => i.edition.dataset.id),
+      );
+      const found = comparisons.get(c.id);
+      const keep = (_: unknown, n: number) => inView.has(found!.inputs[n].datasetId);
+      const analysis = readAnalysis(c);
+      const missingCodes = [
+        ...new Set(editions.flatMap((e) => e.columns.find((col) => col.canon === c.name)?.missingCodes ?? [])),
+      ];
+      variables.set(c.name, {
+        label: c.description?.trim() || null,
+        analysis,
+        categories: found
+          ? variableCategories(
+              analysis.role,
+              toCatalog(c.categories),
+              found.inputs.filter(keep),
+              found.comparison.editions.filter(keep),
+              missingCodes,
+            )
+          : [],
+        codeReview:
+          editionId === null && found
+            ? comparisonStatus(found.comparison, c.reviewedSignature)
+            : null,
+      });
+    }
+    const variableNames = headers.filter((h) => !h.startsWith('_'));
+    return buildSourceMetadata({
+      survey: { name: survey.name, shortName: survey.shortName },
+      editions,
+      variables,
+      headers,
+      types,
+      origin: {
+        surveyId,
+        editionId,
+        variables: variableNames,
+        signature: (await this.originSignature(surveyId, editionId, variableNames))!,
+      },
+    });
+  }
+
+  /**
+   * The signature of a harmonized view as the harmonizer has it now: a hash of the survey's name
+   * and short name, and of the editions of the view (an edition view: that edition; a survey view:
+   * every edition that maps one of `variables`) with their files, design, unit, coverage,
+   * dictionary and their mappings of `variables` (codes, recoding, sample role), and of those
+   * canonical variables (description, type, catalog, review, use in analysis). It reads only the
+   * database. `null` when the survey or the edition no longer exists.
+   */
+  async originSignature(
+    surveyId: string,
+    editionId: string | null,
+    variables: string[],
+  ): Promise<string | null> {
+    const survey = await this.prisma.harmonizerSurvey.findUnique({ where: { id: surveyId } });
+    if (!survey) return null;
+    const wanted = new Set(variables);
+    const all = await this.reader.surveyEditions(surveyId);
+    const editions = editionId
+      ? all.filter((e) => e.id === editionId)
+      : all.filter((e) => e.mappings.some((m) => wanted.has(m.canonicalVariable.name)));
+    if (editionId && editions.length === 0) return null;
+    const canonicals = await this.prisma.harmonizerCanonicalVariable.findMany({
+      where: { surveyId, name: { in: variables } },
+      orderBy: { name: 'asc' },
+    });
+    const sortedEntries = (json: unknown) =>
+      json && typeof json === 'object' && !Array.isArray(json)
+        ? Object.entries(json).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        : [];
+    return sourceSignature({
+      survey: [survey.name, survey.shortName],
+      variables,
+      editions: editions.map((e) => [
+        e.id,
+        e.name,
+        e.year,
+        e.columns,
+        e.design,
+        e.unit,
+        e.coverage,
+        e.codebookId,
+        e.codebookTable,
+        e.mappings
+          .filter((m) => wanted.has(m.canonicalVariable.name))
+          .sort((a, b) => (a.sourceColumn < b.sourceColumn ? -1 : a.sourceColumn > b.sourceColumn ? 1 : 0))
+          .map((m) => [m.sourceColumn, m.canonicalVariable.name, m.missingCodes, sortedEntries(m.valueMap), m.role]),
+      ]),
+      canonicals: canonicals.map((c) => [
+        c.name,
+        c.description,
+        c.dataType,
+        c.categories,
+        c.reviewedSignature,
+        c.role,
+        c.universe,
+        c.positiveValue,
+        c.geoLevel,
+        c.unit,
+        c.disaggregation,
+      ]),
+    });
   }
 
   /**

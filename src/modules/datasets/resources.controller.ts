@@ -67,6 +67,12 @@ export class ResourcesController {
     return this.resourcesService.attachHarmonized(datasetId, dto);
   }
 
+  /** Whether the harmonizer changed after the resource was saved from it. */
+  @Get(':resourceId/source-status')
+  sourceStatus(@Param('datasetId') datasetId: string, @Param('resourceId') resourceId: string) {
+    return this.resourcesService.sourceStatus(datasetId, resourceId);
+  }
+
   /** What the analysis templates need about each variable of the resource (template demo). */
   @Put(':resourceId/variable-metadata')
   @OrgRoles(OrgRole.ADMIN, OrgRole.EDITOR)

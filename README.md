@@ -264,6 +264,7 @@ Rules:
 | `GET` | `.../datasets/:datasetId/resources` | any user | List, newest first. |
 | `POST` | `.../datasets/:datasetId/resources` | `ADMIN`, `EDITOR` | Upload a file (multipart, field `file`). |
 | `POST` | `.../datasets/:datasetId/resources/from-harmonizer` | `ADMIN`, `EDITOR` | Save a harmonized view of the survey harmonizer as a resource. See [From the harmonizer](#from-the-harmonizer). |
+| `GET` | `.../resources/:resourceId/source-status` | any user | Whether the harmonizer changed after the resource was saved from it. See [Source metadata](#source-metadata). |
 | `PUT` | `.../resources/:resourceId/variable-metadata` | `ADMIN`, `EDITOR` | Store what the [analysis templates](#analysis-templates-demo) need about each variable: `{ metadata }`. See [Variable metadata](#variable-metadata). |
 | `POST` | `.../resources/:resourceId/query` | any role | Run a SQL query: `{ sql }`. |
 | `GET` | `.../resources/:resourceId/download` | any role, download token | Download the file. |
@@ -291,36 +292,69 @@ Upload rules:
 
 ### Source metadata
 
-A resource saved from the harmonizer keeps what was declared about its source in the harmonizer ([Source design](#source-design) and the mapping): `sourceMetadata`. Uploaded files and resources created before 2026-11-13 have `null`.
+A resource saved from the harmonizer keeps what was declared about its source and its variables in the harmonizer ([Source design](#source-design), the mapping, [Use in analysis](#use-in-analysis), the catalog and the dictionaries): `sourceMetadata`. Uploaded files and resources created before 2026-11-13 have `null`. It is version 2 since 2026-11-22 (templates plan, phase 3): the one object of metadata of a resource, so what describes a variable is captured once, in the harmonizer. Keys and roles are in English; texts shown to the user (labels, universe, `unitPlural`) are in Spanish, as written in the harmonizer.
 
 ```json
 {
-  "version": 1,
+  "version": 2,
+  "title": "Censo 2000 muestra",
+  "source": "Censo 2000",
   "design": "sample",
   "unit": "person",
-  "sourceEditionIds": ["2914422d-…"],
+  "unitPlural": "personas",
+  "total": { "level": "state", "code": "01", "label": "Aguascalientes" },
+  "editions": [
+    { "id": "2914422d-…", "name": "Muestra 2000", "year": 2000, "design": "sample", "unit": "person",
+      "coverage": { "level": "state", "code": "01", "label": "Aguascalientes" }, "weight": "FACTOR" }
+  ],
   "columns": [
-    { "name": "FOLIO", "type": "BIGINT" },
-    { "name": "EDAD", "type": "BIGINT", "missingCodes": ["999"], "missingCodesAreNull": true, "missingCount": { "2914422d-…": 1207 } },
-    { "name": "HLI", "type": "VARCHAR", "missingCodes": ["9"], "missingCodesAreNull": false },
-    { "name": "FAC", "type": "BIGINT", "role": "weight" }
-  ]
+    { "name": "EDAD", "type": "BIGINT", "role": "measure", "label": "Edad", "unit": "años",
+      "disaggregation": { "summable": true, "cuts": [{ "from": 0, "to": 14, "label": "0 a 14 años" }] },
+      "missingCodes": ["999"], "missingCodesAreNull": true, "missingCount": { "2914422d-…": 1207 } },
+    { "name": "HLENGUA", "type": "VARCHAR", "role": "dichotomous", "label": "Habla lengua indígena",
+      "universe": "población de 5 años y más", "positiveValue": "1", "notApplicableLabel": "No aplica (menores de 5 años)",
+      "categories": [{ "code": "1", "label": "Sí", "kind": "value" }, { "code": "2", "label": "No", "kind": "value" },
+                     { "code": "9", "label": "No especificado", "kind": "missing" }],
+      "missingCodes": ["9"], "missingCodesAreNull": false },
+    { "name": "FACTOR", "type": "DOUBLE", "role": "weight" }
+  ],
+  "origin": { "surveyId": "…", "editionId": "2914422d-…", "variables": ["EDAD", "HLENGUA", "FACTOR"], "signature": "9f2c…" }
 }
 ```
 
-- `design` and `unit` are those of the edition, and `columns` lists every column of the file in order, with its Parquet `type` (the same `name` and `type` as `columns`).
+Root:
+
+- `title` is the survey's name and `source` its short name ([Surveys](#surveys), `shortName`, `null` when not given).
+- `design`, `unit` and `total` are those of the editions when they all share them; otherwise `null` (each edition keeps its own). `total` is the edition's `coverage` ([Upload](#upload)), the place of the total row of an analysis. `unitPlural` is the unit in plural for texts (`personas`, `viviendas`, `hogares`), `null` with `unit`.
+- `editions` lists the editions the data comes from, in the order they are stacked: `{ id, name, year, design, unit, coverage, weight }`, where `weight` is the column of the file that is that edition's expansion factor (`null` for a census, or when the factor is not among the file's columns). So a survey whose editions have different designs, units or factors is still described: before version 2 it had no metadata at all.
+
+Per column, every property but `name` and `type` (the same as `columns`) is left out when it has no value:
+
+- `role`: the column's [sample design role](#source-design) (`weight`, `stratum`, `psu`) when the source is a sample and every edition gives it that role; otherwise its [use in analysis](#use-in-analysis) (`category`, `ordinal`, `dichotomous`, `geographic`, `label`, `temporal`, `measure`, `socioeconomic_stratum`, `key`, `identifier`, `free_text`).
+- `label` (the canonical's description), `universe`, `positiveValue`, `unit`, `geoLevel` and `disaggregation` (`{ summable, cuts?, maxLevel? }`) come from [Use in analysis](#use-in-analysis); its `notApplicableLabel` is a property of the column.
+- `categories`, only for `category`, `ordinal`, `dichotomous`, `geographic` and `socioeconomic_stratum`: `[{ code, label, kind }]`, `kind` `missing` for the codes in `missingCodes` and `value` otherwise, `label` `null` when nothing names it. With a common catalog ([Recoding](#recoding)), its codes in its order, then the kept "not specified" codes that are not in it. Without one, the categories of the editions' dictionaries (values and "not specified"), from the newest edition, each code written as it is in that edition's data (a dictionary `01` is `1` when the data has `1`) and after its recoding; then the codes of the data that no dictionary names, unless an edition has more than 200 distinct values (its stored profile is cut there).
+- `codeReview`, in survey views only: the state of the variable's codes between editions when it was saved (`single`, `ok`, `warning` or `reviewed`, see [Codes between editions](#codes-between-editions)).
 - `missingCodes` are the column's "not specified" codes, and `missingCodesAreNull` says what the file does with them (the rule of [Harmonized views](#harmonized-views)):
   - `true` (measures and variables without an analysis role): those values, like empty cells, are already `NULL` in the file. The codes are those of the mapping and only describe the source. `missingCount` says, per source edition id, how many cells had one of them before they became `NULL` (`0` when none did), so a result can report how many were left out.
   - `false` (variables of codes: category, geographic…): the codes are in the file, as they are there (after the recoding: `9` recoded to `99` is listed as `99`), and only empty cells ("not applicable") are `NULL`. There is no `missingCount`: the codes can be counted in the file.
-  - `role` is the column's [sample design role](#source-design). `missingCodes`, `missingCodesAreNull` and `role` are left out when the column has none.
-  - Resources created before 2026-11-22 had one `missingCodesAreNull: true` for the whole file (then every missing code became `NULL`). They are read and answered as `missingCodesAreNull: true` on each column with codes, without `missingCount`.
-- `sourceEditionIds` are the editions the data comes from, only to trace it back (for example, to warn later that a mapping changed). Nothing is computed from them.
-- It is a snapshot taken when the resource is created. Changing the edition's design, unit or mapping afterwards does not change it, and reading a resource never looks at the harmonizer.
-- A survey view gets metadata only when all its included editions (those that have any of the chosen variables) have the same design and unit, and their expansion factors are the same canonical variable. Otherwise, and when an edition has no design or unit, `sourceMetadata` is `null`. In a survey view, `missingCodes` joins the codes of every edition, `missingCount` has every edition that has the column, and a column has a role only when every edition gives it that role. The origin columns `_dataset`, `_year` and `_row` have only `name` and `type`.
-- The shape can grow: per-column properties other than `name` and `type` are optional, `version` names the shape, and readers ignore properties they do not know.
-- **In the API.** Every resource object has `sourceMetadata`: in `GET .../resources`, in the `resources` of `GET /organizations/:organizationId/datasets/:datasetId`, and in the response of an upload or of `from-harmonizer`. It comes with the properties of version 1 only and in the order shown above. It is `null`, explicitly, when the resource has none (uploaded files, resources created before 2026-11-13, mixed survey views) or when what is stored cannot be read as version 1; the request never fails because of it. It goes with the resource, not with its schema, because that is where the web app's analysis builder already reads the columns (`columns`).
-- **For analyses.** `ResourceMetadataService.forResource(datasetId, resourceId)` (module `analysis`, file `resource-metadata.ts`) returns a resource's metadata or `null` (`404 resource_not_found` if the resource is not in that dataset). The helpers `weightColumn`, `roleColumn`, `missingCodesOf`, `columnMetadata` and `isSample` in the same file read it, so future quality panels, weighted estimates and templates do not parse the JSON themselves. Both read the database copy: never the Parquet footer (slower) nor the harmonizer.
+  - In a survey view, `missingCodes` joins the codes of every edition and `missingCount` has every edition that has the column.
+- The origin columns `_dataset`, `_year` and `_row` have only `name` and `type`.
+
+Out of date:
+
+- `origin` says which harmonized view the resource was made from (`surveyId`; `editionId`, `null` for a survey view; `variables`, the canonical variables of the file) and its `signature`: a hash of what defined it. That is the survey's name and short name; the editions of the view (an edition view: that edition; a survey view: every edition that maps one of `variables`) with their files, design, unit, coverage and dictionary, and their mappings of those variables (codes, recoding, sample role); and those canonical variables (description, type, catalog, review, use in analysis).
+- `GET .../resources/:resourceId/source-status` computes the signature again from the harmonizer (database only, no file is read) and answers `{ linked, stale, reason }`: `{ linked: true, stale: false, reason: null }` when nothing changed; `stale: true` with `reason: "changed"` when something did (another mapping, code, recoding, catalog, use in analysis, short name, an edition added to the survey that maps one of the variables…), or `reason: "source_missing"` when the survey or the edition no longer exists. Resources without an origin (uploaded files, copies of version 1) answer `{ linked: false, stale: false, reason: null }`. A new variable mapped afterwards does not make it stale: the resource has its own list of variables. Any user who can see the dataset can ask; `404 resource_not_found` if the resource is not in that dataset. It is a separate route so listing resources never queries the harmonizer.
+- The web app shows the warning in «Datos de la fuente» of the resource (also when an analysis made with it is open), with a link to the view to save it again.
+
+Other rules:
+
+- It is a snapshot taken when the resource is created. Changing the harmonizer afterwards does not change it, and reading a resource never looks at the harmonizer (only `source-status` does).
+- The shape can grow: per-column properties other than `name` and `type` are optional, `version` names the shape, and readers ignore properties they do not know (an unknown `role` is kept, since roles grow).
+- **Version 1** (resources created from 2026-11-13 to 2026-11-22) is read and answered as version 2: `title`, `source`, `total`, `unitPlural` from `unit`, `editions` from its `sourceEditionIds` (with `name`, `year` and `coverage` `null`, and the root design, unit and factor), sample design roles as `role`, and `origin: null`. Copies made before F2 said `missingCodesAreNull: true` once for the whole file: every column with codes reads as `true`, without `missingCount`. Stored copies are not rewritten.
+- **In the API.** Every resource object has `sourceMetadata`: in `GET .../resources`, in the `resources` of `GET /organizations/:organizationId/datasets/:datasetId`, and in the response of an upload or of `from-harmonizer`. It comes with the properties of version 2 only. It is `null`, explicitly, when the resource has none (uploaded files, resources created before 2026-11-13) or when what is stored cannot be read as version 1 or 2; the request never fails because of it. It goes with the resource, not with its schema, because that is where the web app's analysis builder already reads the columns (`columns`).
+- **For analyses.** `ResourceMetadataService.forResource(datasetId, resourceId)` (module `analysis`, file `resource-metadata.ts`) returns a resource's metadata or `null` (`404 resource_not_found` if the resource is not in that dataset). The helpers in the same file read it, so quality panels, weighted estimates and templates do not parse the JSON themselves: `columnMetadata`, `roleOf`, `columnsWithRole`, `categoriesOf`, `universeOf`, `missingCodesOf`, `roleColumn` (a sample design role of the whole file), `weightColumn`, `editionWeight` (the factor of one edition) and `isSample`. Both read the database copy: never the Parquet footer (slower) nor the harmonizer.
 - **In the file.** The same object is in the footer of the resource's Parquet, as JSON under the key `socialdata_metadata` (key-value metadata, written with DuckDB's `KV_METADATA`). Its content is the same as `sourceMetadata`; only the key order can differ, because the database stores JSON as `jsonb`. It is written by the same `COPY` that writes the data, with no extra pass over the file (a Parquet footer cannot be edited without rewriting the whole file), and the server then copies the file to storage byte by byte. Reading it: `SELECT decode(key), decode(value) FROM parquet_kv_metadata('file.parquet')` in DuckDB, or `pyarrow.parquet.read_metadata(path).metadata[b'socialdata_metadata']` in Python. The API reads `sourceMetadata` from the database, never from the file.
+- The demo templates still read [Variable metadata](#variable-metadata); reading this object instead is phase 3b of the plan.
 
 ### Variable metadata
 
@@ -869,7 +903,7 @@ Exports:
 - Parquet columns take the canonical variable's confirmed type, or, when it is not confirmed, `text` for a variable whose analysis role is one of codes ([Use in analysis](#use-in-analysis)) and otherwise the type inferred from the exported values (the same rules as `inferredType`, applied to all exported editions together): `text` → `VARCHAR`, `integer` → `BIGINT`, `decimal` → `DOUBLE`. Numbers are converted from the trimmed text, trimmed as everywhere in the harmonizer (see [Mapping](#mapping)), so a value such as `\ufeff1` or `1` followed by a tab, which the type checks accept as an integer, becomes `1` (before 2026-11-12 only spaces were trimmed here and the export failed with `400 parquet_write_failed`). `_dataset` is `VARCHAR`, and `_year` and `_row` are `BIGINT`. Missing values are `NULL`, so they are distinct from any value. This lets analyses sum, average, multiply and compare these columns (before, every column was text and `SUM` failed).
 - If a confirmed numeric variable has a value that does not fit (possible only for an edition saved without `dataType`), the Parquet export returns `409 value_type_mismatch` with the variable and the offending values.
 - Exporting an edition with no mappings as Parquet returns `400 harmonized_view_empty`.
-- The Parquet carries its [source metadata](#source-metadata) in its footer, as JSON under the key `socialdata_metadata` (DuckDB `KV_METADATA`), so the file describes itself outside the platform too. Views without metadata (an edition without design or unit, or a survey whose editions differ) have no such key.
+- The Parquet carries its [source metadata](#source-metadata) in its footer, as JSON under the key `socialdata_metadata` (DuckDB `KV_METADATA`), so the file describes itself outside the platform too. Every harmonized Parquet has it since version 2 (before, an edition without design or unit, or a survey whose editions differed, had no such key).
 - How the file is made: DuckDB reads the editions' stored Parquet and applies the missing codes, the recoding and the types, so the rows are never loaded into the server whole (`harmonized-export.ts`). The Parquet is written by DuckDB, one edition after another. For the CSV, DuckDB also writes the rows: each line is built in SQL with the quoting of the CSV writer the server used before (`csv-stringify`: a value is quoted when it has a `"`, a `,` or a line feed, and its quotes are doubled) and with the formula neutralization; the BOM and the header line are written by that same CSV writer. A failure there returns `400 csv_write_failed`. Both are written to a temporary file first, so any error (`409 value_type_mismatch`, `404 harmonizer_dataset_file_missing`) comes back as a normal error response before anything is sent; then the file is sent and deleted, also when the client disconnects. The types are checked with the same stored column checks as the mapping (see [Variable types](#variable-types)). On the national census (15 million rows, 91 columns), the edition's Parquet takes about 20 seconds and its CSV (3.3 GB) about 15 seconds.
 
 ### Dictionaries

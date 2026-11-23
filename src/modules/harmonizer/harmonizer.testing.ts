@@ -71,6 +71,7 @@ export function createHarmonizerServices(
     lookup,
     files,
     reader,
+    variables,
   );
   return {
     lookup,

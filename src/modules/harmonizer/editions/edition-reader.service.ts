@@ -13,6 +13,8 @@ export interface EditionRecord {
   columns: string[];
   design: string | null;
   unit: string | null;
+  /** Stored coverage (`readCoverage` reads it). */
+  coverage?: unknown;
 }
 
 export interface EditionMapping {
