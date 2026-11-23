@@ -7,15 +7,19 @@ import { codebookMissingCodes, type CodebookCategory } from './codebook.js';
 import {
   JS_WHITESPACE_CODES,
   allFit,
+  codeCountQuery,
   columnTypeQuery,
   inferredType,
   mergeFacts,
   notFittingQuery,
   readColumnTypeResult,
+  readCount,
   readNotFitting,
   readValueFacts,
+  readValueList,
   sqlString,
   valueFactsQuery,
+  valuesAmongQuery,
   type ColumnTypeCheck,
   type ValueFactsCheck,
 } from './column-checks.js';
@@ -236,5 +240,50 @@ describe('column-checks: DuckDB gives what the JavaScript rules give', () => {
         inferValueType(group.flatMap(valuesOf)),
       );
     }
+  });
+  it('counts the cells with a missing code, trimmed like the view (D13)', async () => {
+    const cases = [
+      { column: 0, codes: ['9', '99', '999'] },
+      { column: 2, codes: ['99'] },
+      { column: 3, codes: ['999', '3'] },
+      { column: 1, codes: ['9'] },
+      { column: 2, codes: [] },
+    ];
+    const results = await service.runInternalQueries(
+      path,
+      cases.map((c) => codeCountQuery(`c${c.column}`, c.codes)),
+    );
+    cases.forEach((c, i) => {
+      const codes = new Set(c.codes);
+      const expected = raw.filter((r) => codes.has(r[name(c.column)].trim())).length;
+      expect(readCount(results[i][0]), JSON.stringify(c)).toBe(expected);
+    });
+  });
+
+  it('finds which codes a column takes as a valid value, after its own codes and recoding', async () => {
+    const cases = [
+      // `99` is its own missing code: not a valid value. `9` and `999` are.
+      { column: 0, missingCodes: ['99'], valueMap: new Map<string, string>(), codes: ['9', '99', '999', 'zz'] },
+      // `1` recoded to `99`: now it takes `99`; `2` recoded away, so it no longer takes `2`.
+      { column: 2, missingCodes: [], valueMap: new Map([['1', '99'], ['2', 'x']]), codes: ['99', '2'] },
+      { column: 1, missingCodes: [], valueMap: new Map<string, string>(), codes: ['9'] },
+      { column: 2, missingCodes: [], valueMap: new Map<string, string>(), codes: [] },
+    ];
+    const results = await service.runInternalQueries(
+      path,
+      cases.map((c) => valuesAmongQuery({ rawColumn: `c${c.column}`, ...c })),
+    );
+    cases.forEach((c, i) => {
+      const own = new Set(c.missingCodes);
+      const wanted = new Set(c.codes);
+      const found = new Set<string>();
+      for (const r of raw) {
+        const v = r[name(c.column)].trim();
+        if (v === '' || own.has(v)) continue;
+        const x = c.valueMap.get(v) ?? v;
+        if (wanted.has(x)) found.add(x);
+      }
+      expect(new Set(readValueList(results[i][0])), JSON.stringify(c.codes)).toEqual(found);
+    });
   });
 });

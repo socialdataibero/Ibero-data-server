@@ -15,9 +15,8 @@ const sample: SourceMetadata = {
   design: 'sample',
   unit: 'person',
   sourceEditionIds: ['ed1'],
-  missingCodesAreNull: true,
   columns: [
-    { name: 'EDAD', type: 'BIGINT', missingCodes: ['999'] },
+    { name: 'EDAD', type: 'BIGINT', missingCodes: ['999'], missingCodesAreNull: true },
     { name: 'FAC', type: 'BIGINT', role: 'weight' },
     { name: 'EST', type: 'BIGINT', role: 'stratum' },
   ],

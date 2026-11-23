@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { parseVariables } from '../matching.js';
 import type { CatalogCategory } from '../comparison.js';
 import { exportColumns, type ExportColumn } from '../harmonized-export.js';
+import { keepsMissingCodes } from '../variables/variable-role.js';
 
 export interface EditionRecord {
   id: string;
@@ -19,8 +20,11 @@ export interface EditionMapping {
   missingCodes: string[];
   valueMap: Prisma.JsonValue;
   role: string | null;
-  canonicalVariable: { name: string };
+  /** `role` is the canonical's role in analysis (category, measure…), not the sample one. */
+  canonicalVariable: { name: string; role: string | null };
 }
+
+const CANONICAL = { select: { name: true, role: true } } as const;
 
 /** La recodificación guardada de un mapeo (`{ valor: código }`) como Map. */
 export function toValueMap(
@@ -60,6 +64,7 @@ export function editionColumns(
       sourceColumn: m.sourceColumn,
       canon: m.canonicalVariable.name,
       missingCodes: m.missingCodes,
+      keepMissingCodes: keepsMissingCodes(m.canonicalVariable.role),
       valueMap: toValueMap(m.valueMap),
     })),
   );
@@ -79,9 +84,7 @@ export class EditionReaderService {
       where: { surveyId },
       orderBy: [{ year: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
       include: {
-        mappings: {
-          include: { canonicalVariable: { select: { name: true } } },
-        },
+        mappings: { include: { canonicalVariable: CANONICAL } },
       },
     });
   }
@@ -89,7 +92,7 @@ export class EditionReaderService {
   editionMappings(datasetId: string): Promise<EditionMapping[]> {
     return this.prisma.harmonizerMapping.findMany({
       where: { datasetId },
-      include: { canonicalVariable: { select: { name: true } } },
+      include: { canonicalVariable: CANONICAL },
     });
   }
 

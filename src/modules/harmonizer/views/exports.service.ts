@@ -20,17 +20,22 @@ import {
 import { LocalStorageService } from '../../storage/local-storage.service.js';
 import { cachedColumnChecks } from '../column-check-store.js';
 import {
+  codeCountQuery,
   inferredType as inferredTypeOf,
   mergeFacts,
   notFittingQuery,
+  readCount,
   readNotFitting,
   readValueFacts,
+  readValueList,
   valueFactsQuery,
+  valuesAmongQuery,
   type TypeFacts,
 } from '../column-checks.js';
 import {
   editionCsvLinesSql,
   editionParquetSql,
+  keptMissingCodes,
   originalCsvLinesSql,
   surveyParquetSql,
   type ExportColumn,
@@ -74,21 +79,53 @@ export interface ExportEdition {
   roles: Map<string, string>;
 }
 
-/** Lo que los metadatos de la fuente necesitan de una edición y sus columnas en la vista. */
+/**
+ * Lo que los metadatos de la fuente necesitan de una edición y sus columnas en la vista. Una
+ * columna que conserva sus códigos de no especificado los declara como quedan en el archivo
+ * (recodificados); las demás, los de la fuente con cuántas celdas los tenían (`counts`).
+ */
 function metadataEdition(
   edition: ExportEdition,
   columns: ExportColumn[],
+  counts: Map<string, number>,
 ): MetadataEdition {
   return {
     id: edition.dataset.id,
     design: edition.dataset.design,
     unit: edition.dataset.unit,
-    columns: columns.map((c) => ({
-      canon: c.canon,
-      missingCodes: c.missingCodes,
-      role: edition.roles.get(c.canon) ?? null,
-    })),
+    columns: columns.map((c) => {
+      const areNull = !c.keepMissingCodes;
+      return {
+        canon: c.canon,
+        missingCodes: areNull ? c.missingCodes : keptMissingCodes(c),
+        missingCodesAreNull: areNull,
+        ...(areNull && c.missingCodes.length > 0
+          ? { missingCount: counts.get(c.canon) ?? 0 }
+          : {}),
+        role: edition.roles.get(c.canon) ?? null,
+      };
+    }),
   };
+}
+
+/** `409 missing_code_conflict`: see `ExportsService.assertMissingCodesAgree`. */
+function missingCodeConflict(
+  variable: string,
+  code: string,
+  missingIn: EditionRecord,
+  validIn: EditionRecord,
+): ConflictException {
+  const edition = (e: EditionRecord) => ({ name: e.name, year: e.year });
+  return new ConflictException({
+    code: 'missing_code_conflict',
+    message: `Code "${code}" of variable "${variable}" means "not specified" in edition "${missingIn.name}" (${missingIn.year}) but is a valid value in edition "${validIn.name}" (${validIn.year}). Recode it in one of them so the file has one meaning per code.`,
+    params: {
+      variable,
+      code,
+      missingIn: edition(missingIn),
+      validIn: edition(validIn),
+    },
+  });
 }
 
 const PARQUET_TYPE: Record<ValueType, ParquetColumnType> = {
@@ -143,7 +180,13 @@ export class ExportsService {
     }
     const types = await this.exportTypes(dataset.surveyId, [edition], headers);
     const metadata = buildSourceMetadata(
-      [metadataEdition(edition, edition.columns)],
+      [
+        metadataEdition(
+          edition,
+          edition.columns,
+          await this.missingCounts(edition, edition.columns),
+        ),
+      ],
       headers,
       types,
     );
@@ -158,10 +201,16 @@ export class ExportsService {
     };
   }
 
+  /**
+   * With `forResource` ("use in a dataset"), a code that is «No especificado» in one edition and
+   * a valid value in another stops the Parquet (`409 missing_code_conflict`): the resource keeps
+   * one list of codes per column. The downloads are not stopped.
+   */
   async exportSurvey(
     surveyId: string,
     fmt: string,
     variables: string | string[] | undefined,
+    options: { forResource?: boolean } = {},
   ): Promise<ExportFile> {
     const format = this.assertExportFormat(fmt);
     const survey = await this.lookup.getSurvey(surveyId);
@@ -202,12 +251,23 @@ export class ExportsService {
       included.map((i) => ({ ...i.edition, columns: i.columns })),
       wanted,
     );
+    if (options.forResource) await this.assertMissingCodesAgree(included);
     const sources = included.map((i, n) => ({
       alias: `e${n}`,
       path: i.edition.path!,
     }));
+    const editionsMetadata: MetadataEdition[] = [];
+    for (const i of included) {
+      editionsMetadata.push(
+        metadataEdition(
+          i.edition,
+          i.columns,
+          await this.missingCounts(i.edition, i.columns),
+        ),
+      );
+    }
     const metadata = buildSourceMetadata(
-      included.map((i) => metadataEdition(i.edition, i.columns)),
+      editionsMetadata,
       ['_dataset', '_year', '_row', ...wanted],
       types,
     );
@@ -314,6 +374,88 @@ export class ExportsService {
       ),
       columns: editionColumns(dataset, used),
     };
+  }
+
+  /**
+   * Por canónica, cuántas celdas de la edición tenían un código de no especificado en las
+   * columnas que lo vuelven `NULL` (medidas y sin rol, D13). Se guarda como las demás revisiones
+   * de columna: los datos de una edición no cambian.
+   */
+  private async missingCounts(
+    edition: ExportEdition,
+    columns: ExportColumn[],
+  ): Promise<Map<string, number>> {
+    const counted = columns.filter(
+      (c) => !c.keepMissingCodes && c.missingCodes.length > 0,
+    );
+    if (!edition.path || counted.length === 0) return new Map();
+    const rows = await cachedColumnChecks(
+      this.prisma,
+      this.analysisService,
+      edition.dataset.id,
+      edition.path,
+      counted.map((c) => codeCountQuery(c.rawColumn, c.missingCodes)),
+    );
+    return new Map(counted.map((c, i) => [c.canon, readCount(rows[i])]));
+  }
+
+  /**
+   * In the columns that keep their «No especificado» codes, a code of one edition must not be a
+   * valid value (after recoding) of another: the resource keeps one list of codes per column, so
+   * the file would call valid answers "not specified" (`409 missing_code_conflict`, the first one
+   * found, in the order of the editions).
+   */
+  private async assertMissingCodesAgree(
+    included: { edition: ExportEdition; columns: ExportColumn[] }[],
+  ): Promise<void> {
+    const codesByCanon = new Map<string, { edition: EditionRecord; codes: string[] }[]>();
+    for (const { edition, columns } of included) {
+      for (const c of columns) {
+        const codes = keptMissingCodes(c);
+        if (codes.length === 0) continue;
+        codesByCanon.set(c.canon, [
+          ...(codesByCanon.get(c.canon) ?? []),
+          { edition: edition.dataset, codes },
+        ]);
+      }
+    }
+    if (codesByCanon.size === 0) return;
+    for (const { edition, columns } of included) {
+      if (!edition.path) continue;
+      const checks = columns.flatMap((c) => {
+        const own = new Set(keptMissingCodes(c));
+        const others = (codesByCanon.get(c.canon) ?? []).filter(
+          (o) => o.edition.id !== edition.dataset.id,
+        );
+        const codes = [
+          ...new Set(others.flatMap((o) => o.codes.filter((code) => !own.has(code)))),
+        ];
+        return c.keepMissingCodes && codes.length > 0
+          ? [{ column: c, others, codes }]
+          : [];
+      });
+      if (checks.length === 0) continue;
+      const rows = await cachedColumnChecks(
+        this.prisma,
+        this.analysisService,
+        edition.dataset.id,
+        edition.path,
+        checks.map(({ column, codes }) =>
+          valuesAmongQuery({
+            rawColumn: column.rawColumn,
+            missingCodes: column.missingCodes,
+            valueMap: column.valueMap,
+            codes,
+          }),
+        ),
+      );
+      checks.forEach(({ column, others }, i) => {
+        const [code] = readValueList(rows[i]);
+        if (code === undefined) return;
+        const missingIn = others.find((o) => o.codes.includes(code))!.edition;
+        throw missingCodeConflict(column.canon, code, missingIn, edition.dataset);
+      });
+    }
   }
 
   /**

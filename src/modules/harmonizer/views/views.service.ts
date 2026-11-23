@@ -81,6 +81,7 @@ export class ViewsService {
       dataset: toDatasetInfo(dataset),
       headers: view.headers,
       rows: view.rows,
+      notSpecified: view.notSpecified,
       // Una edición sin mapeos no tiene columnas ni filas.
       total: view.headers.length > 0 ? dataset.rowCount : 0,
       limit: page.limit,
@@ -161,6 +162,7 @@ export class ViewsService {
       survey: { id: survey.id, name: survey.name },
       headers: view.headers,
       rows: view.rows,
+      notSpecified: view.notSpecified,
       codeWarnings,
       total: view.headers.length > 0 ? total : 0,
       limit: page.limit,

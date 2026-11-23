@@ -154,7 +154,9 @@ export class ResourcesService {
     }
     const file = dto.editionId
       ? await this.harmonizerExports.exportDataset(dto.editionId, 'parquet')
-      : await this.harmonizerExports.exportSurvey(dto.surveyId!, 'parquet', dto.variables);
+      : await this.harmonizerExports.exportSurvey(dto.surveyId!, 'parquet', dto.variables, {
+          forResource: true,
+        });
     const size = file.size ?? (Buffer.isBuffer(file.body) ? file.body.length : 0);
     const body = Buffer.isBuffer(file.body) ? Readable.from([file.body]) : file.body;
     const storageKey = await this.storage.saveStream(datasetId, file.filename, body);

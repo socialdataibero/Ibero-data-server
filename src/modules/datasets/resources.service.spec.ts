@@ -78,7 +78,7 @@ describe('ResourcesService.attachHarmonized', () => {
   it('exports the survey with its variables', async () => {
     const { service, harmonizer } = setup();
     await service.attachHarmonized('d1', { surveyId: 's1', variables: ['EDAD', 'SEXO'] });
-    expect(harmonizer.exportSurvey).toHaveBeenCalledWith('s1', 'parquet', ['EDAD', 'SEXO']);
+    expect(harmonizer.exportSurvey).toHaveBeenCalledWith('s1', 'parquet', ['EDAD', 'SEXO'], { forResource: true });
   });
 
   it('saves a view over 2 GB (it no longer fits a 32-bit size) and answers its size as a number', async () => {
@@ -119,6 +119,7 @@ describe('the resource in the API: source metadata (SDI-138)', () => {
     ],
     version: 1,
     sourceEditionIds: ['ed1'],
+    // A copy made before F2: said once for the whole file.
     missingCodesAreNull: true,
   };
   const metadata = {
@@ -126,9 +127,8 @@ describe('the resource in the API: source metadata (SDI-138)', () => {
     design: 'sample',
     unit: 'person',
     sourceEditionIds: ['ed1'],
-    missingCodesAreNull: true,
     columns: [
-      { name: 'EDAD', type: 'BIGINT', missingCodes: ['999'] },
+      { name: 'EDAD', type: 'BIGINT', missingCodes: ['999'], missingCodesAreNull: true },
       { name: 'FAC', type: 'BIGINT', role: 'weight' },
     ],
   };

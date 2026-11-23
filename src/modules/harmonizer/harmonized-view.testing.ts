@@ -27,6 +27,8 @@ export interface DatasetEdition {
   columnToCanonical: Map<string, string>;
   /** Códigos de no especificado por columna de origen. */
   missingCodes?: Map<string, Set<string>>;
+  /** Columnas de origen que conservan sus códigos de no especificado (variables de códigos). */
+  keepMissingCodes?: Set<string>;
   /** Recodificación por columna de origen: valor recortado → código común. */
   valueMaps?: Map<string, Map<string, string>>;
   rows: RawData[];
@@ -144,17 +146,19 @@ export function sourceColumnValues(
 }
 
 /**
- * Valor de una celda en la vista armonizada. Primero los faltantes (vacío o código de no
- * especificado) pasan a `null`; luego, si la columna está recodificada, el valor recortado se
- * cambia por su código común. Los valores sin recodificación quedan tal cual.
+ * Valor de una celda en la vista armonizada. Primero los faltantes pasan a `null`: el vacío
+ * siempre y el código de no especificado salvo que la columna conserve sus códigos
+ * (`keepCodes`); luego, si la columna está recodificada, el valor recortado se cambia por su
+ * código común (también un código conservado). Los valores sin recodificación quedan tal cual.
  */
 function cellValue(
   value: string | undefined,
   codes: Set<string> | undefined,
   valueMap?: Map<string, string>,
+  keepCodes = false,
 ): string | null {
   const trimmed = (value ?? '').trim();
-  if (trimmed === '' || codes?.has(trimmed)) return null;
+  if (trimmed === '' || (!keepCodes && codes?.has(trimmed))) return null;
   return valueMap?.get(trimmed) ?? value ?? null;
 }
 
@@ -178,6 +182,7 @@ export function buildDatasetView(edition: DatasetEdition): HarmonizedView {
           raw[col],
           edition.missingCodes?.get(col),
           edition.valueMaps?.get(col),
+          edition.keepMissingCodes?.has(col) ?? false,
         );
     }
     return row;

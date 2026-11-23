@@ -104,10 +104,10 @@ const expected = {
   design: 'sample',
   unit: 'person',
   sourceEditionIds: ['ed1'],
-  missingCodesAreNull: true,
   columns: [
     { name: 'FOLIO', type: 'BIGINT' },
-    { name: 'EDAD', type: 'BIGINT', missingCodes: ['999'] },
+    // One cell had 999 before it became NULL (D13).
+    { name: 'EDAD', type: 'BIGINT', missingCodes: ['999'], missingCodesAreNull: true, missingCount: { ed1: 1 } },
     { name: 'FAC', type: 'BIGINT', role: 'weight' },
     { name: 'EST', type: 'BIGINT', role: 'stratum' },
   ],
@@ -144,7 +144,7 @@ describe('"Usar en un dataset" copies the source metadata', () => {
       unit: 'household',
       columns: [
         { name: 'FOLIO', type: 'BIGINT' },
-        { name: 'EDAD', type: 'BIGINT', missingCodes: ['998', '999'] },
+        { name: 'EDAD', type: 'BIGINT', missingCodes: ['998', '999'], missingCodesAreNull: true, missingCount: { ed1: 1 } },
         { name: 'FAC', type: 'BIGINT' },
         { name: 'EST', type: 'BIGINT', role: 'weight' },
       ],
@@ -168,7 +168,7 @@ describe('"Usar en un dataset" keeps the metadata in the Parquet footer', () => 
     expect(fromFile).toMatchObject({
       design: 'sample',
       unit: 'person',
-      columns: expect.arrayContaining([{ name: 'EDAD', type: 'BIGINT', missingCodes: ['999'] }]),
+      columns: expect.arrayContaining([expected.columns[1]]),
     });
   });
 

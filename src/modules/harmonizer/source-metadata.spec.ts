@@ -233,10 +233,20 @@ describe('saveMapping with roles', () => {
 });
 
 describe('buildSourceMetadata', () => {
-  const col = (canon: string, missingCodes: string[] = [], role: string | null = null) => ({
+  // A measure or a variable without a role: its codes are NULL in the file, counted per edition.
+  const col = (canon: string, missingCodes: string[] = [], role: string | null = null, missingCount = 0) => ({
     canon,
     missingCodes,
+    missingCodesAreNull: true,
+    ...(missingCodes.length > 0 ? { missingCount } : {}),
     role,
+  });
+  // A variable of codes: its codes stay in the file.
+  const kept = (canon: string, missingCodes: string[]) => ({
+    canon,
+    missingCodes,
+    missingCodesAreNull: false,
+    role: null,
   });
   const edition = (id: string, columns: MetadataEdition['columns'], design = 'sample', unit = 'person') => ({
     id,
@@ -249,7 +259,7 @@ describe('buildSourceMetadata', () => {
   it('one sample edition: design, unit, codes, roles and its id', () => {
     expect(
       buildSourceMetadata(
-        [edition('e1', [col('EDAD', ['999']), col('FAC', [], 'weight'), col('EST', [], 'stratum')])],
+        [edition('e1', [col('EDAD', ['999'], null, 12), col('FAC', [], 'weight'), col('EST', [], 'stratum')])],
         ['EDAD', 'FAC', 'EST'],
         types,
       ),
@@ -258,9 +268,8 @@ describe('buildSourceMetadata', () => {
       design: 'sample',
       unit: 'person',
       sourceEditionIds: ['e1'],
-      missingCodesAreNull: true,
       columns: [
-        { name: 'EDAD', type: 'BIGINT', missingCodes: ['999'] },
+        { name: 'EDAD', type: 'BIGINT', missingCodes: ['999'], missingCodesAreNull: true, missingCount: { e1: 12 } },
         { name: 'FAC', type: 'DOUBLE', role: 'weight' },
         { name: 'EST', type: 'BIGINT', role: 'stratum' },
       ],
@@ -282,8 +291,8 @@ describe('buildSourceMetadata', () => {
   it('a survey: origin columns, codes joined, roles kept when every edition agrees', () => {
     const meta = buildSourceMetadata(
       [
-        edition('e1', [col('EDAD', ['999']), col('FAC', [], 'weight'), col('EST', [], 'stratum')]),
-        edition('e2', [col('EDAD', ['99', '999']), col('FAC', [], 'weight'), col('EST')]),
+        edition('e1', [col('EDAD', ['999'], null, 3), col('FAC', [], 'weight'), col('EST', [], 'stratum')]),
+        edition('e2', [col('EDAD', ['99', '999'], null, 5), col('FAC', [], 'weight'), col('EST')]),
       ],
       ['_dataset', '_year', '_row', 'EDAD', 'FAC', 'EST'],
       types,
@@ -293,10 +302,26 @@ describe('buildSourceMetadata', () => {
       { name: '_dataset', type: 'VARCHAR' },
       { name: '_year', type: 'BIGINT' },
       { name: '_row', type: 'BIGINT' },
-      { name: 'EDAD', type: 'BIGINT', missingCodes: ['999', '99'] },
+      { name: 'EDAD', type: 'BIGINT', missingCodes: ['999', '99'], missingCodesAreNull: true, missingCount: { e1: 3, e2: 5 } },
       { name: 'FAC', type: 'DOUBLE', role: 'weight' },
       // Stratum in only one of the editions: not a stratum of the whole file.
       { name: 'EST', type: 'BIGINT' },
+    ]);
+  });
+
+  it('a variable of codes keeps its codes in the file: not NULL, not counted', () => {
+    const meta = buildSourceMetadata(
+      [
+        edition('e1', [kept('MESRET', ['99']), col('EDAD', ['999'], null, 4)]),
+        // An edition without the measure: it is not in its count.
+        edition('e2', [kept('MESRET', ['99', '98'])]),
+      ],
+      ['_dataset', '_year', '_row', 'MESRET', 'EDAD'],
+      { ...types, MESRET: 'VARCHAR' },
+    );
+    expect(meta?.columns.slice(3)).toEqual([
+      { name: 'MESRET', type: 'VARCHAR', missingCodes: ['99', '98'], missingCodesAreNull: false },
+      { name: 'EDAD', type: 'BIGINT', missingCodes: ['999'], missingCodesAreNull: true, missingCount: { e1: 4 } },
     ]);
   });
 
@@ -315,9 +340,9 @@ describe('parseSourceMetadata', () => {
     design: 'sample',
     unit: 'person',
     sourceEditionIds: ['e1'],
-    missingCodesAreNull: true,
     columns: [
-      { name: 'EDAD', type: 'BIGINT', missingCodes: ['999'] },
+      { name: 'EDAD', type: 'BIGINT', missingCodes: ['999'], missingCodesAreNull: true, missingCount: { e1: 7 } },
+      { name: 'HLI', type: 'VARCHAR', missingCodes: ['9'], missingCodesAreNull: false },
       { name: 'FAC', type: 'DOUBLE', role: 'weight' },
     ],
   };
@@ -326,12 +351,37 @@ describe('parseSourceMetadata', () => {
     expect(parseSourceMetadata(structuredClone(stored))).toEqual(stored);
   });
 
+  it('reads a copy made before F2 (one missingCodesAreNull for the whole file) as true per column', () => {
+    const before = {
+      version: 1,
+      design: 'sample',
+      unit: 'person',
+      sourceEditionIds: ['e1'],
+      missingCodesAreNull: true,
+      columns: [
+        { name: 'EDAD', type: 'BIGINT', missingCodes: ['999'] },
+        { name: 'FAC', type: 'DOUBLE', role: 'weight' },
+      ],
+    };
+    expect(parseSourceMetadata(before)).toEqual({
+      version: 1,
+      design: 'sample',
+      unit: 'person',
+      sourceEditionIds: ['e1'],
+      columns: [
+        { name: 'EDAD', type: 'BIGINT', missingCodes: ['999'], missingCodesAreNull: true },
+        { name: 'FAC', type: 'DOUBLE', role: 'weight' },
+      ],
+    });
+  });
+
   it('ignores properties it does not know, also a role added later', () => {
     const newer = {
       ...structuredClone(stored),
       license: 'CC-BY',
       columns: [
-        { name: 'EDAD', type: 'BIGINT', missingCodes: ['999'], valueLabels: { 1: 'Hombre' } },
+        { ...stored.columns[0], valueLabels: { 1: 'Hombre' } },
+        stored.columns[1],
         { name: 'FAC', type: 'DOUBLE', role: 'weight', universe: 'all' },
         { name: 'CONG', type: 'BIGINT', role: 'cluster' },
       ],
@@ -348,5 +398,8 @@ describe('parseSourceMetadata', () => {
     expect(parseSourceMetadata({ ...stored, version: 2 })).toBeNull();
     expect(parseSourceMetadata({ ...stored, design: 'muestral' })).toBeNull();
     expect(parseSourceMetadata({ ...stored, columns: [{ name: 'EDAD' }] })).toBeNull();
+    expect(
+      parseSourceMetadata({ ...stored, columns: [{ name: 'EDAD', type: 'BIGINT', missingCodes: ['9'], missingCount: { e1: '3' } }] }),
+    ).toBeNull();
   });
 });

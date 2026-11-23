@@ -18,10 +18,25 @@ export interface ExportColumn {
   canon: string;
   /** Raw Parquet column (`c0`, `c1`, …). */
   rawColumn: string;
-  /** Codes of «No especificado» (trimmed values that become `null`). */
+  /** Codes of «No especificado» (trimmed values). */
   missingCodes: string[];
+  /**
+   * Whether those codes stay in the view (variables of codes: category, geographic…, D1 of the
+   * templates plan) instead of becoming `null` (measures and variables without a role). An empty
+   * cell is `null` either way.
+   */
+  keepMissingCodes: boolean;
   /** Recoding: trimmed value → common code. */
   valueMap: Map<string, string>;
+}
+
+/**
+ * The «No especificado» codes as they appear in the view of a column that keeps them: each one
+ * after its recoding (`9` recoded to `99` is `99`). Empty for a column whose codes become `null`.
+ */
+export function keptMissingCodes(column: ExportColumn): string[] {
+  if (!column.keepMissingCodes) return [];
+  return [...new Set(column.missingCodes.map((c) => column.valueMap.get(c) ?? c))];
 }
 
 /**
@@ -36,6 +51,7 @@ export function exportColumns(
     sourceColumn: string;
     canon: string;
     missingCodes: string[];
+    keepMissingCodes: boolean;
     valueMap: Map<string, string>;
   }[],
 ): ExportColumn[] {
@@ -48,6 +64,7 @@ export function exportColumns(
       canon: m.canon,
       rawColumn: `c${i}`,
       missingCodes: m.missingCodes,
+      keepMissingCodes: m.keepMissingCodes,
       valueMap: m.valueMap,
     };
     const existing = byCanon.get(m.canon);
@@ -58,13 +75,15 @@ export function exportColumns(
 }
 
 /**
- * The value of a harmonized cell (`cellValue` of harmonized-view.testing.ts): empty after trimming, or a missing code, is `NULL`; then a
- * recoded value becomes its code; anything else stays as stored (not trimmed). `r` is the raw
- * value (`''` for a `NULL` cell, as the paged view reads it) and `t` its JavaScript trim.
+ * The value of a harmonized cell (`cellValue` of harmonized-view.testing.ts): empty after
+ * trimming is `NULL` («no aplica»), and so is a missing code unless the column keeps its codes
+ * («no especificado»); then a recoded value becomes its code (a kept missing code too); anything
+ * else stays as stored (not trimmed). `r` is the raw value (`''` for a `NULL` cell, as the paged
+ * view reads it) and `t` its JavaScript trim.
  */
 function cellSql(column: ExportColumn, r: string, t: string): string {
   const missing =
-    column.missingCodes.length > 0
+    column.missingCodes.length > 0 && !column.keepMissingCodes
       ? `${t} = '' OR ${t} IN (${column.missingCodes.map(sqlString).join(', ')})`
       : `${t} = ''`;
   const value =

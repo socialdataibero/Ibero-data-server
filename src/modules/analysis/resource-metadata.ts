@@ -56,8 +56,9 @@ export function weightColumn(metadata: SourceMetadata | null): string | null {
 }
 
 /**
- * The "not specified" codes declared for a column. They describe the source: in the file these
- * values are already `NULL` (`missingCodesAreNull`).
+ * The "not specified" codes declared for a column. With the column's `missingCodesAreNull` they
+ * only describe the source (in the file they are already `NULL`); without it (variables of codes)
+ * they are in the file, apart from the empty cells («no aplica»), which are `NULL`.
  */
 export function missingCodesOf(metadata: SourceMetadata | null, column: string): string[] {
   return columnMetadata(metadata, column)?.missingCodes ?? [];

@@ -41,6 +41,7 @@ import {
   readAnalysis,
   suggestRole,
   type VariableAnalysis,
+  keepsMissingCodes,
 } from './variable-role.js';
 
 /**
@@ -139,7 +140,7 @@ export class VariablesService {
   > {
     const variables = await this.prisma.harmonizerCanonicalVariable.findMany({
       where: { surveyId, ...(variableIds ? { id: { in: variableIds } } : {}) },
-      select: { id: true, dataType: true, categories: true },
+      select: { id: true, dataType: true, categories: true, role: true },
     });
     const mappings = await this.prisma.harmonizerMapping.findMany({
       where: { canonicalVariableId: { in: variables.map((v) => v.id) } },
@@ -188,6 +189,7 @@ export class VariablesService {
             year: m.dataset.year,
             column: m.sourceColumn,
             missingCodes: m.missingCodes,
+            keepMissingCodes: keepsMissingCodes(v.role),
             valueMap: Object.fromEntries(toValueMap(m.valueMap)),
             profile: profiles.get(m.datasetId)?.get(m.sourceColumn) ?? {
               values: [],

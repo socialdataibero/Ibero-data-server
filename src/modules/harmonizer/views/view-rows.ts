@@ -1,11 +1,19 @@
-import type { ExportColumn } from '../harmonized-export.js';
+import { keptMissingCodes, type ExportColumn } from '../harmonized-export.js';
 
-/** A row of a JSON view; `null` is a missing value (empty cell, only spaces or a missing code). */
+/**
+ * A row of a JSON view; `null` is a missing value: an empty cell or only spaces («no aplica»),
+ * or a missing code of a column that does not keep its codes.
+ */
 export type ViewRow = Record<string, string | number | null>;
 
 export interface View {
   headers: string[];
   rows: ViewRow[];
+  /**
+   * Parallel to `rows`: the headers whose value in that row is a «No especificado» code kept by
+   * its column (variables of codes, F2), so the screen can tell it from a valid answer.
+   */
+  notSpecified: string[][];
 }
 
 /**
@@ -23,10 +31,28 @@ export function pageRows(
   );
 }
 
+/** For each row, the columns whose value is one of their kept «No especificado» codes. */
+function notSpecifiedOf(columns: ExportColumn[]) {
+  const kept = columns
+    .map((c) => ({ canon: c.canon, codes: new Set(keptMissingCodes(c)) }))
+    .filter((c) => c.codes.size > 0);
+  return (row: ViewRow): string[] =>
+    kept
+      .filter((c) => {
+        const value = row[c.canon];
+        return typeof value === 'string' && c.codes.has(value.trim());
+      })
+      .map((c) => c.canon);
+}
+
 /** The view of one edition: its columns, and the rows of the page. */
 export function editionView(columns: ExportColumn[], rows: ViewRow[]): View {
-  if (columns.length === 0) return { headers: [], rows: [] };
-  return { headers: columns.map((c) => c.canon), rows };
+  if (columns.length === 0) return { headers: [], rows: [], notSpecified: [] };
+  return {
+    headers: columns.map((c) => c.canon),
+    rows,
+    notSpecified: rows.map(notSpecifiedOf(columns)),
+  };
 }
 
 /** One edition's page in the survey view. */
@@ -45,13 +71,16 @@ export interface SurveyViewPage {
  * stacked in order. Each row has the variables its edition has (the others are left out, not
  * `null`) followed by `_dataset`, `_year` and `_row`, the record number in its file (from 1), so
  * `_dataset` + `_row` identify a row even if the file repeats or lacks an id (H-05). A row that
- * gives none of the requested variables is left out.
+ * gives none of the requested variables is left out. Each edition marks its own kept codes: `9`
+ * can be «No especificado» in one edition and a valid value in another.
  */
 export function surveyView(pages: SurveyViewPage[], wanted: string[]): View {
-  if (wanted.length === 0) return { headers: [], rows: [] };
+  if (wanted.length === 0) return { headers: [], rows: [], notSpecified: [] };
   const rows: ViewRow[] = [];
+  const notSpecified: string[][] = [];
   for (const page of pages) {
     const present = new Set(page.columns.map((c) => c.canon));
+    const marks = notSpecifiedOf(page.columns);
     page.rows.forEach((r, i) => {
       const row: ViewRow = {};
       for (const h of wanted) {
@@ -62,7 +91,8 @@ export function surveyView(pages: SurveyViewPage[], wanted: string[]): View {
       row['_year'] = page.year;
       row['_row'] = page.rowOffset + i + 1;
       rows.push(row);
+      notSpecified.push(marks(r));
     });
   }
-  return { headers: wanted, rows };
+  return { headers: wanted, rows, notSpecified };
 }

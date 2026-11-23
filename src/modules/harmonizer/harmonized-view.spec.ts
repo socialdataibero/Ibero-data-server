@@ -44,6 +44,7 @@ function columnsOf(e: DatasetEdition, canons?: Set<string>) {
         sourceColumn,
         canon,
         missingCodes: [...(e.missingCodes?.get(sourceColumn) ?? [])],
+        keepMissingCodes: e.keepMissingCodes?.has(sourceColumn) ?? false,
         valueMap: e.valueMaps?.get(sourceColumn) ?? new Map<string, string>(),
       })),
   );
@@ -98,6 +99,7 @@ function edition(
     columnToCanonical: partial.columnToCanonical ?? new Map(),
     missingCodes: partial.missingCodes,
     valueMaps: partial.valueMaps,
+    keepMissingCodes: partial.keepMissingCodes,
     rows: partial.rows,
     rowOffset: partial.rowOffset,
   };
@@ -108,7 +110,7 @@ describe('harmonizer: vista por edición (SQL)', () => {
     const view = await buildDatasetView(
       edition({ columns: ['a'], rows: [{ a: '1' }] }),
     );
-    expect(view).toEqual({ headers: [], rows: [] });
+    expect(view).toEqual({ headers: [], rows: [], notSpecified: [] });
   });
 
   it('proyecta solo columnas mapeadas, renombradas, en el orden del CSV', async () => {
@@ -179,6 +181,44 @@ describe('harmonizer: vista por edición (SQL)', () => {
     expect(
       sourceColumnValues([{ E: '100 y mas' }, { E: '7' }], 'E', undefined, new Map([['100 y mas', '100']])),
     ).toEqual(['100', '7']);
+  });
+
+  it('una variable de códigos conserva su no especificado; el vacío (no aplica) sigue siendo null', async () => {
+    const e = edition({
+      columns: ['MESRET', 'EDAD'],
+      columnToCanonical: new Map([
+        ['MESRET', 'mes_retorno'],
+        ['EDAD', 'edad'],
+      ]),
+      missingCodes: new Map([
+        ['MESRET', new Set(['99', '9'])],
+        ['EDAD', new Set(['999'])],
+      ]),
+      keepMissingCodes: new Set(['MESRET']),
+      // `9` se recodifica al código común `99`, como cualquier otro valor.
+      valueMaps: new Map([['MESRET', new Map([['9', '99'], ['01', '1']])]]),
+      rows: [
+        { MESRET: '01', EDAD: '30' },
+        { MESRET: '99', EDAD: '999' },
+        { MESRET: ' 99 ', EDAD: '' },
+        { MESRET: '9', EDAD: '40' },
+        { MESRET: '', EDAD: '25' },
+        { MESRET: '  ', EDAD: ' 999 ' },
+      ],
+    });
+    const view = await buildDatasetView(e);
+    expect(view.rows).toEqual([
+      { mes_retorno: '1', edad: '30' },
+      { mes_retorno: '99', edad: null },
+      { mes_retorno: ' 99 ', edad: null },
+      { mes_retorno: '99', edad: '40' },
+      { mes_retorno: null, edad: '25' },
+      { mes_retorno: null, edad: null },
+    ]);
+    expect(view.notSpecified).toEqual([[], ['mes_retorno'], ['mes_retorno'], ['mes_retorno'], [], []]);
+    expect(
+      sourceColumnValues(e.rows, 'MESRET', e.missingCodes!.get('MESRET'), e.valueMaps!.get('MESRET')),
+    ).toEqual(['1', null, null, null, null, null]);
   });
 
   it('dos columnas a la misma canónica: un solo header y en la fila gana la última', async () => {
@@ -289,6 +329,35 @@ describe('harmonizer: vista por encuesta (SQL)', () => {
     expect(view.rows.map((r) => r.hli)).toEqual(['1', null, '9', null]);
   });
 
+  it('en la vista por encuesta, cada edición marca sus propios códigos conservados', async () => {
+    const view = await buildSurveyView(
+      [
+        edition({
+          name: 'A',
+          year: 2020,
+          columns: ['hli', 'x'],
+          columnToCanonical: new Map([['hli', 'hli'], ['x', 'x']]),
+          missingCodes: new Map([['hli', new Set(['9'])]]),
+          keepMissingCodes: new Set(['hli']),
+          rows: [{ hli: '1', x: 'a' }, { hli: '9', x: 'b' }, { hli: '', x: 'c' }],
+        }),
+        edition({
+          name: 'B',
+          year: 2021,
+          columns: ['hli'],
+          columnToCanonical: new Map([['hli', 'hli']]),
+          missingCodes: new Map([['hli', new Set(['99'])]]),
+          keepMissingCodes: new Set(['hli']),
+          rows: [{ hli: '9' }, { hli: '99' }],
+        }),
+      ],
+      ['hli', 'x'],
+    );
+    expect(view.rows.map((r) => r.hli)).toEqual(['1', '9', null, '9', '99']);
+    // `9` es un valor válido en B: solo se marca en A.
+    expect(view.notSpecified).toEqual([[], ['hli'], [], [], ['hli']]);
+  });
+
   it('una fila que no aporta ninguna variable pedida se omite', async () => {
     const view = await buildSurveyView(editions, ['sexo']);
     expect(view.rows).toEqual([
@@ -303,7 +372,7 @@ describe('harmonizer: vista por encuesta (SQL)', () => {
   });
 
   it('wanted vacío -> vista vacía', async () => {
-    expect(await buildSurveyView(editions, [])).toEqual({ headers: [], rows: [] });
+    expect(await buildSurveyView(editions, [])).toEqual({ headers: [], rows: [], notSpecified: [] });
   });
 });
 

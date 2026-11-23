@@ -132,6 +132,17 @@ export function roleTypeMismatch(
   });
 }
 
+/**
+ * Whether a variable keeps its «No especificado» codes in the views and downloads (D1 of the
+ * templates plan): variables of codes do, so «no especificado» (the code) and «no aplica» (an
+ * empty cell, `null`) stay apart. Measures and variables without a role turn the code into
+ * `null`, so nobody averages a `999` (D13). Those roles are always text (`roleAllowsType`), so a
+ * kept code never breaks the column's type.
+ */
+export function keepsMissingCodes(role: string | null): boolean {
+  return isRole(role) && CODED_ROLES.includes(role);
+}
+
 /** The type a variable is downloaded with when nobody confirmed one: codes stay text. */
 export function unconfirmedTypeOf(role: string | null): ValueType | null {
   return isRole(role) && CODED_ROLES.includes(role) ? 'text' : null;

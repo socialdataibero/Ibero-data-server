@@ -113,8 +113,6 @@ export interface SourceMetadata {
   unit: AnalysisUnit;
   /** Editions the data comes from, for traceability only: nothing is computed from them. */
   sourceEditionIds: string[];
-  /** Values listed in `missingCodes`, and empty cells, are already `NULL` in the data. */
-  missingCodesAreNull: true;
   /** Every column of the file, in its order. */
   columns: SourceMetadataColumn[];
 }
@@ -123,8 +121,24 @@ export interface SourceMetadataColumn {
   name: string;
   /** Parquet type, e.g. `VARCHAR`, `BIGINT`, `DOUBLE`. */
   type: string;
-  /** Codes that meant "not specified" in the source; omitted when there are none. */
+  /**
+   * Codes that mean "not specified"; omitted when there are none. In a column that keeps them
+   * they are the codes as they appear in the file (after the recoding); otherwise those of the
+   * source, which are no longer in the file.
+   */
   missingCodes?: string[];
+  /**
+   * With `missingCodes` only. `true`: those codes, like empty cells, are already `NULL` in the
+   * file (measures and variables without a role). `false`: the codes are in the file and only
+   * empty cells («no aplica») are `NULL` (variables of codes, F2 of the templates plan). Copies
+   * made before F2 said `true` once for the whole file; they read as `true` per column.
+   */
+  missingCodesAreNull?: boolean;
+  /**
+   * With `missingCodesAreNull: true` only: per source edition id, how many cells held one of the
+   * codes before they became `NULL` (D13), so a result can say how many were left out.
+   */
+  missingCount?: Record<string, number>;
   /** Sample design role; omitted when the column has none. */
   role?: SourceRole;
 }
@@ -134,8 +148,18 @@ export interface MetadataEdition {
   id: string;
   design: string | null;
   unit: string | null;
-  /** The edition's columns in the view: canonical name, missing codes and role. */
-  columns: { canon: string; missingCodes: string[]; role: string | null }[];
+  /**
+   * The edition's columns in the view: canonical name, missing codes (as `SourceMetadataColumn`
+   * describes them), whether they are `NULL` in the file, how many cells had them (when they are)
+   * and role.
+   */
+  columns: {
+    canon: string;
+    missingCodes: string[];
+    missingCodesAreNull: boolean;
+    missingCount?: number;
+    role: string | null;
+  }[];
 }
 
 /**
@@ -145,7 +169,8 @@ export interface MetadataEdition {
  * It is `null` when it would not be true of every row: an edition without design or unit,
  * editions with different designs or units, or editions whose expansion factor is a different
  * variable. A canonical gets a role only in sample sources and when every edition gives it that
- * role; `missingCodes` joins the codes of every edition.
+ * role; `missingCodes` joins the codes of every edition, and `missingCount` lists every edition
+ * that has the column.
  */
 export function buildSourceMetadata(
   editions: MetadataEdition[],
@@ -170,23 +195,34 @@ export function buildSourceMetadata(
     const role = roles[0];
     return role && roles.every((r) => r === role) ? (role as SourceRole) : undefined;
   };
-  const codesOf = (canon: string): string[] => [
-    ...new Set(editions.flatMap((e) => e.columns.find((c) => c.canon === canon)?.missingCodes ?? [])),
-  ];
+  const columnsOf = (canon: string) =>
+    editions.flatMap((e) => {
+      const column = e.columns.find((c) => c.canon === canon);
+      return column ? [{ edition: e.id, column }] : [];
+    });
 
   return {
     version: 1,
     design,
     unit,
     sourceEditionIds: editions.map((e) => e.id),
-    missingCodesAreNull: true,
     columns: headers.map((name) => {
-      const missingCodes = codesOf(name);
+      const found = columnsOf(name);
+      const missingCodes = [...new Set(found.flatMap((f) => f.column.missingCodes))];
+      // The same canonical keeps its codes in every edition or in none (it follows its role).
+      const areNull = !found.some((f) => !f.column.missingCodesAreNull);
       const role = roleOf(name);
       return {
         name,
         type: types[name] ?? 'VARCHAR',
-        ...(missingCodes.length > 0 ? { missingCodes } : {}),
+        ...(missingCodes.length > 0 ? { missingCodes, missingCodesAreNull: areNull } : {}),
+        ...(missingCodes.length > 0 && areNull
+          ? {
+              missingCount: Object.fromEntries(
+                found.map((f) => [f.edition, f.column.missingCount ?? 0]),
+              ),
+            }
+          : {}),
         ...(role ? { role } : {}),
       };
     }),
@@ -197,6 +233,8 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 const isStringList = (v: unknown): v is string[] =>
   Array.isArray(v) && v.every((s) => typeof s === 'string');
+const isCountMap = (v: unknown): v is Record<string, number> =>
+  isRecord(v) && Object.values(v).every((n) => typeof n === 'number' && Number.isFinite(n));
 const isOneOf = <T extends string>(list: readonly T[], v: unknown): v is T =>
   typeof v === 'string' && (list as readonly string[]).includes(v);
 
@@ -209,14 +247,24 @@ export function parseSourceMetadata(value: unknown): SourceMetadata | null {
   if (!isRecord(value) || value.version !== 1) return null;
   if (!isOneOf(SOURCE_DESIGNS, value.design) || !isOneOf(ANALYSIS_UNITS, value.unit)) return null;
   if (!isStringList(value.sourceEditionIds) || !Array.isArray(value.columns)) return null;
+  // Copies made before F2 said it once for the whole file.
+  const allNull = value.missingCodesAreNull === true;
   const columns: SourceMetadataColumn[] = [];
   for (const c of value.columns) {
     if (!isRecord(c) || typeof c.name !== 'string' || typeof c.type !== 'string') return null;
     if (c.missingCodes !== undefined && !isStringList(c.missingCodes)) return null;
+    if (c.missingCodesAreNull !== undefined && typeof c.missingCodesAreNull !== 'boolean') return null;
+    if (c.missingCount !== undefined && !isCountMap(c.missingCount)) return null;
+    const areNull = typeof c.missingCodesAreNull === 'boolean' ? c.missingCodesAreNull : allNull;
     columns.push({
       name: c.name,
       type: c.type,
-      ...(c.missingCodes !== undefined ? { missingCodes: c.missingCodes } : {}),
+      ...(c.missingCodes !== undefined
+        ? { missingCodes: c.missingCodes, missingCodesAreNull: areNull }
+        : {}),
+      ...(c.missingCodes !== undefined && areNull && c.missingCount !== undefined
+        ? { missingCount: c.missingCount }
+        : {}),
       // A role this version does not know (added later) is skipped like an unknown property.
       ...(isOneOf(SOURCE_ROLES, c.role) ? { role: c.role } : {}),
     });
@@ -226,7 +274,6 @@ export function parseSourceMetadata(value: unknown): SourceMetadata | null {
     design: value.design,
     unit: value.unit,
     sourceEditionIds: value.sourceEditionIds,
-    missingCodesAreNull: true,
     columns,
   };
 }
