@@ -157,10 +157,6 @@ model Resource {
   /// when the resource is saved from the harmonizer. A snapshot: it does not follow later changes
   /// to the edition. Null on uploaded files and on resources created before it existed.
   sourceMetadata   Json?
-  /// What the analysis templates need about each variable (role, label, categories, "not
-  /// specified" codes, universe), loaded with `PUT …/variable-metadata`. Null until it is loaded.
-  /// See analysis/variable-metadata.ts.
-  variableMetadata Json?
   createdAt        DateTime @default(now())
 
   dataset  Dataset    @relation(fields: [datasetId], references: [id], onDelete: Cascade)

@@ -12,11 +12,6 @@ import {
   parseSourceMetadata,
   type SourceMetadata,
 } from '../harmonizer/source-metadata.js';
-import {
-  parseVariableMetadata,
-  readVariableMetadata,
-  type VariableMetadata,
-} from '../analysis/variable-metadata.js';
 
 const PARQUET_MAGIC = Buffer.from('PAR1', 'ascii');
 
@@ -27,22 +22,19 @@ const PARQUET_MAGIC = Buffer.from('PAR1', 'ascii');
  *
  * `sourceMetadata` always goes out: the metadata of its harmonized source with the properties this
  * version knows, or `null` for resources without it (uploaded files, older resources).
- * `variableMetadata` likewise: what the analysis templates know about each variable, or `null`.
  */
 export function toResourceResponse<
-  T extends { sizeBytes: bigint; sourceMetadata?: unknown; variableMetadata?: unknown },
+  T extends { sizeBytes: bigint; sourceMetadata?: unknown },
 >(
   resource: T,
-): Omit<T, 'sizeBytes' | 'sourceMetadata' | 'variableMetadata'> & {
+): Omit<T, 'sizeBytes' | 'sourceMetadata'> & {
   sizeBytes: number;
   sourceMetadata: SourceMetadata | null;
-  variableMetadata: VariableMetadata | null;
 } {
   return {
     ...resource,
     sizeBytes: Number(resource.sizeBytes),
     sourceMetadata: parseSourceMetadata(resource.sourceMetadata),
-    variableMetadata: readVariableMetadata(resource.variableMetadata),
   };
 }
 
@@ -122,23 +114,6 @@ export class ResourcesService {
     if (now === null) return { linked: true, stale: true, reason: 'source_missing' };
     const stale = now !== origin.signature;
     return { linked: true, stale, reason: stale ? 'changed' : null };
-  }
-
-  /**
-   * Stores what the analysis templates need about each variable of a resource, replacing what it
-   * had. Every column it describes must exist in the file (`400 variable_metadata_invalid`).
-   */
-  async setVariableMetadata(datasetId: string, resourceId: string, value: unknown) {
-    const resource = await this.findOne(datasetId, resourceId);
-    const fileColumns = Array.isArray(resource.columns)
-      ? (resource.columns as { name?: unknown }[]).map((c) => String(c?.name))
-      : null;
-    const metadata = parseVariableMetadata(value, fileColumns);
-    const updated = await this.prisma.resource.update({
-      where: { id: resource.id },
-      data: { variableMetadata: metadata as unknown as Prisma.InputJsonObject },
-    });
-    return toResourceResponse(updated);
   }
 
   async upload(datasetId: string, file: { originalname: string; buffer: Buffer; size: number }) {

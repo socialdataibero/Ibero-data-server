@@ -172,13 +172,15 @@ export class AnalysisService {
   async runInternalQueries(
     parquetPath: string,
     queries: string[],
+    /** SQL condition built by the server: the view `data` keeps only those rows. */
+    where: string | null = null,
   ): Promise<unknown[][][]> {
     if (queries.length === 0) return [];
     const duckdb = await this.openInstance();
     const connection = await duckdb.instance.connect();
     try {
       await connection.run(
-        `CREATE TEMP VIEW data AS SELECT * FROM read_parquet('${escapeSqlLiteral(parquetPath)}', file_row_number = true)`,
+        `CREATE TEMP VIEW data AS SELECT * FROM read_parquet('${escapeSqlLiteral(parquetPath)}', file_row_number = true)${where ? ` WHERE ${where}` : ''}`,
       );
       const out: unknown[][][] = [];
       for (const sql of queries) {

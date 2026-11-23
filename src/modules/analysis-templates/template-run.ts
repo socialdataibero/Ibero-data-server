@@ -9,9 +9,10 @@ import {
 import {
   columnOf,
   columnWithRole,
+  type TemplateEdition,
   type VariableMetadata,
   type VariableMetadataColumn,
-} from '../analysis/variable-metadata.js';
+} from './template-metadata.js';
 import {
   findTemplate,
   type InputSpec,
@@ -34,6 +35,8 @@ export interface TemplateRequest {
   measure?: string;
   group?: string | null;
   missing?: MissingChoice;
+  /** The edition of the analysis, when the resource has several (`template_edition_required`). */
+  edition?: string | null;
 }
 
 /** One row of the result table. Column names are those of the proposal (section 3.6). */
@@ -71,6 +74,8 @@ export interface TemplateWarning {
 export interface TemplateResult {
   template: { id: string; version: number; contract: string; name: string };
   source: { title: string; design: string; unitPlural: string };
+  /** The edition the figures are about. */
+  edition: TemplateEdition;
   inputs: {
     variable: string | null;
     conditions: string[];
@@ -192,7 +197,10 @@ export function planTemplate(request: TemplateRequest, metadata: VariableMetadat
     });
   }
   if (!metadata) {
-    bad('template_no_metadata', 'This resource has no variable metadata yet, so no template can use it.');
+    bad(
+      'template_no_metadata',
+      'This resource has no source metadata from the harmonizer, so no template can use it. Save it again from the harmonizer.',
+    );
   }
   const spec = (name: string) => template.inputs.find((i) => i.name === name);
 
@@ -452,6 +460,7 @@ export function assembleResult(plan: Plan, answers: unknown[]): TemplateResult {
   return {
     template: { id: template.id, version: template.version, contract: template.contract, name: template.name },
     source: { title: metadata.title, design: metadata.design, unitPlural: metadata.unitPlural },
+    edition: metadata.editionInfo,
     inputs: {
       variable: plan.variable?.name ?? null,
       conditions: plan.conditions.map((c) => c.name),
@@ -551,6 +560,8 @@ function texts(
   if (template.id === 'weighted_mean') {
     const m = plan.measure!;
     const excluded = meanExcluded;
+    // In the data a measure's "not specified" codes are already null: the harmonizer counted them.
+    const notSpecified = Math.min(m.missingCount ?? 0, excluded);
     return {
       title: `${m.label} promedio${byGroup}`,
       question: `¿Cuál es la ${lowerFirst(m.label)} promedio de las ${people}${inEach}?`,
@@ -559,7 +570,11 @@ function texts(
         : 'Promedio calculado sólo con quienes tienen dato.',
       missing:
         excluded > 0
-          ? `Se excluyen ${count(excluded)} registros sin dato de ${lowerFirst(m.label)}. El promedio se calcula sólo con quienes tienen dato.`
+          ? `${
+              notSpecified === excluded
+                ? `Se excluyen ${count(excluded)} registros con «No especificado» en ${lowerFirst(m.label)}`
+                : `Se excluyen ${count(excluded)} registros sin dato de ${lowerFirst(m.label)}${notSpecified > 0 ? `, ${count(notSpecified)} de ellos con «No especificado»` : ''}`
+            }. El promedio se calcula sólo con quienes tienen dato.`
           : null,
     };
   }
@@ -672,11 +687,12 @@ function charts(plan: Plan): TemplateResult['charts'] {
 export async function runTemplate(
   request: TemplateRequest,
   metadata: VariableMetadata | null,
-  run: (sql: string[]) => Promise<unknown[][][]>,
+  /** Runs the queries over the view `data`, keeping only the rows of `filter` (the edition). */
+  run: (sql: string[], filter: string | null) => Promise<unknown[][][]>,
 ): Promise<TemplateResult> {
   const plan = planTemplate(request, metadata);
   const { queries } = planQueries(plan);
-  const raw = await run(queries.map((q) => q.sql));
+  const raw = await run(queries.map((q) => q.sql), plan.metadata.rowFilter);
   return assembleResult(
     plan,
     queries.map((q, i) => q.read(raw[i])),

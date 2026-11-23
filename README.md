@@ -265,7 +265,6 @@ Rules:
 | `POST` | `.../datasets/:datasetId/resources` | `ADMIN`, `EDITOR` | Upload a file (multipart, field `file`). |
 | `POST` | `.../datasets/:datasetId/resources/from-harmonizer` | `ADMIN`, `EDITOR` | Save a harmonized view of the survey harmonizer as a resource. See [From the harmonizer](#from-the-harmonizer). |
 | `GET` | `.../resources/:resourceId/source-status` | any user | Whether the harmonizer changed after the resource was saved from it. See [Source metadata](#source-metadata). |
-| `PUT` | `.../resources/:resourceId/variable-metadata` | `ADMIN`, `EDITOR` | Store what the [analysis templates](#analysis-templates-demo) need about each variable: `{ metadata }`. See [Variable metadata](#variable-metadata). |
 | `POST` | `.../resources/:resourceId/query` | any role | Run a SQL query: `{ sql }`. |
 | `GET` | `.../resources/:resourceId/download` | any role, download token | Download the file. |
 | `GET` | `.../resources/:resourceId/vistrace-handoff` | any role | Get a vistrace link. See [handoff](#vistrace-handoff). |
@@ -354,40 +353,7 @@ Other rules:
 - **In the API.** Every resource object has `sourceMetadata`: in `GET .../resources`, in the `resources` of `GET /organizations/:organizationId/datasets/:datasetId`, and in the response of an upload or of `from-harmonizer`. It comes with the properties of version 2 only. It is `null`, explicitly, when the resource has none (uploaded files, resources created before 2026-11-13) or when what is stored cannot be read as version 1 or 2; the request never fails because of it. It goes with the resource, not with its schema, because that is where the web app's analysis builder already reads the columns (`columns`).
 - **For analyses.** `ResourceMetadataService.forResource(datasetId, resourceId)` (module `analysis`, file `resource-metadata.ts`) returns a resource's metadata or `null` (`404 resource_not_found` if the resource is not in that dataset). The helpers in the same file read it, so quality panels, weighted estimates and templates do not parse the JSON themselves: `columnMetadata`, `roleOf`, `columnsWithRole`, `categoriesOf`, `universeOf`, `missingCodesOf`, `roleColumn` (a sample design role of the whole file), `weightColumn`, `editionWeight` (the factor of one edition) and `isSample`. Both read the database copy: never the Parquet footer (slower) nor the harmonizer.
 - **In the file.** The same object is in the footer of the resource's Parquet, as JSON under the key `socialdata_metadata` (key-value metadata, written with DuckDB's `KV_METADATA`). Its content is the same as `sourceMetadata`; only the key order can differ, because the database stores JSON as `jsonb`. It is written by the same `COPY` that writes the data, with no extra pass over the file (a Parquet footer cannot be edited without rewriting the whole file), and the server then copies the file to storage byte by byte. Reading it: `SELECT decode(key), decode(value) FROM parquet_kv_metadata('file.parquet')` in DuckDB, or `pyarrow.parquet.read_metadata(path).metadata[b'socialdata_metadata']` in Python. The API reads `sourceMetadata` from the database, never from the file.
-- The demo templates still read [Variable metadata](#variable-metadata); reading this object instead is phase 3b of the plan.
-
-### Variable metadata
-
-What the [analysis templates](#analysis-templates-demo) need to know about each variable of a resource: its role, label, categories, "not specified" codes and universe. Every resource object has `variableMetadata`, `null` until it is loaded. For now it is loaded by hand with `PUT .../resources/:resourceId/variable-metadata` and the body `{ metadata }`, which replaces what the resource had (the web app's dataset page sends a JSON file the user picks, «Subir descripción de variables (JSON)»); later the harmonizer will write it when a view is saved as a resource (plan in `planes-pendientes/plantillas-analisis.md` of the workspace). Labels and texts are Spanish because they are shown to the user as they are.
-
-```json
-{
-  "version": 1,
-  "title": "Censo 2000, muestra del cuestionario ampliado, Aguascalientes",
-  "source": "censo",
-  "edition": 2000,
-  "design": "sample",
-  "unit": "person",
-  "unitPlural": "personas",
-  "total": { "level": "entidad", "code": "01", "label": "Aguascalientes" },
-  "columns": [
-    { "name": "CVE_MUN", "role": "geographic", "label": "Municipio", "geoLevel": "municipio",
-      "categories": [{ "code": "01001", "label": "Aguascalientes" }] },
-    { "name": "FACTOR", "role": "weight", "label": "Factor de expansión" },
-    { "name": "HLENGUA", "role": "dichotomous", "label": "Condición de habla de lengua indígena",
-      "positiveValue": "1", "positiveLabel": "Habla lengua indígena",
-      "universe": "población de 5 años y más", "missingCodes": ["9"],
-      "categories": [{ "code": "1", "label": "Habla lengua indígena" }, { "code": "9", "label": "No especificado" }] },
-    { "name": "EDAD", "role": "measure", "label": "Edad", "unit": "años", "missingCodes": ["999"] }
-  ]
-}
-```
-
-- `role` is one of `category`, `ordinal`, `dichotomous`, `geographic`, `measure`, `weight`, `stratum`, `psu`, `identifier`, `label`, `temporal`, `free_text` (section 3.2 of the template proposal). At most one column has each of `weight`, `stratum` and `psu`. A `dichotomous` column needs `positiveValue`, the code that counts as "yes".
-- Optional per column: `categories` (`[{ code, label }]` in catalog order, "not specified" ones included), `missingCodes`, `universe` (who was asked; an empty cell is outside it), `notApplicableLabel` (label of an empty cell when the column splits a result), `positiveLabel`, `unit` and `geoLevel`.
-- `total` is the place the whole file covers: the "total" row of every template result.
-- **"Not specified" is kept, "not applicable" is empty.** The templates expect the codes of `missingCodes` to still be in the data of categorical columns (so the user can include or exclude them) and an empty cell (`NULL`) to mean the question was not asked. Harmonized views do that since 2026-11-22 for variables with a role of codes ([Harmonized views](#harmonized-views)), but the harmonizer does not write `variableMetadata` yet (phase F3b of the plan), so the demo resource is still prepared by a script.
-- Rules: the object must have this shape and every column it names must exist in the file (`400 variable_metadata_invalid`, with `params.path` and `params.problem` of the first problem). Unknown properties are dropped. A resource whose stored metadata cannot be read answers `variableMetadata: null`; the request never fails because of it.
+- The [analysis templates](#analysis-templates-demo) read this object, one edition at a time (`analysis-templates/template-metadata.ts`). Until 2026-11-22 they read a second object loaded by hand, `variableMetadata`, with its route `PUT .../resources/:resourceId/variable-metadata`: both were removed (phase 3b of the plan, decision D14), and a migration dropped the column. Uploaded files have no templates for now (D5).
 
 Query rules:
 
@@ -462,7 +428,15 @@ Rules:
 
 ## Analysis templates (demo)
 
-Instead of building an analysis step by step, the user picks what to find out (a template), then its variables, and the server applies the method: the expansion factor, the universe of each question, the "not specified" codes and the standard error. It is the demo of `propuesta_plantillas/propuesta_plantillas_analisis.md` (workspace): the three templates are written in code, their SQL is written by hand (one query per domain set, through `AnalysisService.runInternalQueries`), they need [variable metadata](#variable-metadata), and nothing is saved. The answer has the shape the full plan keeps.
+Instead of building an analysis step by step, the user picks what to find out (a template), then its variables, and the server applies the method: the expansion factor, the universe of each question, the "not specified" codes and the standard error. It is the demo of `propuesta_plantillas/propuesta_plantillas_analisis.md` (workspace): the three templates are written in code, their SQL is written by hand (one query per domain set, through `AnalysisService.runInternalQueries`), and nothing is saved. The answer has the shape the full plan keeps.
+
+What they know about the resource comes from its [source metadata](#source-metadata), written by the harmonizer when the view was saved as a resource: `templateMetadata` (`analysis-templates/template-metadata.ts`) reads it for one edition.
+
+- Only columns with a role are offered, with their use in analysis: `label` (the variable's description, or its name), `universe`, `categories` (a category without a label shows its code), `positiveValue` (its category's label says what "yes" is), `notApplicableLabel`, `unit` and `geoLevel` (written in the result's `nivel` in Spanish: `entidad`, `municipio`, `localidad`…).
+- **One edition per analysis.** A resource made from a survey view of several editions needs `edition` in the preview (an id of `sourceMetadata.editions`): without it, `400 template_edition_required` with `params.editions` (`[{ id, name, year }]`); an id that is not one of them, `400 template_edition_unknown`. The queries then read only that edition's rows (`_dataset` and `_year`, through the `where` of `runInternalQueries`), the expansion factor is that edition's (`editions[].weight`), and `edicion` and the total row (its `coverage`, or `Total` when it has none) come from it. Comparing editions is phase 9. A file of one edition needs nothing.
+- The listing (`GET .../templates`) takes `?edition=` and, without it, describes the first edition; it answers `editions` so the client can offer the choice.
+- `fuente` is the survey's short name (or its name). The design and unit are the edition's: an edition without them (uploaded before they were asked) has no templates (`template_no_metadata`, like a resource without metadata, whose message asks to save it again from the harmonizer).
+- With the three cell states of the harmonizer, "not applicable" (an empty cell) is outside the universe and "not specified" is a code in the data of variables of codes, so `include`/`exclude` works on real data. In a measure the codes are already `NULL`: the text of a mean says how many of the excluded records were "not specified", from the metadata's `missingCount` of the edition.
 
 | Method | Path | Required role | Description |
 | --- | --- | --- | --- |
@@ -487,7 +461,7 @@ How each figure is computed (`w` is the expansion factor, 1 in a census):
 - **Standard error** (`ee`, and `ee_total` with `den_total`): Taylor linearization of the ratio `num / den` with the ultimate cluster estimator, by domain, over every row of the file, with the centering rule for strata with one PSU (`analysis/standard-error.ts`, which lists the rules). `0` when the ratio is 0 or 1, `null` when `den` is 0 and when the source is a census or does not declare a `stratum` and a `psu`.
 - Each template returns one row per group (when there is one) and a total row (`es_total: true`) computed over the whole file, never by adding up the groups.
 
-Checked against the real validation case of the proposal (Census 2000 sample of Aguascalientes, 87,507 records): `template-run.spec.ts` compares every municipality and the entity, in both "not specified" choices, with the files computed separately in Polars (`test/fixtures/templates/`). For example, the entity's speakers of an indigenous language, excluding "not specified": `num` 1,793, `den` 821,364, `den_total` 940,778, `ee` 0.000424, 148 records.
+Checked against the real validation case of the proposal (Census 2000 sample of Aguascalientes, 87,507 records): `template-run.spec.ts` compares every municipality and the entity, in both "not specified" choices, with the files computed separately in Polars (`test/fixtures/templates/`, whose metadata is version 2 as the harmonizer writes it). For example, the entity's speakers of an indigenous language, excluding "not specified": `num` 1,793, `den` 821,364, `den_total` 940,778, `ee` 0.000424, 148 records. The same figures come out of the resource that `demo-plantillas/armonizar.mjs` (workspace) builds through the harmonizer: upload, mapping, catalogs, use in analysis and "use in a dataset", with no hand-written metadata.
 
 The answer:
 
@@ -495,6 +469,7 @@ The answer:
 {
   "template": { "id": "proportion", "version": 1, "contract": "proporcion@2", "name": "Proporción" },
   "source": { "title": "Censo 2000, …", "design": "sample", "unitPlural": "personas" },
+  "edition": { "id": "2c1b17a3-…", "name": "Muestra censal 2000 (Aguascalientes)", "year": 2000 },
   "inputs": { "variable": null, "conditions": ["HLENGUA"], "measure": null, "group": "CVE_MUN", "missing": "exclude" },
   "dimensions": {
     "group": { "column": "nombre", "codeColumn": "cve", "label": "Municipio", "role": "geographic" },
@@ -506,7 +481,7 @@ The answer:
   "warnings": [{ "code": "few_cases", "message": "…" }, { "code": "low_precision", "base": "own", "message": "…" }],
   "charts": { "recommended": "barras_horizontales", "compatible": ["barras_horizontales", "lollipop", "tabla"] },
   "rows": [{
-    "fuente": "censo", "edicion": 2000, "indicador": "Habla lengua indígena",
+    "fuente": "Censo 2000", "edicion": 2000, "indicador": "Habla lengua indígena",
     "criterio": "Habla lengua indígena, población de 5 años y más",
     "nivel": "municipio", "cve": "01001", "nombre": "Aguascalientes", "grupo_codigo": null, "grupo": null,
     "corte_codigo": null, "corte": null,
@@ -518,7 +493,7 @@ The answer:
 - The rows use the column names of the proposal's result table (section 3.6), because they are also the CSV the user downloads. Percentages are not stored: the web app computes `num / den`, so switching between the bases of a proportion (`den` or `den_total`) does not ask the server again.
 - A `geographic` group goes in `nivel`, `cve` and `nombre`; any other group in `grupo_codigo` and `grupo` (`Todos` in the total row), with its empty cells as `notApplicableLabel`. The categories of a distribution go in `corte_codigo` and `corte`.
 - `texts`, `bases` and the `message` of `warnings` are Spanish content copied from the contracts, already filled in. A warning with `base` is only true of that base of a proportion. Warning codes: `census_source`, `precision_not_available`, `different_universes`, `missing_no_effect`, `empty_universe`, `extreme_proportions`, `low_precision` (coefficient of variation over 30%), `few_cases` (a figure based on 1 or 2 records). The last two thresholds are provisional, as in the proposal's preview.
-- Errors: `404 template_not_found`, `400 template_no_metadata`, `template_input_required`, `template_input_count`, `template_input_unknown`, `template_input_role_mismatch`, `template_too_many_categories`, `template_variable_in_two_roles`, `template_factor_required`, plus `404 resource_not_found` and `404 resource_file_missing`.
+- Errors: `404 template_not_found`, `400 template_no_metadata`, `template_edition_required`, `template_edition_unknown`, `template_input_required`, `template_input_count`, `template_input_unknown`, `template_input_role_mismatch`, `template_too_many_categories`, `template_variable_in_two_roles`, `template_factor_required`, plus `404 resource_not_found` and `404 resource_file_missing`.
 
 ## Public catalog
 

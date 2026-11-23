@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { OrgRole } from '@prisma/client';
 import { JwtAuthGuard } from '../../shared/guards/jwt-auth.guard.js';
 import { OrgRolesGuard } from '../../shared/guards/org-roles.guard.js';
@@ -15,8 +15,12 @@ export class AnalysisTemplatesController {
 
   @Get('resources/:resourceId/templates')
   @OrgRoles(OrgRole.ADMIN, OrgRole.EDITOR, OrgRole.MEMBER)
-  list(@Param('datasetId') datasetId: string, @Param('resourceId') resourceId: string) {
-    return this.templates.list(datasetId, resourceId);
+  list(
+    @Param('datasetId') datasetId: string,
+    @Param('resourceId') resourceId: string,
+    @Query('edition') edition?: string,
+  ) {
+    return this.templates.list(datasetId, resourceId, edition || undefined);
   }
 
   @Post('analyses/templates/preview')
