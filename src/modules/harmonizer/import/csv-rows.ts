@@ -1,7 +1,7 @@
 import { parse } from 'csv-parse';
 import type { Readable } from 'node:stream';
 import { csvError } from '../csv-errors.js';
-import { dedupeHeaders, type RenamedColumn } from '../harmonizer.service.js';
+import { dedupeHeaders, type RenamedColumn } from './upload-parse.js';
 import { ImportError } from './import-error.js';
 
 export interface CsvHeader {
@@ -11,7 +11,7 @@ export interface CsvHeader {
 
 /**
  * Reads a CSV stream row by row with the same csv-parse options as the synchronous upload
- * (`parseCsv` in harmonizer.service.ts), so values, quotes (H-07), blank lines and errors are
+ * (`parseCsv` in sync-upload.service.ts), so values, quotes (H-07), blank lines and errors are
  * the same. Rows are arrays: with csv-parse's `columns` option every row would become an
  * object, which made reading three times slower. The checks `columns` did are done here:
  * a row with another number of fields is the same `inconsistent_columns` error.

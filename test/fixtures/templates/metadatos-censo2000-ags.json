@@ -1,136 +1,346 @@
 {
-  "version": 1,
+  "version": 2,
   "title": "Censo 2000, muestra del cuestionario ampliado, Aguascalientes",
-  "source": "censo",
-  "edition": 2000,
+  "source": "Censo 2000",
   "design": "sample",
   "unit": "person",
   "unitPlural": "personas",
-  "total": { "level": "entidad", "code": "01", "label": "Aguascalientes" },
+  "total": {
+    "level": "state",
+    "code": "01",
+    "label": "Aguascalientes"
+  },
+  "editions": [
+    {
+      "id": "censo2000-ags",
+      "name": "Muestra censal 2000",
+      "year": 2000,
+      "design": "sample",
+      "unit": "person",
+      "coverage": {
+        "level": "state",
+        "code": "01",
+        "label": "Aguascalientes"
+      },
+      "weight": "FACTOR"
+    }
+  ],
   "columns": [
-    { "name": "ENT", "role": "identifier", "label": "Entidad" },
+    {
+      "name": "ENT",
+      "type": "VARCHAR",
+      "role": "identifier",
+      "label": "Entidad"
+    },
     {
       "name": "CVE_MUN",
+      "type": "VARCHAR",
       "role": "geographic",
       "label": "Municipio",
-      "geoLevel": "municipio",
       "categories": [
-        { "code": "01001", "label": "Aguascalientes" },
-        { "code": "01002", "label": "Asientos" },
-        { "code": "01003", "label": "Calvillo" },
-        { "code": "01004", "label": "Cosío" },
-        { "code": "01005", "label": "Jesús María" },
-        { "code": "01006", "label": "Pabellón de Arteaga" },
-        { "code": "01007", "label": "Rincón de Romos" },
-        { "code": "01008", "label": "San José de Gracia" },
-        { "code": "01009", "label": "Tepezalá" },
-        { "code": "01010", "label": "El Llano" },
-        { "code": "01011", "label": "San Francisco de los Romo" }
-      ]
+        {
+          "code": "01001",
+          "label": "Aguascalientes",
+          "kind": "value"
+        },
+        {
+          "code": "01002",
+          "label": "Asientos",
+          "kind": "value"
+        },
+        {
+          "code": "01003",
+          "label": "Calvillo",
+          "kind": "value"
+        },
+        {
+          "code": "01004",
+          "label": "Cosío",
+          "kind": "value"
+        },
+        {
+          "code": "01005",
+          "label": "Jesús María",
+          "kind": "value"
+        },
+        {
+          "code": "01006",
+          "label": "Pabellón de Arteaga",
+          "kind": "value"
+        },
+        {
+          "code": "01007",
+          "label": "Rincón de Romos",
+          "kind": "value"
+        },
+        {
+          "code": "01008",
+          "label": "San José de Gracia",
+          "kind": "value"
+        },
+        {
+          "code": "01009",
+          "label": "Tepezalá",
+          "kind": "value"
+        },
+        {
+          "code": "01010",
+          "label": "El Llano",
+          "kind": "value"
+        },
+        {
+          "code": "01011",
+          "label": "San Francisco de los Romo",
+          "kind": "value"
+        }
+      ],
+      "geoLevel": "municipality"
     },
-    { "name": "FACTOR", "role": "weight", "label": "Factor de expansión" },
-    { "name": "ESTRATO", "role": "stratum", "label": "Estrato de diseño" },
-    { "name": "UPM", "role": "psu", "label": "Unidad primaria de muestreo" },
+    {
+      "name": "FACTOR",
+      "type": "BIGINT",
+      "role": "weight",
+      "label": "Factor de expansión"
+    },
+    {
+      "name": "ESTRATO",
+      "type": "VARCHAR",
+      "role": "stratum",
+      "label": "Estrato de diseño"
+    },
+    {
+      "name": "UPM",
+      "type": "VARCHAR",
+      "role": "psu",
+      "label": "Unidad primaria de muestreo"
+    },
     {
       "name": "SEXO",
+      "type": "VARCHAR",
       "role": "category",
       "label": "Sexo",
       "categories": [
-        { "code": "1", "label": "Hombre" },
-        { "code": "2", "label": "Mujer" }
+        {
+          "code": "1",
+          "label": "Hombre",
+          "kind": "value"
+        },
+        {
+          "code": "2",
+          "label": "Mujer",
+          "kind": "value"
+        }
       ]
     },
     {
       "name": "EDAD",
+      "type": "BIGINT",
       "role": "measure",
       "label": "Edad",
       "unit": "años",
-      "missingCodes": ["999"]
+      "missingCodes": [
+        "999"
+      ],
+      "missingCodesAreNull": true,
+      "missingCount": {
+        "censo2000-ags": 190
+      }
     },
     {
       "name": "GRUPO_EDAD",
+      "type": "VARCHAR",
       "role": "ordinal",
       "label": "Grupo de edad",
       "categories": [
-        { "code": "0", "label": "0 a 4 años" },
-        { "code": "1", "label": "5 a 14 años" },
-        { "code": "2", "label": "15 a 29 años" },
-        { "code": "3", "label": "30 a 59 años" },
-        { "code": "4", "label": "60 años y más" },
-        { "code": "99", "label": "No especificado" }
+        {
+          "code": "0",
+          "label": "0 a 4 años",
+          "kind": "value"
+        },
+        {
+          "code": "1",
+          "label": "5 a 14 años",
+          "kind": "value"
+        },
+        {
+          "code": "2",
+          "label": "15 a 29 años",
+          "kind": "value"
+        },
+        {
+          "code": "3",
+          "label": "30 a 59 años",
+          "kind": "value"
+        },
+        {
+          "code": "4",
+          "label": "60 años y más",
+          "kind": "value"
+        },
+        {
+          "code": "99",
+          "label": "No especificado",
+          "kind": "missing"
+        }
       ],
-      "missingCodes": ["99"]
+      "missingCodes": [
+        "99"
+      ],
+      "missingCodesAreNull": false
     },
     {
       "name": "HLENGUA",
+      "type": "VARCHAR",
       "role": "dichotomous",
       "label": "Condición de habla de lengua indígena",
-      "positiveValue": "1",
-      "positiveLabel": "Habla lengua indígena",
       "universe": "población de 5 años y más",
-      "notApplicableLabel": "No aplica (menores de 5 años)",
       "categories": [
-        { "code": "1", "label": "Habla lengua indígena" },
-        { "code": "2", "label": "No habla lengua indígena" },
-        { "code": "9", "label": "No especificado" }
+        {
+          "code": "1",
+          "label": "Habla lengua indígena",
+          "kind": "value"
+        },
+        {
+          "code": "2",
+          "label": "No habla lengua indígena",
+          "kind": "value"
+        },
+        {
+          "code": "9",
+          "label": "No especificado",
+          "kind": "missing"
+        }
       ],
-      "missingCodes": ["9"]
+      "positiveValue": "1",
+      "notApplicableLabel": "No aplica (menores de 5 años)",
+      "missingCodes": [
+        "9"
+      ],
+      "missingCodesAreNull": false
     },
     {
       "name": "PERETN",
+      "type": "VARCHAR",
       "role": "dichotomous",
       "label": "Pertenencia a un grupo indígena",
-      "positiveValue": "1",
-      "positiveLabel": "Pertenece a un grupo indígena",
       "universe": "población de 5 años y más",
-      "notApplicableLabel": "No aplica (menores de 5 años)",
       "categories": [
-        { "code": "1", "label": "Pertenece a un grupo indígena" },
-        { "code": "2", "label": "No pertenece a un grupo indígena" },
-        { "code": "9", "label": "No especificado" }
+        {
+          "code": "1",
+          "label": "Pertenece a un grupo indígena",
+          "kind": "value"
+        },
+        {
+          "code": "2",
+          "label": "No pertenece a un grupo indígena",
+          "kind": "value"
+        },
+        {
+          "code": "9",
+          "label": "No especificado",
+          "kind": "missing"
+        }
       ],
-      "missingCodes": ["9"]
+      "positiveValue": "1",
+      "notApplicableLabel": "No aplica (menores de 5 años)",
+      "missingCodes": [
+        "9"
+      ],
+      "missingCodesAreNull": false
     },
     {
       "name": "ESCOLARIDAD",
+      "type": "VARCHAR",
       "role": "ordinal",
       "label": "Escolaridad",
       "universe": "población de 5 años y más",
-      "notApplicableLabel": "No aplica (menores de 5 años)",
       "categories": [
-        { "code": "0", "label": "Sin escolaridad" },
-        { "code": "1", "label": "Básica" },
-        { "code": "2", "label": "Media superior y técnica" },
-        { "code": "3", "label": "Superior" },
-        { "code": "9", "label": "No especificado" }
+        {
+          "code": "0",
+          "label": "Sin escolaridad",
+          "kind": "value"
+        },
+        {
+          "code": "1",
+          "label": "Básica",
+          "kind": "value"
+        },
+        {
+          "code": "2",
+          "label": "Media superior y técnica",
+          "kind": "value"
+        },
+        {
+          "code": "3",
+          "label": "Superior",
+          "kind": "value"
+        },
+        {
+          "code": "9",
+          "label": "No especificado",
+          "kind": "missing"
+        }
       ],
-      "missingCodes": ["9"]
+      "notApplicableLabel": "No aplica (menores de 5 años)",
+      "missingCodes": [
+        "9"
+      ],
+      "missingCodesAreNull": false
     },
     {
       "name": "ACTIVIDAD",
+      "type": "VARCHAR",
       "role": "category",
       "label": "Condición de actividad",
       "universe": "población de 12 años y más",
-      "notApplicableLabel": "No aplica (menores de 12 años)",
       "categories": [
-        { "code": "1", "label": "Ocupada" },
-        { "code": "2", "label": "Desocupada" },
-        { "code": "3", "label": "No económicamente activa" },
-        { "code": "99", "label": "No especificado" }
+        {
+          "code": "1",
+          "label": "Ocupada",
+          "kind": "value"
+        },
+        {
+          "code": "2",
+          "label": "Desocupada",
+          "kind": "value"
+        },
+        {
+          "code": "3",
+          "label": "No económicamente activa",
+          "kind": "value"
+        },
+        {
+          "code": "99",
+          "label": "No especificado",
+          "kind": "missing"
+        }
       ],
-      "missingCodes": ["99"]
+      "notApplicableLabel": "No aplica (menores de 12 años)",
+      "missingCodes": [
+        "99"
+      ],
+      "missingCodesAreNull": false
     },
     {
       "name": "AMBITO",
+      "type": "VARCHAR",
       "role": "dichotomous",
       "label": "Ámbito",
-      "positiveValue": "1",
-      "positiveLabel": "Vive en una localidad rural",
       "universe": "toda la población",
       "categories": [
-        { "code": "1", "label": "Rural (menos de 2,500 habitantes)" },
-        { "code": "2", "label": "Urbano" }
-      ]
+        {
+          "code": "1",
+          "label": "Rural (menos de 2,500 habitantes)",
+          "kind": "value"
+        },
+        {
+          "code": "2",
+          "label": "Urbano",
+          "kind": "value"
+        }
+      ],
+      "positiveValue": "1"
     }
-  ]
+  ],
+  "origin": null
 }

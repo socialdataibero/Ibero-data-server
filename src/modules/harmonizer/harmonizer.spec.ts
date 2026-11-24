@@ -10,7 +10,8 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LocalStorageService } from '../storage/local-storage.service.js';
-import { HarmonizerService, dedupeHeaders } from './harmonizer.service.js';
+import { createHarmonizerServices } from './harmonizer.testing.js';
+import { dedupeHeaders } from './import/upload-parse.js';
 
 describe('dedupeHeaders', () => {
   it('keeps unique headers as they are', () => {
@@ -89,8 +90,15 @@ function makeService(
   };
   const storage = new LocalStorageService();
   Object.defineProperty(storage, 'root', { value: root });
-  const service = new HarmonizerService(prisma as any, {} as any, storage);
-  return { service, prisma, storage, rows };
+  const services = createHarmonizerServices(prisma as any, {} as any, storage);
+  return {
+    editionService: services.editions,
+    surveyService: services.surveys,
+    sweep: services.sweep,
+    prisma,
+    storage,
+    rows,
+  };
 }
 
 const files = async (dir = 'harmonizer') =>
@@ -115,34 +123,34 @@ afterEach(async () => {
 
 describe('removeDataset', () => {
   it('borra la edición y su archivo', async () => {
-    const { service, rows } = makeService([
+    const { editionService, rows } = makeService([
       { id: ID_A, name: 'E1', surveyId: 's' },
     ]);
     await touch(`${ID_A}.parquet`);
-    await service.removeDataset(ID_A);
+    await editionService.removeDataset(ID_A);
     expect(rows.has(ID_A)).toBe(false);
     expect(await files()).toEqual([]);
   });
 
   it('borra también el original comprimido de una edición importada', async () => {
-    const { service } = makeService([{ id: ID_A, name: 'E1', surveyId: 's' }]);
+    const { editionService } = makeService([{ id: ID_A, name: 'E1', surveyId: 's' }]);
     await mkdir(join(root, 'harmonizer', 'originals'));
     await touch(`${ID_A}.parquet`);
     await touch(`originals/${ID_A}.csv.gz`);
-    await service.removeDataset(ID_A);
+    await editionService.removeDataset(ID_A);
     expect(await files()).toEqual(['originals']);
     expect(await files('harmonizer/originals')).toEqual([]);
   });
 
   it('con el archivo bloqueado no borra nada y responde 409', async () => {
-    const { service, storage, rows } = makeService([
+    const { editionService, storage, rows } = makeService([
       { id: ID_A, name: 'E1', surveyId: 's' },
     ]);
     await touch(`${ID_A}.parquet`);
     vi.spyOn(storage, 'setAside').mockRejectedValue(
       new Error('EBUSY: resource busy or locked'),
     );
-    const err = await service.removeDataset(ID_A).catch((e) => e);
+    const err = await editionService.removeDataset(ID_A).catch((e) => e);
     expect(err).toBeInstanceOf(ConflictException);
     expect(err.getResponse()).toMatchObject({ code: 'harmonizer_file_in_use' });
     expect(err.getResponse().message).toMatch(/No se borró la edición «E1»/);
@@ -151,27 +159,27 @@ describe('removeDataset', () => {
   });
 
   it('si falla el borrado en la base, el archivo vuelve a su lugar', async () => {
-    const { service, prisma } = makeService([
+    const { editionService, prisma } = makeService([
       { id: ID_A, name: 'E1', surveyId: 's' },
     ]);
     await touch(`${ID_A}.parquet`);
     prisma.harmonizerDataset.delete.mockRejectedValueOnce(new Error('db down'));
-    await expect(service.removeDataset(ID_A)).rejects.toThrow('db down');
+    await expect(editionService.removeDataset(ID_A)).rejects.toThrow('db down');
     expect(await files()).toEqual([`${ID_A}.parquet`]);
   });
 
   it('una edición sin archivo (anterior a H-08) se borra igual', async () => {
-    const { service, rows } = makeService([
+    const { editionService, rows } = makeService([
       { id: ID_A, name: 'E1', surveyId: 's' },
     ]);
-    await service.removeDataset(ID_A);
+    await editionService.removeDataset(ID_A);
     expect(rows.has(ID_A)).toBe(false);
   });
 });
 
 describe('removeSurvey', () => {
   it('si una edición está bloqueada, devuelve las ya apartadas y no borra nada', async () => {
-    const { service, storage, rows } = makeService([
+    const { surveyService, storage, rows } = makeService([
       { id: ID_A, name: 'E1', surveyId: 's' },
       { id: ID_B, name: 'E2', surveyId: 's' },
     ]);
@@ -182,7 +190,7 @@ describe('removeSurvey', () => {
       if (key.includes(ID_B)) throw new Error('EBUSY');
       return real(key);
     });
-    const err = await service.removeSurvey('s').catch((e) => e);
+    const err = await surveyService.removeSurvey('s').catch((e) => e);
     expect(err.getResponse().message).toMatch(/su edición «E2»/);
     expect(rows.size).toBe(2);
     expect(await files()).toEqual(
@@ -193,7 +201,7 @@ describe('removeSurvey', () => {
 
 describe('limpieza al arrancar', () => {
   it('borra huérfanos y apartados sin edición, y devuelve los apartados con edición', async () => {
-    const { service } = makeService([
+    const { sweep } = makeService([
       { id: ID_A, name: 'E1', surveyId: 's' },
       { id: ID_B, name: 'E2', surveyId: 's' },
     ]);
@@ -202,24 +210,24 @@ describe('limpieza al arrancar', () => {
     await touchOld(`${ID_GONE}.parquet`);
     await touchOld(`${ID_GONE}.parquet.deleting`);
     await touch('notas.txt');
-    await service.onApplicationBootstrap();
+    await sweep.onApplicationBootstrap();
     expect(await files()).toEqual(
       [`${ID_A}.parquet`, `${ID_B}.parquet`, 'notas.txt'].sort(),
     );
   });
 
   it('no borra huérfanos recientes: pueden ser de una importación en curso', async () => {
-    const { service } = makeService([{ id: ID_A, name: 'E1', surveyId: 's' }]);
+    const { sweep } = makeService([{ id: ID_A, name: 'E1', surveyId: 's' }]);
     await touch(`${ID_A}.parquet`);
     await touch(`${ID_GONE}.parquet`);
-    await service.onApplicationBootstrap();
+    await sweep.onApplicationBootstrap();
     expect(await files()).toEqual(
       [`${ID_A}.parquet`, `${ID_GONE}.parquet`].sort(),
     );
   });
 
   it('también limpia los originales comprimidos', async () => {
-    const { service } = makeService([
+    const { sweep } = makeService([
       { id: ID_A, name: 'E1', surveyId: 's' },
       { id: ID_B, name: 'E2', surveyId: 's' },
     ]);
@@ -228,22 +236,22 @@ describe('limpieza al arrancar', () => {
     await touch(`originals/${ID_A}.csv.gz`);
     await touch(`originals/${ID_B}.csv.gz.deleting`);
     await touchOld(`originals/${ID_GONE}.csv.gz`);
-    await service.onApplicationBootstrap();
+    await sweep.onApplicationBootstrap();
     expect(await files('harmonizer/originals')).toEqual(
       [`${ID_A}.csv.gz`, `${ID_B}.csv.gz`].sort(),
     );
   });
 
   it('si ningún archivo es de esta base, no toca la carpeta', async () => {
-    const { service } = makeService([]);
+    const { sweep } = makeService([]);
     await touch(`${ID_GONE}.parquet`);
-    await service.onApplicationBootstrap();
+    await sweep.onApplicationBootstrap();
     expect(await files()).toEqual([`${ID_GONE}.parquet`]);
   });
 
   it('sin carpeta no falla', async () => {
-    const { service } = makeService([]);
+    const { sweep } = makeService([]);
     await rm(join(root, 'harmonizer'), { recursive: true });
-    await expect(service.onApplicationBootstrap()).resolves.toBeUndefined();
+    await expect(sweep.onApplicationBootstrap()).resolves.toBeUndefined();
   });
 });

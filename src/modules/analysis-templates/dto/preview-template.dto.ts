@@ -34,4 +34,10 @@ export class PreviewTemplateDto {
   @IsOptional()
   @IsIn(['exclude', 'include'], { message: 'missing must be exclude or include.' })
   missing?: 'exclude' | 'include';
+
+  /** The edition of the analysis (an id of `editions`), needed when the resource has several. */
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString({ message: 'edition must be a string or null.' })
+  edition?: string | null;
 }

@@ -4,7 +4,7 @@ import type { ValueType } from './harmonized-view.js';
 /**
  * Value checks of a source column, as DuckDB SQL over the edition's raw Parquet, so that
  * mapping does not load the rows into Node. Each query must give exactly what the JavaScript
- * rules in `harmonized-view.ts` (`inferValueType`, `valuesNotFitting`) and `codebook.ts`
+ * rules in `harmonized-view.testing.ts` (`inferValueType`, `valuesNotFitting`) and `codebook.ts`
  * (`codeKey`) give over the same values; `column-checks.spec.ts` compares them.
  *
  * Every query first groups the column by its raw value and only then trims and checks the
@@ -255,4 +255,47 @@ export function notFittingQuery(check: NotFittingCheck): string {
 
 export function readNotFitting(rows: unknown[][]): string[] {
   return rows.map((r) => String(r[0]));
+}
+
+/**
+ * How many cells of a raw column hold one of `codes` (trimmed values): the «No especificado»
+ * cells a measure turns into `NULL` (D13 of the templates plan). One row, one number; the column
+ * is grouped first, so it costs one scan. Read it with `readCount`.
+ */
+export function codeCountQuery(rawColumn: string, codes: string[]): string {
+  const col = `"${rawColumn.replace(/"/g, '""')}"`;
+  const grouped = `SELECT ${jsTrimSql('r')} AS v, n FROM (SELECT ${col} AS r, count(*) AS n FROM data GROUP BY ${col})`;
+  const where = codes.length > 0 ? `v IN (${sqlList(codes)})` : 'false';
+  // DOUBLE, not HUGEINT: the stored result is JSON.
+  return `SELECT CAST(coalesce(sum(n) FILTER (WHERE ${where}), 0) AS DOUBLE) AS n FROM (${grouped})`;
+}
+
+export function readCount(row: unknown[]): number {
+  return Number(row[0] ?? 0);
+}
+
+/**
+ * Which of `codes` a raw column takes as a valid value: its non-empty trimmed values that are not
+ * its own `missingCodes`, after the recoding, that are in `codes`. One row with the list, in
+ * order of first appearance; read it with `readValueList`. For the attach check of kept missing
+ * codes: a code that is «No especificado» in one edition and a value in another.
+ */
+export function valuesAmongQuery(check: {
+  rawColumn: string;
+  missingCodes: string[];
+  valueMap: Map<string, string>;
+  codes: string[];
+}): string {
+  const keep = check.missingCodes.length > 0 ? `v NOT IN (${sqlList(check.missingCodes)})` : 'true';
+  const entries = [...check.valueMap];
+  const final =
+    entries.length > 0
+      ? `CASE v ${entries.map(([from, to]) => `WHEN ${sqlString(from)} THEN ${sqlString(to)}`).join(' ')} ELSE v END`
+      : 'v';
+  const among = check.codes.length > 0 ? `x IN (${sqlList(check.codes)})` : 'false';
+  return `SELECT coalesce(list(x ORDER BY rn) FILTER (WHERE ${among}), []) AS found FROM (SELECT ${final} AS x, min(rn) AS rn FROM (${trimmedValues(check.rawColumn, true)}) WHERE ${keep} GROUP BY x)`;
+}
+
+export function readValueList(row: unknown[]): string[] {
+  return ((row[0] as unknown[] | null) ?? []).map(String);
 }

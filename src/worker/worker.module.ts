@@ -5,6 +5,8 @@ import { StorageModule } from '../modules/storage/storage.module.js';
 import { AnalysisModule } from '../modules/analysis/analysis.module.js';
 import { ANALYSIS_DUCKDB_OPTIONS } from '../modules/analysis/analysis.service.js';
 import { HarmonizerImportProcessor } from '../modules/harmonizer/import/import-processor.js';
+import { EditionFilesService } from '../modules/harmonizer/editions/edition-files.service.js';
+import { ColumnProfilesService } from '../modules/harmonizer/profiles/column-profiles.service.js';
 import {
   UPLOAD_STORAGE,
   createUploadStorage,
@@ -44,6 +46,8 @@ class WorkerDuckDbModule {}
   providers: [
     { provide: UPLOAD_STORAGE, useFactory: () => createUploadStorage() },
     HarmonizerImportProcessor,
+    EditionFilesService,
+    ColumnProfilesService,
     JobHandlers,
     WorkerService,
   ],

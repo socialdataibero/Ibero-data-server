@@ -172,13 +172,15 @@ export class AnalysisService {
   async runInternalQueries(
     parquetPath: string,
     queries: string[],
+    /** SQL condition built by the server: the view `data` keeps only those rows. */
+    where: string | null = null,
   ): Promise<unknown[][][]> {
     if (queries.length === 0) return [];
     const duckdb = await this.openInstance();
     const connection = await duckdb.instance.connect();
     try {
       await connection.run(
-        `CREATE TEMP VIEW data AS SELECT * FROM read_parquet('${escapeSqlLiteral(parquetPath)}', file_row_number = true)`,
+        `CREATE TEMP VIEW data AS SELECT * FROM read_parquet('${escapeSqlLiteral(parquetPath)}', file_row_number = true)${where ? ` WHERE ${where}` : ''}`,
       );
       const out: unknown[][][] = [];
       for (const sql of queries) {
@@ -463,31 +465,6 @@ export class AnalysisService {
     } finally {
       connection.closeSync();
       await duckdb.close();
-    }
-  }
-
-  /**
-   * Lee solo `limit` filas desde la `offset` (base 0), en el orden del archivo y solo
-   * con las columnas pedidas (lo usa el armonizador para paginar sus vistas).
-   * DuckDB conserva el orden de inserción por defecto, así que LIMIT/OFFSET sin
-   * ORDER BY respeta el orden de las filas del Parquet.
-   */
-  async readParquetSlice(
-    parquetPath: string,
-    columns: string[],
-    offset: number,
-    limit: number,
-  ): Promise<unknown[][]> {
-    if (columns.length === 0 || limit <= 0) return [];
-    const selectList = columns.map((c) => quoteIdent(c)).join(', ');
-    const sql = `SELECT ${selectList} FROM data LIMIT ${Math.trunc(limit)} OFFSET ${Math.max(Math.trunc(offset), 0)}`;
-    try {
-      return await this.withDataView(parquetPath, async (connection) => {
-        const reader = await connection.runAndReadAll(sql);
-        return reader.getRowsJson() as unknown[][];
-      });
-    } catch (err) {
-      throw safeDuckDbError(err, [parquetPath], 'parquet_read_failed');
     }
   }
 

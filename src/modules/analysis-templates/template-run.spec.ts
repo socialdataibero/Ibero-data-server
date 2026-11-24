@@ -3,8 +3,9 @@ import { fileURLToPath } from 'node:url';
 import { parse } from 'csv-parse/sync';
 import { describe, expect, it } from 'vitest';
 import { AnalysisService } from '../analysis/analysis.service.js';
-import { parseVariableMetadata } from '../analysis/variable-metadata.js';
+import { parseSourceMetadata, type SourceMetadata } from '../harmonizer/source-metadata.js';
 import { listTemplates } from './template-catalog.js';
+import { templateMetadata } from './template-metadata.js';
 import { runTemplate, type ResultRow, type TemplateRequest } from './template-run.js';
 
 /**
@@ -12,18 +13,19 @@ import { runTemplate, type ResultRow, type TemplateRequest } from './template-ru
  * Aguascalientes, 87,507 records. The expected files were computed separately in Polars by
  * `propuesta_plantillas/caso_real_censo2000_ags/calcular_esperados_censo2000.py`; the input is
  * the extract prepared for the demo by `demo-plantillas/preparar.mjs` (numbers typed, blanks as
- * null, "not specified" codes kept) with the metadata of `metadatos-censo2000-ags.json`.
+ * null, "not specified" codes kept) with the source metadata (version 2, as the harmonizer writes
+ * it) of `metadatos-censo2000-ags.json`.
  */
 const fixture = (name: string) =>
   fileURLToPath(new URL(`../../../test/fixtures/templates/${name}`, import.meta.url));
 const PARQUET = fixture('censo2000_ags_demo.parquet');
-const metadata = parseVariableMetadata(
+const source = parseSourceMetadata(
   JSON.parse(readFileSync(fixture('metadatos-censo2000-ags.json'), 'utf8')),
-  null,
-);
+)!;
+const metadata = templateMetadata(source)!;
 const analysis = new AnalysisService({ threads: '2' });
 const run = (request: TemplateRequest) =>
-  runTemplate(request, metadata, (queries) => analysis.runInternalQueries(PARQUET, queries));
+  runTemplate(request, metadata, (queries, filter) => analysis.runInternalQueries(PARQUET, queries, filter));
 
 type Expected = Record<string, string>;
 const expected = (name: string): Expected[] =>
@@ -134,7 +136,9 @@ describe('weighted mean over the Census 2000 sample', () => {
       const got = result.rows.find((r) => r.cve === w.cve)!;
       expect([got.num, got.den, got.casos, se(got.ee)]).toEqual([num(w.num), num(w.den), num(w.casos), expectedSe(w.ee)]);
     }
-    expect(result.texts.missing).toContain('190 registros sin dato de edad');
+    expect(result.texts.missing).toBe(
+      'Se excluyen 190 registros con «No especificado» en edad. El promedio se calcula sólo con quienes tienen dato.',
+    );
     expect(result.charts.recommended).toBe('lollipop');
   });
 });
@@ -164,5 +168,72 @@ describe('template choices', () => {
     await expect(
       runTemplate({ templateId: 'weighted_mean', measure: 'EDAD' }, noWeight, () => Promise.resolve([])),
     ).rejects.toMatchObject({ response: { code: 'template_factor_required' } });
+  });
+});
+
+describe('the edition of the analysis', () => {
+  // The same source as a survey view of two editions: `_dataset` and `_year` tell them apart.
+  const two: SourceMetadata = {
+    ...source,
+    editions: [
+      { ...source.editions[0], id: 'e2000', name: 'Muestra 2000', year: 2000 },
+      { ...source.editions[0], id: 'e2010', name: "Muestra 2010 'b'", year: 2010, weight: 'FACTOR' },
+    ],
+    columns: [
+      { name: '_dataset', type: 'VARCHAR' },
+      { name: '_year', type: 'BIGINT' },
+      { name: '_row', type: 'BIGINT' },
+      ...source.columns.map((c) =>
+        c.missingCount ? { ...c, missingCount: { e2000: 190, e2010: 12 } } : c,
+      ),
+    ],
+  };
+
+  it('a file of one edition needs no choice and filters nothing', () => {
+    expect(metadata).toMatchObject({ edition: 2000, source: 'Censo 2000', rowFilter: null });
+    expect(metadata.total).toEqual({ level: 'entidad', code: '01', label: 'Aguascalientes' });
+    expect(metadata.editionInfo).toEqual({ id: 'censo2000-ags', name: 'Muestra censal 2000', year: 2000 });
+  });
+
+  it('a file of several editions asks for one, and keeps only its rows', () => {
+    expect(() => templateMetadata(two)).toThrow(
+      expect.objectContaining({
+        response: expect.objectContaining({
+          code: 'template_edition_required',
+          params: { editions: [
+            { id: 'e2000', name: 'Muestra 2000', year: 2000 },
+            { id: 'e2010', name: "Muestra 2010 'b'", year: 2010 },
+          ] },
+        }),
+      }),
+    );
+    expect(() => templateMetadata(two, 'nope')).toThrow(
+      expect.objectContaining({ response: expect.objectContaining({ code: 'template_edition_unknown' }) }),
+    );
+    const later = templateMetadata(two, 'e2010')!;
+    expect(later.rowFilter).toBe(`"_dataset" = 'Muestra 2010 ''b''' AND "_year" = 2010`);
+    expect(later.edition).toBe(2010);
+    expect(later.columns.find((c) => c.name === 'EDAD')?.missingCount).toBe(12);
+    // Listing the templates takes the first edition instead of asking.
+    expect(templateMetadata(two, null, { pickFirst: true })?.edition).toBe(2000);
+    expect(later.columns.some((c) => c.name.startsWith('_'))).toBe(false);
+  });
+
+  it('the factor is the edition\'s, and no metadata or no design is no template', () => {
+    const otherFactor = templateMetadata({ ...two, editions: [two.editions[0], { ...two.editions[1], weight: 'UPM' }] }, 'e2010')!;
+    expect(otherFactor.columns.filter((c) => c.role === 'weight').map((c) => c.name)).toEqual(['UPM']);
+    expect(templateMetadata(null)).toBeNull();
+    expect(templateMetadata({ ...source, design: null, editions: [{ ...source.editions[0], design: null }] })).toBeNull();
+  });
+
+  it('the filter reaches DuckDB: rows outside the edition are not counted', async () => {
+    const all = await run({ templateId: 'proportion', conditions: ['HLENGUA'] });
+    const men = await runTemplate({ templateId: 'proportion', conditions: ['HLENGUA'] }, { ...metadata, rowFilter: `"SEXO" = '1'` }, (q, f) =>
+      analysis.runInternalQueries(PARQUET, q, f),
+    );
+    const bySex = await run({ templateId: 'proportion', conditions: ['HLENGUA'], group: 'SEXO' });
+    expect(all.rows[0].den_total).toBe(940778);
+    expect(men.rows[0].den_total).toBe(bySex.rows.find((r) => r.grupo_codigo === '1')!.den_total);
+    expect(men.rows[0].den_total).toBeLessThan(940778);
   });
 });

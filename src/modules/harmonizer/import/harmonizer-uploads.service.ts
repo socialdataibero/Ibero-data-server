@@ -17,7 +17,7 @@ import { JobsService } from '../../jobs/jobs.service.js';
 import type { AuthenticatedUser } from '../../auth/jwt-payload.interface.js';
 import { SurveyAccessService } from '../survey-access.service.js';
 import { NEW_SURVEY, UploadDatasetDto } from '../dto/upload-dataset.dto.js';
-import { datasetNameTaken } from '../harmonizer.service.js';
+import { datasetNameTaken } from '../harmonizer-errors.js';
 import { importErrorBody, type ImportErrorBody } from './import-error.js';
 import { importFormat } from './import-format.js';
 import { missingSourceInfo, sourceInfoRequiredBody } from '../source-metadata.js';

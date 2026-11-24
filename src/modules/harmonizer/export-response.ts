@@ -1,6 +1,6 @@
 import type { Response } from 'express';
 import { pipeline } from 'node:stream/promises';
-import type { ExportFile } from './harmonizer.service.js';
+import type { ExportFile } from './export-file.js';
 
 /** Sends a download as an attachment, with its size when it is known. */
 export function sendExportFile(res: Response, file: ExportFile): void {

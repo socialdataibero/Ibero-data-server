@@ -157,10 +157,6 @@ model Resource {
   /// when the resource is saved from the harmonizer. A snapshot: it does not follow later changes
   /// to the edition. Null on uploaded files and on resources created before it existed.
   sourceMetadata   Json?
-  /// What the analysis templates need about each variable (role, label, categories, "not
-  /// specified" codes, universe), loaded with `PUT …/variable-metadata`. Null until it is loaded.
-  /// See analysis/variable-metadata.ts.
-  variableMetadata Json?
   createdAt        DateTime @default(now())
 
   dataset  Dataset    @relation(fields: [datasetId], references: [id], onDelete: Cascade)
@@ -216,6 +212,9 @@ model HarmonizerSurvey {
   id             String        @id @default(uuid())
   name           String        @unique
   description    String?
+  /// Short name of the source for notes and the `fuente` column of a result, e.g. "Censo 2000".
+  /// Null = not given; the survey name is used instead.
+  shortName      String?
   createdAt      DateTime      @default(now())
   /// Owner (SDI-91): its ADMIN and EDITOR members may edit it. Null on surveys created before ownership; only the sysadmin edits those.
   organizationId String?
@@ -252,6 +251,9 @@ model HarmonizerDataset {
   design        String?
   /// What each record is: `person`, `dwelling` or `household`. Null like `design`.
   unit          String?
+  /// The place the whole edition covers, for the total row of an analysis:
+  /// `{ level, code, label }` (level as in `geoLevel` of a canonical variable). Null = not given.
+  coverage      Json?
 
   survey       HarmonizerSurvey          @relation(fields: [surveyId], references: [id], onDelete: Cascade)
   codebook     HarmonizerCodebook?       @relation(fields: [codebookId], references: [id], onDelete: SetNull)
@@ -283,6 +285,21 @@ model HarmonizerCanonicalVariable {
   reviewedSignature String?
   reviewedAt        DateTime?
   reviewedBy        String?
+  /// Use in analysis (template plan, phase 1); every field null = not described yet. `role`
+  /// is one of `variable-role.ts`; the sample design roles (weight, stratum, PSU) stay in the
+  /// mapping of each edition. The label of the variable is `description`.
+  role              String?
+  /// Who was asked, e.g. "población de 3 años y más". The rule is always "the question was
+  /// asked": an empty cell is outside it.
+  universe          String?
+  /// Dichotomous: the code that counts as "yes".
+  positiveValue     String?
+  /// Geographic: its territorial level (`geoLevel` of `variable-role.ts`).
+  geoLevel          String?
+  /// Measure: its unit, e.g. "años".
+  unit              String?
+  /// Disaggregation data: `{ summable, cuts?, notApplicableLabel?, maxLevel? }`.
+  disaggregation    Json?
 
   survey   HarmonizerSurvey    @relation(fields: [surveyId], references: [id], onDelete: Cascade)
   mappings HarmonizerMapping[]

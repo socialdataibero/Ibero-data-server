@@ -16,6 +16,7 @@ function edition(
     missing?: string[];
     valueMap?: Record<string, string>;
     capped?: boolean;
+    keep?: boolean;
   } = {},
 ): ComparisonEditionInput {
   const categories: CodebookCategory[] | undefined = opts.categories?.map(([code, label]) => ({
@@ -29,6 +30,7 @@ function edition(
     year,
     column: 'COL',
     missingCodes: opts.missing ?? [],
+    keepMissingCodes: opts.keep,
     valueMap: opts.valueMap ?? {},
     profile: {
       values: Object.entries(values).map(([value, count]) => ({ value, count })),
@@ -155,6 +157,19 @@ describe('compareVariable', () => {
       ['only_in_some', '8'],
       ['not_in_catalog', '8'],
     ]);
+  });
+
+  it('a variable that keeps its missing codes can recode them to a common one; otherwise the recoding is ignored', () => {
+    const inputs = [
+      edition('A', 2015, { '1': 10, '9': 2 }, { missing: ['9'], valueMap: { '9': '99' }, keep: true }),
+      edition('B', 2020, { '1': 12, '99': 3 }, { missing: ['99'], keep: true }),
+    ];
+    const kept = compareVariable(inputs, [], 'text');
+    expect(kept.editions[0].values.find((v) => v.value === '9')).toMatchObject({ code: '99', missing: true, recoded: true });
+    expect(kept.issues).toEqual([]);
+    const nulled = compareVariable(inputs.map((e) => ({ ...e, keepMissingCodes: false })), [], 'text');
+    expect(nulled.editions[0].values.find((v) => v.value === '9')).toMatchObject({ code: '9', missing: true, recoded: false });
+    expect(nulled.signature).toBe(kept.signature);
   });
 
   it('changes the signature when the differences change, which brings the warning back', () => {

@@ -6,17 +6,12 @@ import type { AuthenticatedUser } from '../auth/jwt-payload.interface.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { LocalStorageService } from '../storage/local-storage.service.js';
 import { AnalysisService } from '../analysis/analysis.service.js';
-import { HarmonizerService } from '../harmonizer/harmonizer.service.js';
+import { ExportsService } from '../harmonizer/views/exports.service.js';
 import type { AttachHarmonizedDto } from './dto/attach-harmonized.dto.js';
 import {
   parseSourceMetadata,
   type SourceMetadata,
 } from '../harmonizer/source-metadata.js';
-import {
-  parseVariableMetadata,
-  readVariableMetadata,
-  type VariableMetadata,
-} from '../analysis/variable-metadata.js';
 
 const PARQUET_MAGIC = Buffer.from('PAR1', 'ascii');
 
@@ -27,22 +22,19 @@ const PARQUET_MAGIC = Buffer.from('PAR1', 'ascii');
  *
  * `sourceMetadata` always goes out: the metadata of its harmonized source with the properties this
  * version knows, or `null` for resources without it (uploaded files, older resources).
- * `variableMetadata` likewise: what the analysis templates know about each variable, or `null`.
  */
 export function toResourceResponse<
-  T extends { sizeBytes: bigint; sourceMetadata?: unknown; variableMetadata?: unknown },
+  T extends { sizeBytes: bigint; sourceMetadata?: unknown },
 >(
   resource: T,
-): Omit<T, 'sizeBytes' | 'sourceMetadata' | 'variableMetadata'> & {
+): Omit<T, 'sizeBytes' | 'sourceMetadata'> & {
   sizeBytes: number;
   sourceMetadata: SourceMetadata | null;
-  variableMetadata: VariableMetadata | null;
 } {
   return {
     ...resource,
     sizeBytes: Number(resource.sizeBytes),
     sourceMetadata: parseSourceMetadata(resource.sourceMetadata),
-    variableMetadata: readVariableMetadata(resource.variableMetadata),
   };
 }
 
@@ -60,7 +52,7 @@ export class ResourcesService {
     private readonly prisma: PrismaService,
     private readonly storage: LocalStorageService,
     private readonly analysisService: AnalysisService,
-    private readonly harmonizer: HarmonizerService,
+    private readonly harmonizerExports: ExportsService,
   ) {}
 
   async findAll(datasetId: string) {
@@ -104,20 +96,24 @@ export class ResourcesService {
   }
 
   /**
-   * Stores what the analysis templates need about each variable of a resource, replacing what it
-   * had. Every column it describes must exist in the file (`400 variable_metadata_invalid`).
+   * Whether the harmonizer changed after a resource was saved from it (`GET …/source-status`):
+   * the signature of its view is computed again from the harmonizer and compared with the one in
+   * its metadata (`origin.signature`). Resources without an origin (uploaded files, copies of
+   * version 1) answer `{ linked: false, stale: false, reason: null }`; a survey or edition that no
+   * longer exists, `{ linked: true, stale: true, reason: 'source_missing' }`.
    */
-  async setVariableMetadata(datasetId: string, resourceId: string, value: unknown) {
+  async sourceStatus(datasetId: string, resourceId: string) {
     const resource = await this.findOne(datasetId, resourceId);
-    const fileColumns = Array.isArray(resource.columns)
-      ? (resource.columns as { name?: unknown }[]).map((c) => String(c?.name))
-      : null;
-    const metadata = parseVariableMetadata(value, fileColumns);
-    const updated = await this.prisma.resource.update({
-      where: { id: resource.id },
-      data: { variableMetadata: metadata as unknown as Prisma.InputJsonObject },
-    });
-    return toResourceResponse(updated);
+    const origin = parseSourceMetadata(resource.sourceMetadata)?.origin ?? null;
+    if (!origin) return { linked: false, stale: false, reason: null };
+    const now = await this.harmonizerExports.originSignature(
+      origin.surveyId,
+      origin.editionId,
+      origin.variables,
+    );
+    if (now === null) return { linked: true, stale: true, reason: 'source_missing' };
+    const stale = now !== origin.signature;
+    return { linked: true, stale, reason: stale ? 'changed' : null };
   }
 
   async upload(datasetId: string, file: { originalname: string; buffer: Buffer; size: number }) {
@@ -153,8 +149,10 @@ export class ResourcesService {
       });
     }
     const file = dto.editionId
-      ? await this.harmonizer.exportDataset(dto.editionId, 'parquet')
-      : await this.harmonizer.exportSurvey(dto.surveyId!, 'parquet', dto.variables);
+      ? await this.harmonizerExports.exportDataset(dto.editionId, 'parquet')
+      : await this.harmonizerExports.exportSurvey(dto.surveyId!, 'parquet', dto.variables, {
+          forResource: true,
+        });
     const size = file.size ?? (Buffer.isBuffer(file.body) ? file.body.length : 0);
     const body = Buffer.isBuffer(file.body) ? Readable.from([file.body]) : file.body;
     const storageKey = await this.storage.saveStream(datasetId, file.filename, body);

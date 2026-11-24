@@ -11,7 +11,7 @@ import { ReadStream } from 'node:fs';
 import { readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import { EXPORT_TEMP_FILE, type ExportFile } from '../harmonizer.service.js';
+import { EXPORT_TEMP_FILE, type ExportFile } from '../export-file.js';
 import { discardExportFile } from '../export-response.js';
 
 /** How long a prepared download waits to be fetched. */

@@ -116,7 +116,7 @@ CORS is open to every origin. The `Content-Disposition` header is exposed so the
 | `jobs:check` | Add a test job and wait for a worker to run it. Uses `dist/` (built by `start:dev` or `build`). |
 | `build` | Compile to `dist/`. |
 | `test` | Unit tests with Vitest. |
-| `test:e2e` | End-to-end tests. Needs a running database. |
+| `test:e2e` | End-to-end tests. Needs the database and Redis of `start:dev`. `test/harmonizer.e2e-spec.ts` walks the whole harmonizer path (survey, tus and one-request uploads, mapping, variables, recoding, review, dictionary, views, downloads, attach to a dataset, delete) with its own API and worker in the test process, and compares every response with the files in `test/__snapshots__/harmonizer/` (ids, dates and download tokens replaced by placeholders). It leaves the organization «Prueba e2e del armonizador» and three `e2e-armonizador-*@ibero.mx` users, and deletes the rest. Accept a deliberate change with `npm run test:e2e -- -u`. |
 | `lint` | oxlint over `src/` and `test/`. |
 | `format` | Prettier over `src/` and `test/`. |
 | `prisma:migrate` | Create and apply a new migration in development. |
@@ -264,7 +264,7 @@ Rules:
 | `GET` | `.../datasets/:datasetId/resources` | any user | List, newest first. |
 | `POST` | `.../datasets/:datasetId/resources` | `ADMIN`, `EDITOR` | Upload a file (multipart, field `file`). |
 | `POST` | `.../datasets/:datasetId/resources/from-harmonizer` | `ADMIN`, `EDITOR` | Save a harmonized view of the survey harmonizer as a resource. See [From the harmonizer](#from-the-harmonizer). |
-| `PUT` | `.../resources/:resourceId/variable-metadata` | `ADMIN`, `EDITOR` | Store what the [analysis templates](#analysis-templates-demo) need about each variable: `{ metadata }`. See [Variable metadata](#variable-metadata). |
+| `GET` | `.../resources/:resourceId/source-status` | any user | Whether the harmonizer changed after the resource was saved from it. See [Source metadata](#source-metadata). |
 | `POST` | `.../resources/:resourceId/query` | any role | Run a SQL query: `{ sql }`. |
 | `GET` | `.../resources/:resourceId/download` | any role, download token | Download the file. |
 | `GET` | `.../resources/:resourceId/vistrace-handoff` | any role | Get a vistrace link. See [handoff](#vistrace-handoff). |
@@ -282,6 +282,7 @@ Upload rules:
 `POST .../resources/from-harmonizer` takes `{ editionId }` (one edition) or `{ surveyId, variables? }` (the survey view, `variables` as in its download) and saves that harmonized view as a Parquet resource of the dataset. Anything else returns `400 harmonized_source_invalid`.
 
 - The file is exactly the Parquet of `GET /harmonizer/datasets/:editionId/harmonized.parquet` or `GET /harmonizer/surveys/:surveyId/harmonized.parquet`, with the same filename (see [Harmonized views](#harmonized-views)). Its errors come back as they are (`404 harmonizer_dataset_not_found`, `400 harmonized_view_empty`, `409 value_type_mismatch`, …).
+- **One meaning per code.** In a survey view, a variable that keeps its "not specified" codes ([Harmonized views](#harmonized-views)) cannot have a code that is "not specified" in one edition and a valid value in another, after the recoding (for example `9` "No especificado" in 2015 and `9` "Nueve meses" in 2020): the resource keeps one list of codes per column, so it would call valid answers "not specified". That returns `409 missing_code_conflict` with `params: { variable, code, missingIn: { name, year }, validIn: { name, year } }` (the first one found, in the order of the editions), and nothing is saved. The fix is to recode the code in one of the editions ([Recoding](#recoding)). Valid values are those in the edition's data, not in its dictionary. The downloads of the same view are not stopped.
 - The server writes it straight to storage, so it never goes through the browser and the 500 MB upload limit does not apply. The national census edition (383 MB, 15 million rows) takes about 20 seconds. Before, the web app downloaded the view and uploaded it again, which did not work for files that large.
 - There is no size limit besides the disk: a resource records its size (`sizeBytes`) as a 64-bit number. Before 2026-11-12 it was 32-bit, and a view over 2,147,483,647 bytes returned `422 resource_too_large`.
 - The schema is read and stored as in an upload. The response is the new resource.
@@ -290,65 +291,69 @@ Upload rules:
 
 ### Source metadata
 
-A resource saved from the harmonizer keeps what was declared about its source in the harmonizer ([Source design](#source-design) and the mapping): `sourceMetadata`. Uploaded files and resources created before 2026-11-13 have `null`.
+A resource saved from the harmonizer keeps what was declared about its source and its variables in the harmonizer ([Source design](#source-design), the mapping, [Use in analysis](#use-in-analysis), the catalog and the dictionaries): `sourceMetadata`. Uploaded files and resources created before 2026-11-13 have `null`. It is version 2 since 2026-11-22 (templates plan, phase 3): the one object of metadata of a resource, so what describes a variable is captured once, in the harmonizer. Keys and roles are in English; texts shown to the user (labels, universe, `unitPlural`) are in Spanish, as written in the harmonizer.
 
 ```json
 {
-  "version": 1,
-  "design": "sample",
-  "unit": "person",
-  "sourceEditionIds": ["2914422d-…"],
-  "missingCodesAreNull": true,
-  "columns": [
-    { "name": "FOLIO", "type": "BIGINT" },
-    { "name": "EDAD", "type": "BIGINT", "missingCodes": ["999"] },
-    { "name": "FAC", "type": "BIGINT", "role": "weight" }
-  ]
-}
-```
-
-- `design` and `unit` are those of the edition, and `columns` lists every column of the file in order, with its Parquet `type` (the same `name` and `type` as `columns`).
-- `missingCodes` are the column's "not specified" codes in the mapping. `missingCodesAreNull: true` says that those values, and empty cells, are already `NULL` in the file: the codes are kept to describe the source, not to filter it again. `role` is the column's [sample design role](#source-design). Both are left out when the column has none.
-- `sourceEditionIds` are the editions the data comes from, only to trace it back (for example, to warn later that a mapping changed). Nothing is computed from them.
-- It is a snapshot taken when the resource is created. Changing the edition's design, unit or mapping afterwards does not change it, and reading a resource never looks at the harmonizer.
-- A survey view gets metadata only when all its included editions (those that have any of the chosen variables) have the same design and unit, and their expansion factors are the same canonical variable. Otherwise, and when an edition has no design or unit, `sourceMetadata` is `null`. In a survey view, `missingCodes` joins the codes of every edition, and a column has a role only when every edition gives it that role. The origin columns `_dataset`, `_year` and `_row` have only `name` and `type`.
-- The shape can grow: per-column properties other than `name` and `type` are optional, `version` names the shape, and readers ignore properties they do not know.
-- **In the API.** Every resource object has `sourceMetadata`: in `GET .../resources`, in the `resources` of `GET /organizations/:organizationId/datasets/:datasetId`, and in the response of an upload or of `from-harmonizer`. It comes with the properties of version 1 only and in the order shown above. It is `null`, explicitly, when the resource has none (uploaded files, resources created before 2026-11-13, mixed survey views) or when what is stored cannot be read as version 1; the request never fails because of it. It goes with the resource, not with its schema, because that is where the web app's analysis builder already reads the columns (`columns`).
-- **For analyses.** `ResourceMetadataService.forResource(datasetId, resourceId)` (module `analysis`, file `resource-metadata.ts`) returns a resource's metadata or `null` (`404 resource_not_found` if the resource is not in that dataset). The helpers `weightColumn`, `roleColumn`, `missingCodesOf`, `columnMetadata` and `isSample` in the same file read it, so future quality panels, weighted estimates and templates do not parse the JSON themselves. Both read the database copy: never the Parquet footer (slower) nor the harmonizer.
-- **In the file.** The same object is in the footer of the resource's Parquet, as JSON under the key `socialdata_metadata` (key-value metadata, written with DuckDB's `KV_METADATA`). Its content is the same as `sourceMetadata`; only the key order can differ, because the database stores JSON as `jsonb`. It is written by the same `COPY` that writes the data, with no extra pass over the file (a Parquet footer cannot be edited without rewriting the whole file), and the server then copies the file to storage byte by byte. Reading it: `SELECT decode(key), decode(value) FROM parquet_kv_metadata('file.parquet')` in DuckDB, or `pyarrow.parquet.read_metadata(path).metadata[b'socialdata_metadata']` in Python. The API reads `sourceMetadata` from the database, never from the file.
-
-### Variable metadata
-
-What the [analysis templates](#analysis-templates-demo) need to know about each variable of a resource: its role, label, categories, "not specified" codes and universe. Every resource object has `variableMetadata`, `null` until it is loaded. For now it is loaded by hand with `PUT .../resources/:resourceId/variable-metadata` and the body `{ metadata }`, which replaces what the resource had (the web app's dataset page sends a JSON file the user picks, «Subir descripción de variables (JSON)»); later the harmonizer will write it when a view is saved as a resource (plan in `planes-pendientes/plantillas-analisis.md` of the workspace). Labels and texts are Spanish because they are shown to the user as they are.
-
-```json
-{
-  "version": 1,
-  "title": "Censo 2000, muestra del cuestionario ampliado, Aguascalientes",
-  "source": "censo",
-  "edition": 2000,
+  "version": 2,
+  "title": "Censo 2000 muestra",
+  "source": "Censo 2000",
   "design": "sample",
   "unit": "person",
   "unitPlural": "personas",
-  "total": { "level": "entidad", "code": "01", "label": "Aguascalientes" },
+  "total": { "level": "state", "code": "01", "label": "Aguascalientes" },
+  "editions": [
+    { "id": "2914422d-…", "name": "Muestra 2000", "year": 2000, "design": "sample", "unit": "person",
+      "coverage": { "level": "state", "code": "01", "label": "Aguascalientes" }, "weight": "FACTOR" }
+  ],
   "columns": [
-    { "name": "CVE_MUN", "role": "geographic", "label": "Municipio", "geoLevel": "municipio",
-      "categories": [{ "code": "01001", "label": "Aguascalientes" }] },
-    { "name": "FACTOR", "role": "weight", "label": "Factor de expansión" },
-    { "name": "HLENGUA", "role": "dichotomous", "label": "Condición de habla de lengua indígena",
-      "positiveValue": "1", "positiveLabel": "Habla lengua indígena",
-      "universe": "población de 5 años y más", "missingCodes": ["9"],
-      "categories": [{ "code": "1", "label": "Habla lengua indígena" }, { "code": "9", "label": "No especificado" }] },
-    { "name": "EDAD", "role": "measure", "label": "Edad", "unit": "años", "missingCodes": ["999"] }
-  ]
+    { "name": "EDAD", "type": "BIGINT", "role": "measure", "label": "Edad", "unit": "años",
+      "disaggregation": { "summable": true, "cuts": [{ "from": 0, "to": 14, "label": "0 a 14 años" }] },
+      "missingCodes": ["999"], "missingCodesAreNull": true, "missingCount": { "2914422d-…": 1207 } },
+    { "name": "HLENGUA", "type": "VARCHAR", "role": "dichotomous", "label": "Habla lengua indígena",
+      "universe": "población de 5 años y más", "positiveValue": "1", "notApplicableLabel": "No aplica (menores de 5 años)",
+      "categories": [{ "code": "1", "label": "Sí", "kind": "value" }, { "code": "2", "label": "No", "kind": "value" },
+                     { "code": "9", "label": "No especificado", "kind": "missing" }],
+      "missingCodes": ["9"], "missingCodesAreNull": false },
+    { "name": "FACTOR", "type": "DOUBLE", "role": "weight" }
+  ],
+  "origin": { "surveyId": "…", "editionId": "2914422d-…", "variables": ["EDAD", "HLENGUA", "FACTOR"], "signature": "9f2c…" }
 }
 ```
 
-- `role` is one of `category`, `ordinal`, `dichotomous`, `geographic`, `measure`, `weight`, `stratum`, `psu`, `identifier`, `label`, `temporal`, `free_text` (section 3.2 of the template proposal). At most one column has each of `weight`, `stratum` and `psu`. A `dichotomous` column needs `positiveValue`, the code that counts as "yes".
-- Optional per column: `categories` (`[{ code, label }]` in catalog order, "not specified" ones included), `missingCodes`, `universe` (who was asked; an empty cell is outside it), `notApplicableLabel` (label of an empty cell when the column splits a result), `positiveLabel`, `unit` and `geoLevel`.
-- `total` is the place the whole file covers: the "total" row of every template result.
-- **"Not specified" is kept, "not applicable" is empty.** The templates expect the codes of `missingCodes` to still be in the data of categorical columns (so the user can include or exclude them) and an empty cell (`NULL`) to mean the question was not asked. Harmonized views do not do that yet (they turn both into `NULL`), so the demo resource is prepared by a script.
-- Rules: the object must have this shape and every column it names must exist in the file (`400 variable_metadata_invalid`, with `params.path` and `params.problem` of the first problem). Unknown properties are dropped. A resource whose stored metadata cannot be read answers `variableMetadata: null`; the request never fails because of it.
+Root:
+
+- `title` is the survey's name and `source` its short name ([Surveys](#surveys), `shortName`, `null` when not given).
+- `design`, `unit` and `total` are those of the editions when they all share them; otherwise `null` (each edition keeps its own). `total` is the edition's `coverage` ([Upload](#upload)), the place of the total row of an analysis. `unitPlural` is the unit in plural for texts (`personas`, `viviendas`, `hogares`), `null` with `unit`.
+- `editions` lists the editions the data comes from, in the order they are stacked: `{ id, name, year, design, unit, coverage, weight }`, where `weight` is the column of the file that is that edition's expansion factor (`null` for a census, or when the factor is not among the file's columns). So a survey whose editions have different designs, units or factors is still described: before version 2 it had no metadata at all.
+
+Per column, every property but `name` and `type` (the same as `columns`) is left out when it has no value:
+
+- `role`: the column's [sample design role](#source-design) (`weight`, `stratum`, `psu`) when the source is a sample and every edition gives it that role; otherwise its [use in analysis](#use-in-analysis) (`category`, `ordinal`, `dichotomous`, `geographic`, `label`, `temporal`, `measure`, `socioeconomic_stratum`, `key`, `identifier`, `free_text`).
+- `label` (the canonical's description), `universe`, `positiveValue`, `unit`, `geoLevel` and `disaggregation` (`{ summable, cuts?, maxLevel? }`) come from [Use in analysis](#use-in-analysis); its `notApplicableLabel` is a property of the column.
+- `categories`, only for `category`, `ordinal`, `dichotomous`, `geographic` and `socioeconomic_stratum`: `[{ code, label, kind }]`, `kind` `missing` for the codes in `missingCodes` and `value` otherwise, `label` `null` when nothing names it. With a common catalog ([Recoding](#recoding)), its codes in its order, then the kept "not specified" codes that are not in it. Without one, the categories of the editions' dictionaries (values and "not specified"), from the newest edition, each code written as it is in that edition's data (a dictionary `01` is `1` when the data has `1`) and after its recoding; then the codes of the data that no dictionary names, unless an edition has more than 200 distinct values (its stored profile is cut there).
+- `codeReview`, in survey views only: the state of the variable's codes between editions when it was saved (`single`, `ok`, `warning` or `reviewed`, see [Codes between editions](#codes-between-editions)).
+- `missingCodes` are the column's "not specified" codes, and `missingCodesAreNull` says what the file does with them (the rule of [Harmonized views](#harmonized-views)):
+  - `true` (measures and variables without an analysis role): those values, like empty cells, are already `NULL` in the file. The codes are those of the mapping and only describe the source. `missingCount` says, per source edition id, how many cells had one of them before they became `NULL` (`0` when none did), so a result can report how many were left out.
+  - `false` (variables of codes: category, geographic…): the codes are in the file, as they are there (after the recoding: `9` recoded to `99` is listed as `99`), and only empty cells ("not applicable") are `NULL`. There is no `missingCount`: the codes can be counted in the file.
+  - In a survey view, `missingCodes` joins the codes of every edition and `missingCount` has every edition that has the column.
+- The origin columns `_dataset`, `_year` and `_row` have only `name` and `type`.
+
+Out of date:
+
+- `origin` says which harmonized view the resource was made from (`surveyId`; `editionId`, `null` for a survey view; `variables`, the canonical variables of the file) and its `signature`: a hash of what defined it. That is the survey's name and short name; the editions of the view (an edition view: that edition; a survey view: every edition that maps one of `variables`) with their files, design, unit, coverage and dictionary, and their mappings of those variables (codes, recoding, sample role); and those canonical variables (description, type, catalog, review, use in analysis).
+- `GET .../resources/:resourceId/source-status` computes the signature again from the harmonizer (database only, no file is read) and answers `{ linked, stale, reason }`: `{ linked: true, stale: false, reason: null }` when nothing changed; `stale: true` with `reason: "changed"` when something did (another mapping, code, recoding, catalog, use in analysis, short name, an edition added to the survey that maps one of the variables…), or `reason: "source_missing"` when the survey or the edition no longer exists. Resources without an origin (uploaded files, copies of version 1) answer `{ linked: false, stale: false, reason: null }`. A new variable mapped afterwards does not make it stale: the resource has its own list of variables. Any user who can see the dataset can ask; `404 resource_not_found` if the resource is not in that dataset. It is a separate route so listing resources never queries the harmonizer.
+- The web app shows the warning in «Datos de la fuente» of the resource (also when an analysis made with it is open), with a link to the view to save it again.
+
+Other rules:
+
+- It is a snapshot taken when the resource is created. Changing the harmonizer afterwards does not change it, and reading a resource never looks at the harmonizer (only `source-status` does).
+- The shape can grow: per-column properties other than `name` and `type` are optional, `version` names the shape, and readers ignore properties they do not know (an unknown `role` is kept, since roles grow).
+- **Version 1** (resources created from 2026-11-13 to 2026-11-22) is read and answered as version 2: `title`, `source`, `total`, `unitPlural` from `unit`, `editions` from its `sourceEditionIds` (with `name`, `year` and `coverage` `null`, and the root design, unit and factor), sample design roles as `role`, and `origin: null`. Copies made before F2 said `missingCodesAreNull: true` once for the whole file: every column with codes reads as `true`, without `missingCount`. Stored copies are not rewritten.
+- **In the API.** Every resource object has `sourceMetadata`: in `GET .../resources`, in the `resources` of `GET /organizations/:organizationId/datasets/:datasetId`, and in the response of an upload or of `from-harmonizer`. It comes with the properties of version 2 only. It is `null`, explicitly, when the resource has none (uploaded files, resources created before 2026-11-13) or when what is stored cannot be read as version 1 or 2; the request never fails because of it. It goes with the resource, not with its schema, because that is where the web app's analysis builder already reads the columns (`columns`).
+- **For analyses.** `ResourceMetadataService.forResource(datasetId, resourceId)` (module `analysis`, file `resource-metadata.ts`) returns a resource's metadata or `null` (`404 resource_not_found` if the resource is not in that dataset). The helpers in the same file read it, so quality panels, weighted estimates and templates do not parse the JSON themselves: `columnMetadata`, `roleOf`, `columnsWithRole`, `categoriesOf`, `universeOf`, `missingCodesOf`, `roleColumn` (a sample design role of the whole file), `weightColumn`, `editionWeight` (the factor of one edition) and `isSample`. Both read the database copy: never the Parquet footer (slower) nor the harmonizer.
+- **In the file.** The same object is in the footer of the resource's Parquet, as JSON under the key `socialdata_metadata` (key-value metadata, written with DuckDB's `KV_METADATA`). Its content is the same as `sourceMetadata`; only the key order can differ, because the database stores JSON as `jsonb`. It is written by the same `COPY` that writes the data, with no extra pass over the file (a Parquet footer cannot be edited without rewriting the whole file), and the server then copies the file to storage byte by byte. Reading it: `SELECT decode(key), decode(value) FROM parquet_kv_metadata('file.parquet')` in DuckDB, or `pyarrow.parquet.read_metadata(path).metadata[b'socialdata_metadata']` in Python. The API reads `sourceMetadata` from the database, never from the file.
+- The [analysis templates](#analysis-templates-demo) read this object, one edition at a time (`analysis-templates/template-metadata.ts`). Until 2026-11-22 they read a second object loaded by hand, `variableMetadata`, with its route `PUT .../resources/:resourceId/variable-metadata`: both were removed (phase 3b of the plan, decision D14), and a migration dropped the column. Uploaded files have no templates for now (D5).
 
 Query rules:
 
@@ -423,7 +428,15 @@ Rules:
 
 ## Analysis templates (demo)
 
-Instead of building an analysis step by step, the user picks what to find out (a template), then its variables, and the server applies the method: the expansion factor, the universe of each question, the "not specified" codes and the standard error. It is the demo of `propuesta_plantillas/propuesta_plantillas_analisis.md` (workspace): the three templates are written in code, their SQL is written by hand (one query per domain set, through `AnalysisService.runInternalQueries`), they need [variable metadata](#variable-metadata), and nothing is saved. The answer has the shape the full plan keeps.
+Instead of building an analysis step by step, the user picks what to find out (a template), then its variables, and the server applies the method: the expansion factor, the universe of each question, the "not specified" codes and the standard error. It is the demo of `propuesta_plantillas/propuesta_plantillas_analisis.md` (workspace): the three templates are written in code, their SQL is written by hand (one query per domain set, through `AnalysisService.runInternalQueries`), and nothing is saved. The answer has the shape the full plan keeps.
+
+What they know about the resource comes from its [source metadata](#source-metadata), written by the harmonizer when the view was saved as a resource: `templateMetadata` (`analysis-templates/template-metadata.ts`) reads it for one edition.
+
+- Only columns with a role are offered, with their use in analysis: `label` (the variable's description, or its name), `universe`, `categories` (a category without a label shows its code), `positiveValue` (its category's label says what "yes" is), `notApplicableLabel`, `unit` and `geoLevel` (written in the result's `nivel` in Spanish: `entidad`, `municipio`, `localidad`…).
+- **One edition per analysis.** A resource made from a survey view of several editions needs `edition` in the preview (an id of `sourceMetadata.editions`): without it, `400 template_edition_required` with `params.editions` (`[{ id, name, year }]`); an id that is not one of them, `400 template_edition_unknown`. The queries then read only that edition's rows (`_dataset` and `_year`, through the `where` of `runInternalQueries`), the expansion factor is that edition's (`editions[].weight`), and `edicion` and the total row (its `coverage`, or `Total` when it has none) come from it. Comparing editions is phase 9. A file of one edition needs nothing.
+- The listing (`GET .../templates`) takes `?edition=` and, without it, describes the first edition; it answers `editions` so the client can offer the choice.
+- `fuente` is the survey's short name (or its name). The design and unit are the edition's: an edition without them (uploaded before they were asked) has no templates (`template_no_metadata`, like a resource without metadata, whose message asks to save it again from the harmonizer).
+- With the three cell states of the harmonizer, "not applicable" (an empty cell) is outside the universe and "not specified" is a code in the data of variables of codes, so `include`/`exclude` works on real data. In a measure the codes are already `NULL`: the text of a mean says how many of the excluded records were "not specified", from the metadata's `missingCount` of the edition.
 
 | Method | Path | Required role | Description |
 | --- | --- | --- | --- |
@@ -448,7 +461,7 @@ How each figure is computed (`w` is the expansion factor, 1 in a census):
 - **Standard error** (`ee`, and `ee_total` with `den_total`): Taylor linearization of the ratio `num / den` with the ultimate cluster estimator, by domain, over every row of the file, with the centering rule for strata with one PSU (`analysis/standard-error.ts`, which lists the rules). `0` when the ratio is 0 or 1, `null` when `den` is 0 and when the source is a census or does not declare a `stratum` and a `psu`.
 - Each template returns one row per group (when there is one) and a total row (`es_total: true`) computed over the whole file, never by adding up the groups.
 
-Checked against the real validation case of the proposal (Census 2000 sample of Aguascalientes, 87,507 records): `template-run.spec.ts` compares every municipality and the entity, in both "not specified" choices, with the files computed separately in Polars (`test/fixtures/templates/`). For example, the entity's speakers of an indigenous language, excluding "not specified": `num` 1,793, `den` 821,364, `den_total` 940,778, `ee` 0.000424, 148 records.
+Checked against the real validation case of the proposal (Census 2000 sample of Aguascalientes, 87,507 records): `template-run.spec.ts` compares every municipality and the entity, in both "not specified" choices, with the files computed separately in Polars (`test/fixtures/templates/`, whose metadata is version 2 as the harmonizer writes it). For example, the entity's speakers of an indigenous language, excluding "not specified": `num` 1,793, `den` 821,364, `den_total` 940,778, `ee` 0.000424, 148 records. The same figures come out of the resource that `demo-plantillas/armonizar.mjs` (workspace) builds through the harmonizer: upload, mapping, catalogs, use in analysis and "use in a dataset", with no hand-written metadata.
 
 The answer:
 
@@ -456,6 +469,7 @@ The answer:
 {
   "template": { "id": "proportion", "version": 1, "contract": "proporcion@2", "name": "Proporción" },
   "source": { "title": "Censo 2000, …", "design": "sample", "unitPlural": "personas" },
+  "edition": { "id": "2c1b17a3-…", "name": "Muestra censal 2000 (Aguascalientes)", "year": 2000 },
   "inputs": { "variable": null, "conditions": ["HLENGUA"], "measure": null, "group": "CVE_MUN", "missing": "exclude" },
   "dimensions": {
     "group": { "column": "nombre", "codeColumn": "cve", "label": "Municipio", "role": "geographic" },
@@ -467,7 +481,7 @@ The answer:
   "warnings": [{ "code": "few_cases", "message": "…" }, { "code": "low_precision", "base": "own", "message": "…" }],
   "charts": { "recommended": "barras_horizontales", "compatible": ["barras_horizontales", "lollipop", "tabla"] },
   "rows": [{
-    "fuente": "censo", "edicion": 2000, "indicador": "Habla lengua indígena",
+    "fuente": "Censo 2000", "edicion": 2000, "indicador": "Habla lengua indígena",
     "criterio": "Habla lengua indígena, población de 5 años y más",
     "nivel": "municipio", "cve": "01001", "nombre": "Aguascalientes", "grupo_codigo": null, "grupo": null,
     "corte_codigo": null, "corte": null,
@@ -479,7 +493,7 @@ The answer:
 - The rows use the column names of the proposal's result table (section 3.6), because they are also the CSV the user downloads. Percentages are not stored: the web app computes `num / den`, so switching between the bases of a proportion (`den` or `den_total`) does not ask the server again.
 - A `geographic` group goes in `nivel`, `cve` and `nombre`; any other group in `grupo_codigo` and `grupo` (`Todos` in the total row), with its empty cells as `notApplicableLabel`. The categories of a distribution go in `corte_codigo` and `corte`.
 - `texts`, `bases` and the `message` of `warnings` are Spanish content copied from the contracts, already filled in. A warning with `base` is only true of that base of a proportion. Warning codes: `census_source`, `precision_not_available`, `different_universes`, `missing_no_effect`, `empty_universe`, `extreme_proportions`, `low_precision` (coefficient of variation over 30%), `few_cases` (a figure based on 1 or 2 records). The last two thresholds are provisional, as in the proposal's preview.
-- Errors: `404 template_not_found`, `400 template_no_metadata`, `template_input_required`, `template_input_count`, `template_input_unknown`, `template_input_role_mismatch`, `template_too_many_categories`, `template_variable_in_two_roles`, `template_factor_required`, plus `404 resource_not_found` and `404 resource_file_missing`.
+- Errors: `404 template_not_found`, `400 template_no_metadata`, `template_edition_required`, `template_edition_unknown`, `template_input_required`, `template_input_count`, `template_input_unknown`, `template_input_role_mismatch`, `template_too_many_categories`, `template_variable_in_two_roles`, `template_factor_required`, plus `404 resource_not_found` and `404 resource_file_missing`.
 
 ## Public catalog
 
@@ -535,20 +549,20 @@ Concepts:
 - **Mapping**: "column `edad1` of this edition is canonical `edad`".
 - **Dictionary** (called `codebook` in the API): what each column of a file means and what each of its codes means, for example an INEGI census descriptor. It belongs to a survey and can describe many editions.
 
-Every harmonizer endpoint needs a session, and any logged-in user can read and change every survey. Surveys do not belong to organizations. The one exception to the session is `GET /harmonizer/downloads/:token` (see [Direct downloads](#direct-downloads)).
+Every harmonizer endpoint needs a session. Any logged-in user can read every survey. Each survey belongs to an organization (`organizationId`), and only the sysadmin or an `ADMIN`/`EDITOR` of that organization can change the survey or anything under it (editions, uploads, mappings, variables, recoding, reviews, dictionaries); anyone else gets `403 survey_not_editable`. Surveys created before ownership existed have no organization, so only the sysadmin can change them. The one exception to the session is `GET /harmonizer/downloads/:token` (see [Direct downloads](#direct-downloads)).
 
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/harmonizer/surveys` | List with editions and mapping progress. Ordered by name. `limit`, `offset`. |
-| `POST` | `/harmonizer/surveys` | Create: `{ name, description? }`. |
+| `POST` | `/harmonizer/surveys` | Create: `{ name, description?, organizationId }`. Only the sysadmin or an `ADMIN`/`EDITOR` of that organization. |
 | `GET` | `/harmonizer/surveys/:surveyId` | One survey. |
-| `PATCH` | `/harmonizer/surveys/:surveyId` | Change `name` and/or `description`. |
+| `PATCH` | `/harmonizer/surveys/:surveyId` | Change `name`, `description` and/or `shortName`. |
 | `DELETE` | `/harmonizer/surveys/:surveyId` | Delete the survey and everything in it, including the stored files of its editions. Returns `204`. |
 | `POST` | `/harmonizer/uploads` | Start an upload of an edition with tus (CSV, `.csv.gz` or DBF). See [Upload](#upload). |
 | `HEAD`, `PATCH`, `DELETE` | `/harmonizer/uploads/:importId` | Continue (tus `PATCH`), check (`HEAD`) or cancel (`DELETE`) an upload. |
 | `GET` | `/harmonizer/imports/:importId` | Status of an upload and of its import. See [Imports](#imports). |
 | `POST` | `/harmonizer/upload` | Upload an edition in one request (multipart), as CSV or DBF. Up to 200 MB, read in memory. The web app uses tus instead. |
-| `PATCH` | `/harmonizer/datasets/:datasetId` | Change the source `design` and/or `unit` of an edition. See [Source design](#source-design). |
+| `PATCH` | `/harmonizer/datasets/:datasetId` | Change the source `design`, `unit` and/or `coverage` of an edition. See [Source design](#source-design). |
 | `DELETE` | `/harmonizer/datasets/:datasetId` | Delete one edition, its mapping and its stored file. Returns `204`. |
 | `GET` | `/harmonizer/datasets/:datasetId/mapping` | Columns of an edition with saved or suggested mappings. |
 | `PUT` | `/harmonizer/datasets/:datasetId/mapping` | Save the mapping of an edition. |
@@ -569,6 +583,7 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 | `POST` | `/harmonizer/surveys/:surveyId/variables/:variableId/review` | Mark the current differences as reviewed. |
 | `DELETE` | `/harmonizer/surveys/:surveyId/variables/:variableId/review` | Remove the review. Returns `204`. |
 | `PUT` | `/harmonizer/surveys/:surveyId/variables/:variableId/recoding` | Save the catalog of the variable and the recoding of its editions. |
+| `PUT` | `/harmonizer/surveys/:surveyId/variables/:variableId/analysis` | How the variable is used in analysis: role, universe, "yes" code, level, unit and groups. See [Use in analysis](#use-in-analysis). |
 | `GET` | `/harmonizer/surveys/:surveyId/catalog.csv` | Catalog of categories of every variable that has one. |
 | `GET` | `/harmonizer/surveys/:surveyId/harmonized` | Harmonized view of all editions, one page at a time (`limit`, `offset`). Optional `variables`. |
 | `GET` | `/harmonizer/surveys/:surveyId/harmonized.csv` | Same, as CSV. Also `.parquet`. |
@@ -579,7 +594,9 @@ Every harmonizer endpoint needs a session, and any logged-in user can read and c
 
 - The name is trimmed and cannot be empty (`400 survey_name_required`).
 - Names are unique. Creating or renaming to a taken name returns `409 survey_name_taken`.
+- Creating a survey requires `organizationId` (`400 validation_error` without it). An organization that does not exist returns `404 organization_not_found`, and a user who is not the sysadmin nor an `ADMIN`/`EDITOR` of it gets `403 survey_org_role_required`. The organization cannot be changed afterwards.
 - Sending an empty `description` in `PATCH` clears it.
+- `shortName` is the short name of the source for the notes of an analysis and its `fuente` column ("Censo 2000"). It is optional, on create and in `PATCH`; it is trimmed and an empty one clears it (`null`). Every survey object has it.
 - Renaming a survey does not change its editions, canonical variables or mappings.
 - Deleting a survey also deletes its editions, their stored Parquet files, their mappings and its canonical variables. A missing survey returns `404 survey_not_found`.
 - If the file of any of its editions cannot be removed, nothing is deleted and the survey returns `409 harmonizer_file_in_use`, naming that edition. See [Deleting an edition](#deleting-an-edition).
@@ -644,6 +661,7 @@ Rules:
 - Both are required in both upload ways. An upload without one or both returns `400 source_info_required`, with `params: { missing }` listing `design`, `unit` or both, and a `message` naming each one (for example "Missing the source design (census or sample) and the unit of analysis (person, dwelling or household)."). An empty field counts as missing. Any other value returns `400 validation_error` (`design must be one of: census, sample.`). Both checks run with the other field checks, before permissions and before any byte of a tus upload.
 - `PATCH /harmonizer/datasets/:datasetId` with `{ design?, unit? }` changes them (same permission as saving the mapping). Switching to `census` removes every role of the edition's mapping. Switching to `sample` keeps the mapping as it is; it cannot be saved again until a column is marked as `weight`. It returns the edition's `dataset` object.
 - Editions uploaded before these fields existed have `design: null` and `unit: null`. Their mapping saves as before, without roles, and `PATCH` sets them.
+- `coverage` is the place the whole edition covers, for the total row of an analysis: `{ level, code, label }`, with `level` one of the territorial levels of [Use in analysis](#use-in-analysis) (`{ "level": "state", "code": "01", "label": "Aguascalientes" }`). It is not asked at upload: `PATCH` sets it and `null` clears it. Another level, or a missing code or label, returns `400 validation_error`; a code or label of only spaces returns `400 coverage_invalid`. Every edition object (`dataset`) has it, `null` when not given.
 
 In a `sample` edition the mapping can give a column a sample design role (`role` in `PUT .../mapping`):
 
@@ -768,7 +786,7 @@ A canonical name is a column of the harmonized view and of the exported Parquet,
 
 The rules apply when a canonical is created (`__new__` in `PUT .../mapping`) and when it is renamed. Names created before the rules are kept and still work; `GET .../variables` marks them with `nameValid: false` so they can be renamed.
 
-`GET /harmonizer/surveys/:surveyId/variables` returns `{ survey: { id, name }, items }`. Each item is `{ id, name, dataType, nameValid, usages }`, ordered by name, and `usages` lists `{ datasetId, datasetName, year, column }` for each edition that maps it (`[]` when none does).
+`GET /harmonizer/surveys/:surveyId/variables` returns `{ survey: { id, name }, items }`. Each item is `{ id, name, description, dataType, categories, analysis, sampleRole, suggestedRole, comparison, nameValid, usages }` (see [Use in analysis](#use-in-analysis) for `analysis` and `suggestedRole`; `sampleRole` is the sample design role, `weight`, `stratum` or `psu`, that a mapping gives the variable, or `null`), ordered by name, and `usages` lists `{ datasetId, datasetName, year, column }` for each edition that maps it (`[]` when none does).
 
 `PATCH .../variables/:variableId` takes `{ name }`:
 
@@ -780,6 +798,31 @@ The rules apply when a canonical is created (`__new__` in `PUT .../mapping`) and
 `DELETE .../variables/:variableId` deletes a canonical that no edition maps and returns `204`. If any edition maps it, it returns `409 canonical_variable_in_use`, the `message` lists the editions and columns, and nothing is deleted.
 
 For these three endpoints, an unknown survey returns `404 survey_not_found` and a variable that does not belong to the survey returns `404 canonical_variable_not_found`.
+
+### Use in analysis
+
+Each canonical variable says how analyses (the templates) may use it. It belongs to the variable, not to an edition: the "yes" of a yes/no question is the same every year. The sample design roles (`weight`, `stratum`, `psu`) are not here: they stay in the mapping of each edition (see [Source design](#source-design)) and win over these. The label of the variable for charts and notes is its `description`.
+
+`PUT /harmonizer/surveys/:surveyId/variables/:variableId/analysis` (same permission as the other variable changes) takes:
+
+| Field | Meaning |
+| --- | --- |
+| `role` | One of `category` (groups without order), `ordinal` (groups with an order), `dichotomous` (yes/no), `geographic` (territorial key), `label` (name next to a key), `temporal` (year or period), `measure` (quantity), `socioeconomic_stratum`, `key` (to join tables), `identifier` (record id), `free_text`. `null` clears everything. |
+| `universe` | Who was asked, e.g. "población de 3 años y más". The rule is always "the question was asked": an empty cell is outside it. |
+| `positiveValue` | `dichotomous` only, required: the code that counts as "yes". |
+| `geoLevel` | `geographic` only, required: `country`, `state`, `municipality`, `locality`, `ageb` or `block`. |
+| `unit` | `measure` only, optional: e.g. "años". |
+| `disaggregation` | Optional, for splitting a result by it: `{ summable, cuts?, notApplicableLabel?, maxLevel? }`. `summable` says whether its groups add up to the whole. `cuts` (`measure` only) are the groups it is cut into, `[{ from, to, label }]` with inclusive bounds and `to: null` for an open last group ("65 años y más"). `notApplicableLabel` names an empty cell ("No aplica (menores de 12 años)"). `maxLevel` (`geographic` only) is the most detailed level the source is representative at. Not allowed for `label`, `key`, `identifier` and `free_text`. |
+
+- It replaces what was saved: a field left out is cleared. Texts are trimmed and an empty one counts as not given.
+- A field that does not go with the role, or a missing required one, returns `400 variable_analysis_invalid` with `params: { field, problem }` (`problem`: `not_for_role`, `required`, `role_required`, `unknown`, or for a group `label_required`, `bounds`, `overlap`, `open_not_last`, `not_a_number`). The groups must be in order and must not overlap.
+- The role must fit the confirmed type of the variable: a `measure` needs `integer` or `decimal`; a role of codes (`category`, `ordinal`, `dichotomous`, `geographic`, `socioeconomic_stratum`, `key`, `identifier`) needs `text` or no confirmed type. Otherwise `409 variable_role_type_mismatch` with `params: { variable, role, dataType }`. The type is never changed silently. Saving a mapping that confirms a type against the role (`PUT .../mapping`) returns the same error and saves nothing.
+- `positiveValue` must be one of the variable's codes: those of its common catalog or, without one, the values seen in its editions (their stored value profiles, without their "not specified" codes and after their recoding). Otherwise `400 variable_positive_value_unknown` with `params: { value, known }` (up to 20 codes).
+- It returns `{ id, name, analysis }`.
+
+In `GET .../variables` and in the `variable` of `GET .../comparison`, `analysis` is `{ role, universe, positiveValue, geoLevel, unit, disaggregation }` (every field `null` when not described) and `suggestedRole` is the role the data suggest, for the user to confirm, or `null`. It comes from the dictionary of the first edition (by year, then upload) that describes a column mapped to the variable: a catalog (such as the states') is `geographic`, two coded values `dichotomous`, more `category`, a range of values `measure`. Without a dictionary, from the common catalog (two codes `dichotomous`, more `category`) or a confirmed numeric type (`measure`). The `variable` of `GET .../comparison` also has `knownCodes`, the codes `positiveValue` may take.
+
+A variable of codes keeps its codes in the downloads: when its type is not confirmed, its Parquet column is `VARCHAR` instead of the inferred type, so a municipality `001` is not downloaded as `1` (see [Harmonized views](#harmonized-views)). It also keeps its "not specified" codes in the views and downloads, while a measure turns them into `null`, so changing the role changes the view right away (see **Missing values** in [Harmonized views](#harmonized-views)).
 
 ### Variable types
 
@@ -798,6 +841,7 @@ Paging:
 - The two JSON views return one page of rows. `limit` is the page size: 100 by default, at most 500 (the web app offers 50, 100 and 500). `offset` is the number of rows to skip, 0 by default. Like the survey list, invalid values are not rejected: `limit` is clamped to 1–500 and a negative or non-numeric `offset` becomes 0.
 - The response adds `total` (rows of the whole view), `limit` and `offset`. An `offset` past the end returns no rows and the same `total`.
 - Only the rows of the page and the mapped columns are read from the stored Parquet (DuckDB `LIMIT`/`OFFSET`, which keeps file order). `total` comes from the stored `rowCount` of each edition, so nothing is counted.
+- The values of a page come from the same SQL as the exports (`harmonized-export.ts`): there is one implementation of a harmonized cell, so the screen shows exactly what is downloaded. On the national census (91 columns), a page of 500 rows takes about 0.12 s, most of it in preparing the query.
 - In the survey view, editions are stacked in the same order as the export, so a page can end in one edition and continue in the next. Row `n` of the view is the same row in every page size and in the CSV export.
 - Exports (`.csv`, `.parquet`) are not paged: they contain the whole view. They do not load it into the server's memory either (see Exports below).
 
@@ -805,8 +849,12 @@ Edition view:
 
 - Columns are the canonical names of the mapped columns, in header order.
 - An edition with no mappings has no columns and no rows.
-- **Missing values.** A value is `null` when the cell is empty, contains only spaces, or, once trimmed, equals one of the column's `missingCodes`. Every other value, `0` included, is returned exactly as stored. The stored rows are never changed, so editing the codes changes the view right away.
-- **Recoding.** After missing values, a value whose trimmed text is in the column's recoding is replaced by its common code (see [Recoding](#recoding)). Values that are not in the recoding are returned as stored. Exports apply it too, before the Parquet types.
+- **Missing values.** An empty cell, or one with only spaces, is `null`: "not applicable", the question was not asked. What happens to a value that, once trimmed, equals one of the column's `missingCodes` ("not specified": asked, not answered) depends on the [analysis role](#use-in-analysis) of its canonical variable (decision D1 of the templates plan, 2026-11-22; before, every code became `null`, report H-04):
+  - Variables of codes (`category`, `ordinal`, `dichotomous`, `geographic`, `socioeconomic_stratum`, `key`, `identifier`) **keep the code**, so "not specified" and "not applicable" stay apart. These variables are always text, so a kept code never breaks the column's type.
+  - Measures, the other roles and variables without a role turn it into `null`, so nobody averages a `999` by mistake (D13). The [source metadata](#source-metadata) counts them.
+  - Every other value, `0` included, is returned exactly as stored. The stored rows are never changed, so editing the codes or the role changes the view right away.
+- **Recoding.** After missing values, a value whose trimmed text is in the column's recoding is replaced by its common code (see [Recoding](#recoding)), a kept missing code too. Values that are not in the recoding are returned as stored. Exports apply it too, before the Parquet types.
+- The JSON response adds `notSpecified`, parallel to `rows`: for each row, the columns whose value is a kept "not specified" code (`[]` when none), so the screen can tell it from a valid answer. Exports do not have it.
 
 Survey view:
 
@@ -816,7 +864,7 @@ Survey view:
 - Every row gets `_dataset` (edition name), `_year` and `_row`. `_row` is the record number in the uploaded file, starting at 1 with the first row after the header. It counts records, not lines, so a value with a line break does not shift it.
 - `_dataset` + `_row` identifies every row, even when the file has no ID column or repeats IDs across editions. Columns from the file, such as a person ID, are usually repeated across editions, so joining on them alone duplicates rows.
 - A variable that an edition does not have is missing from that edition's rows.
-- Missing values keep the codes of their own edition: a `9` is `null` only in editions where `9` is a missing code for that column.
+- Missing values keep the codes of their own edition: a `9` is "not specified" (`null`, or kept and in `notSpecified`) only in editions where `9` is a missing code for that column.
 - Rows that have none of the selected variables are dropped.
 - The JSON response adds `codeWarnings`: the selected variables whose codes differ between editions and that nobody has reviewed (status `warning` in [Codes between editions](#codes-between-editions)), as `[{ id, name, issueCount }]` in alphabetical order.
 
@@ -825,12 +873,12 @@ Exports:
 - Formats: `csv` and `parquet`. Any other extension returns `404 export_format_not_supported`.
 - The filename is `harmonized_<edition>_<year>` or `harmonized_<survey>`, with accents and symbols removed.
 - The survey export puts `_dataset`, `_year` and `_row` first. The edition export does not include them.
-- CSV is UTF-8 with a BOM, so Excel opens it correctly. Missing values are empty.
+- CSV is UTF-8 with a BOM, so Excel opens it correctly. Missing values (`null`) are empty; kept "not specified" codes are written as they are.
 - In CSV, values and headers that start with `=`, `+`, `-`, `@`, a tab or a carriage return get a leading `'`, so spreadsheets do not run them as formulas (report H-12). Plain numbers such as `-5` or `+3.2` are left as they are. Parquet is not changed.
-- Parquet columns take the canonical variable's confirmed type, or the type inferred from the exported values when it is not confirmed (the same rules as `inferredType`, applied to all exported editions together): `text` → `VARCHAR`, `integer` → `BIGINT`, `decimal` → `DOUBLE`. Numbers are converted from the trimmed text, trimmed as everywhere in the harmonizer (see [Mapping](#mapping)), so a value such as `\ufeff1` or `1` followed by a tab, which the type checks accept as an integer, becomes `1` (before 2026-11-12 only spaces were trimmed here and the export failed with `400 parquet_write_failed`). `_dataset` is `VARCHAR`, and `_year` and `_row` are `BIGINT`. Missing values are `NULL`, so they are distinct from any value. This lets analyses sum, average, multiply and compare these columns (before, every column was text and `SUM` failed).
+- Parquet columns take the canonical variable's confirmed type, or, when it is not confirmed, `text` for a variable whose analysis role is one of codes ([Use in analysis](#use-in-analysis)) and otherwise the type inferred from the exported values (the same rules as `inferredType`, applied to all exported editions together): `text` → `VARCHAR`, `integer` → `BIGINT`, `decimal` → `DOUBLE`. Numbers are converted from the trimmed text, trimmed as everywhere in the harmonizer (see [Mapping](#mapping)), so a value such as `\ufeff1` or `1` followed by a tab, which the type checks accept as an integer, becomes `1` (before 2026-11-12 only spaces were trimmed here and the export failed with `400 parquet_write_failed`). `_dataset` is `VARCHAR`, and `_year` and `_row` are `BIGINT`. Missing values are `NULL`, so they are distinct from any value. This lets analyses sum, average, multiply and compare these columns (before, every column was text and `SUM` failed).
 - If a confirmed numeric variable has a value that does not fit (possible only for an edition saved without `dataType`), the Parquet export returns `409 value_type_mismatch` with the variable and the offending values.
 - Exporting an edition with no mappings as Parquet returns `400 harmonized_view_empty`.
-- The Parquet carries its [source metadata](#source-metadata) in its footer, as JSON under the key `socialdata_metadata` (DuckDB `KV_METADATA`), so the file describes itself outside the platform too. Views without metadata (an edition without design or unit, or a survey whose editions differ) have no such key.
+- The Parquet carries its [source metadata](#source-metadata) in its footer, as JSON under the key `socialdata_metadata` (DuckDB `KV_METADATA`), so the file describes itself outside the platform too. Every harmonized Parquet has it since version 2 (before, an edition without design or unit, or a survey whose editions differed, had no such key).
 - How the file is made: DuckDB reads the editions' stored Parquet and applies the missing codes, the recoding and the types, so the rows are never loaded into the server whole (`harmonized-export.ts`). The Parquet is written by DuckDB, one edition after another. For the CSV, DuckDB also writes the rows: each line is built in SQL with the quoting of the CSV writer the server used before (`csv-stringify`: a value is quoted when it has a `"`, a `,` or a line feed, and its quotes are doubled) and with the formula neutralization; the BOM and the header line are written by that same CSV writer. A failure there returns `400 csv_write_failed`. Both are written to a temporary file first, so any error (`409 value_type_mismatch`, `404 harmonizer_dataset_file_missing`) comes back as a normal error response before anything is sent; then the file is sent and deleted, also when the client disconnects. The types are checked with the same stored column checks as the mapping (see [Variable types](#variable-types)). On the national census (15 million rows, 91 columns), the edition's Parquet takes about 20 seconds and its CSV (3.3 GB) about 15 seconds.
 
 ### Dictionaries
@@ -901,7 +949,7 @@ Each variable's `status` is `single` (fewer than two editions map it), `ok` (no 
 - Each `editions` entry replaces the recoding of that edition's column; editions that are not sent keep theirs. The edition must map the variable (`edition_not_mapped`). Each `from` is a value as it appears in the file (trimmed) and `to` its common code. Entries with an empty `from` or `to` are ignored, a `from` cannot appear twice (`duplicate_value`), and with a catalog every `to` must be one of its codes (`target_not_in_catalog`). These errors are `400 recoding_invalid` with `params.problem`.
 - A value recoded to itself (`05` → `05`) is kept: it says the value was checked against the catalog, so its label is the catalog's and it is no longer compared with the label of its own dictionary.
 - If the variable's type is confirmed as `integer` or `decimal`, the recoded values must fit it (`400 value_type_mismatch` with `source: "recoding"`), so a recoding can also turn `100 y mas` into `100`.
-- The recoding is applied in the views and exports after the missing codes and before the type.
+- The recoding is applied in the views and exports after the missing codes and before the type. In a variable that keeps its missing codes ([Harmonized views](#harmonized-views)), a missing code can be recoded too, so a series has one code for "not specified" (`9` of 2015 and `99` of 2020 → `99`); the comparison then shows it with its common code (`recoded: true`, still `missing: true`). In the other variables the recoding of a missing code has no effect, since it is `null` first.
 
 `GET /harmonizer/surveys/:surveyId/catalog.csv` returns every catalog of the survey as CSV (UTF-8 with BOM, formula neutralization as in the exports): `variable, descripcion, codigo, etiqueta`, one row per category, variables in alphabetical order.
 
@@ -962,7 +1010,6 @@ When the server starts, it cleans `storage/harmonizer/` (report SDI-100). It del
 The code currently behaves as described below. It is not yet decided whether each behavior is intended. When one is decided, update the relevant section and remove it from this list.
 
 - **Private datasets.** `PRIVATE` only hides a dataset from the public catalog. Any logged-in user can still list and read it.
-- **Harmonizer access.** Surveys are not tied to organizations, so every logged-in user can read and change all of them.
 - **Login errors.** Different codes for an unknown email and a wrong password reveal which emails are registered.
 - **Email format.** Registration only requires a non-empty email; the format is not checked.
 - **Unused pieces.** `SysadminGuard` and the `PENDING` analysis status exist but are not used.

@@ -15,13 +15,12 @@ import {
   surveyParquetSql,
   type ExportColumn,
 } from './harmonized-export.js';
+import { neutralizeCsvFormula, type RawData } from './harmonized-view.js';
 import {
   buildDatasetView,
   buildSurveyView,
-  neutralizeCsvFormula,
   type DatasetEdition,
-  type RawData,
-} from './harmonized-view.js';
+} from './harmonized-view.testing.js';
 
 // Values the view treats in different ways: empty, whitespace JavaScript trims and DuckDB's trim
 // does not, missing codes with spaces around, recoded values, quotes, line breaks, NULL cells.
@@ -44,6 +43,8 @@ interface Mapping {
   sourceColumn: string;
   canon: string;
   missingCodes: string[];
+  /** Keeps its missing codes (a variable of codes); `false` when left out. */
+  keepMissingCodes?: boolean;
   valueMap: Map<string, string>;
 }
 
@@ -65,6 +66,7 @@ function jsEdition(e: Edition): DatasetEdition {
     columnToCanonical: new Map(e.mappings.map((m) => [m.sourceColumn, m.canon])),
     missingCodes: new Map(e.mappings.map((m) => [m.sourceColumn, new Set(m.missingCodes)])),
     valueMaps: new Map(e.mappings.map((m) => [m.sourceColumn, m.valueMap])),
+    keepMissingCodes: new Set(e.mappings.filter((m) => m.keepMissingCodes).map((m) => m.sourceColumn)),
     rows: e.rows.map(
       (r): RawData => Object.fromEntries(e.columns.map((c, i) => [c, String(r[i] ?? '')])),
     ),
@@ -72,7 +74,10 @@ function jsEdition(e: Edition): DatasetEdition {
 }
 
 function columnsOf(e: Edition): ExportColumn[] {
-  return exportColumns(e.columns, e.mappings);
+  return exportColumns(
+    e.columns,
+    e.mappings.map((m) => ({ ...m, keepMissingCodes: m.keepMissingCodes ?? false })),
+  );
 }
 
 describe('harmonized-export: DuckDB gives what the harmonized view gives', () => {
@@ -108,7 +113,8 @@ describe('harmonized-export: DuckDB gives what the harmonized view gives', () =>
         mappings: [
           { sourceColumn: 'A', canon: 'x', missingCodes: ['99'], valueMap: new Map() },
           { sourceColumn: 'B', canon: 'y', missingCodes: [], valueMap: new Map([['H', '1'], ['M', '2']]) },
-          { sourceColumn: 'C', canon: 'z', missingCodes: ['9', '99'], valueMap: new Map([['Si', '1'], ['100 y mas', '100'], ['No', ' 2 ']]) },
+          // Keeps its codes (F2): `9` stays, recoded to `99` like a value; `99` stays as stored.
+          { sourceColumn: 'C', canon: 'z', missingCodes: ['9', '99'], keepMissingCodes: true, valueMap: new Map([['Si', '1'], ['100 y mas', '100'], ['No', ' 2 '], ['9', '99']]) },
           { sourceColumn: 'E', canon: 'x', missingCodes: [], valueMap: new Map([["O'Brien", 'ob']]) },
           { sourceColumn: 'N', canon: 'num', missingCodes: ['99'], valueMap: new Map() },
           { sourceColumn: 'F', canon: 'dec', missingCodes: [], valueMap: new Map() },
@@ -120,7 +126,7 @@ describe('harmonized-export: DuckDB gives what the harmonized view gives', () =>
         year: 2020,
         columns: ['C', 'N', 'G', 'F'],
         mappings: [
-          { sourceColumn: 'C', canon: 'z', missingCodes: [], valueMap: new Map() },
+          { sourceColumn: 'C', canon: 'z', missingCodes: ['99'], keepMissingCodes: true, valueMap: new Map() },
           { sourceColumn: 'N', canon: 'num', missingCodes: [], valueMap: new Map([['99', '0']]) },
           { sourceColumn: 'G', canon: 'solo2020', missingCodes: [], valueMap: new Map() },
           { sourceColumn: 'F', canon: 'dec', missingCodes: ['1e3'], valueMap: new Map() },
@@ -226,8 +232,8 @@ describe('harmonized-export: DuckDB gives what the harmonized view gives', () =>
       [null, null],
     ]);
     const columns: ExportColumn[] = [
-      { canon: 'num', rawColumn: 'c0', missingCodes: [], valueMap: new Map() },
-      { canon: 'dec', rawColumn: 'c1', missingCodes: [], valueMap: new Map() },
+      { canon: 'num', rawColumn: 'c0', missingCodes: [], keepMissingCodes: false, valueMap: new Map() },
+      { canon: 'dec', rawColumn: 'c1', missingCodes: [], keepMissingCodes: false, valueMap: new Map() },
     ];
     const sql = editionSelectSql('data', columns, ['num', 'dec'], { num: 'BIGINT', dec: 'DOUBLE' });
     const rows: unknown[][] = [];

@@ -32,6 +32,11 @@ export interface ComparisonEditionInput {
   year: number;
   column: string;
   missingCodes: string[];
+  /**
+   * The variable keeps its «No especificado» codes in the view (variables of codes, F2), so a
+   * missing code can be recoded to a common one (`9` of 2015 and `99` of 2020 → `99`).
+   */
+  keepMissingCodes?: boolean;
   valueMap: Record<string, string>;
   profile: ColumnProfile;
   /** Categorías de la variable en el diccionario de la edición, o `null` si no tiene. */
@@ -112,7 +117,7 @@ function editionValues(input: ComparisonEditionInput, catalog: CatalogCategory[]
   const categories = input.codebook?.categories ?? [];
   return input.profile.values.map(({ value, count }) => {
     const isMissing = missing.has(value);
-    const recoded = !isMissing && Object.hasOwn(input.valueMap, value);
+    const recoded = (!isMissing || input.keepMissingCodes === true) && Object.hasOwn(input.valueMap, value);
     const code = recoded ? input.valueMap[value] : value;
     const sourceLabel = codebookLabelFor(categories, value);
     const label =

@@ -1,4 +1,4 @@
-import type { VariableMetadata, VariableRole } from '../analysis/variable-metadata.js';
+import type { VariableMetadata, VariableRole } from './template-metadata.js';
 
 /**
  * The three base templates of the proposal (section 7), written in code for the demo. In the full
@@ -166,7 +166,8 @@ export function listTemplates(metadata: VariableMetadata | null): TemplateListin
     if (!metadata) {
       reason = {
         code: 'template_no_metadata',
-        message: 'This resource has no variable metadata yet, so no template can use it.',
+        message:
+          'This resource has no source metadata from the harmonizer, so no template can use it. Save it again from the harmonizer.',
       };
     } else if (metadata.design === 'sample' && !metadata.columns.some((c) => c.role === 'weight')) {
       reason = {

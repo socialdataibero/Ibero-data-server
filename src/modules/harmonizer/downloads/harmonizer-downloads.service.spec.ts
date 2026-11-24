@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ExportFile } from '../harmonizer.service.js';
+import type { ExportFile } from '../export-file.js';
 import {
   DOWNLOAD_TTL_MS,
   HarmonizerDownloadsService,

@@ -37,8 +37,10 @@ describe('text from DuckDB keeps a leading BOM (U+FEFF)', () => {
     expect(keepLeadingBomInDuckDbText()).toBe(true);
   });
 
-  it('in values, as read by the paged views', async () => {
-    const rows = await service.readParquetSlice(path, [`${BOM}ID`, 'v'], 0, 10);
+  it('in values, as read by the paged views (runInternalQueries)', async () => {
+    const [rows] = await service.runInternalQueries(path, [
+      `SELECT "${BOM}ID", v FROM data LIMIT 10 OFFSET 0`,
+    ]);
     expect(rows).toEqual([
       ['1', 'a'],
       [`${BOM}1`, 'b'],
