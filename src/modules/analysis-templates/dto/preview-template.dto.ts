@@ -31,6 +31,13 @@ export class PreviewTemplateDto {
   @IsString({ message: 'group must be a string or null.' })
   group?: string | null;
 
+  /** Variables that split every figure further (the server takes up to `MAX_BREAKDOWNS`). */
+  @IsOptional()
+  @IsArray({ message: 'breakdowns must be a list.' })
+  @ArrayMaxSize(10, { message: 'breakdowns can have at most 10 items.' })
+  @IsString({ each: true, message: 'breakdowns can only contain strings.' })
+  breakdowns?: string[];
+
   @IsOptional()
   @IsIn(['exclude', 'include'], { message: 'missing must be exclude or include.' })
   missing?: 'exclude' | 'include';
