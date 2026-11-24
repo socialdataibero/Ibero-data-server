@@ -47,6 +47,7 @@ function referencedColumns(recipe: Recipe): { required: Set<string>; produced: S
     if (a.column !== '*') required.add(a.column);
     produced.add(a.as);
   }
+  if (recipe.percentage) produced.add(recipe.percentage.as);
   for (const c of recipe.groupBy) required.add(c);
   for (const f of recipe.filters) required.add(f.column);
   for (const s of recipe.sort) required.add(s.column);
