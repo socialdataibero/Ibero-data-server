@@ -11,8 +11,11 @@ export type SourceDesign = (typeof SOURCE_DESIGNS)[number];
 export const ANALYSIS_UNITS = ['person', 'dwelling', 'household'] as const;
 export type AnalysisUnit = (typeof ANALYSIS_UNITS)[number];
 
-/** Sample design role of a column: expansion factor, stratum, primary sampling unit. */
-export const SOURCE_ROLES = ['weight', 'stratum', 'psu'] as const;
+/**
+ * Sample design role of a column: expansion factor, stratum, primary sampling unit, or the
+ * column that says which strata were enumerated completely (`certainty`, with its codes).
+ */
+export const SOURCE_ROLES = ['weight', 'stratum', 'psu', 'certainty'] as const;
 export type SourceRole = (typeof SOURCE_ROLES)[number];
 
 export type SourceInfoField = 'design' | 'unit';
@@ -45,6 +48,8 @@ export interface RoleChoice {
   column: string;
   mapped: boolean;
   role?: string | null;
+  /** Codes of a `certainty` column that mark a completely enumerated stratum. */
+  certaintyCodes?: string[];
 }
 
 /**
@@ -53,6 +58,7 @@ export interface RoleChoice {
  * - A role needs a mapped column: unmapped columns are not in the harmonized view.
  * - At most one column per role.
  * - A sample edition needs a column marked as `weight`.
+ * - A `certainty` column needs at least one code that marks a completely enumerated stratum.
  */
 export function assertSourceRoles(design: string | null, choices: RoleChoice[]): void {
   const withRole = choices.filter((c) => c.role);
@@ -90,6 +96,22 @@ export function assertSourceRoles(design: string | null, choices: RoleChoice[]):
       message: 'Sample sources need one column marked as the expansion factor (role "weight").',
     });
   }
+  const certainty = withRole.find((c) => c.role === 'certainty');
+  if (certainty && normalizeCertaintyCodes(certainty.certaintyCodes).length === 0) {
+    throw new BadRequestException({
+      code: 'certainty_codes_required',
+      message: `Column "${certainty.column}" has the role "certainty" but no code that marks a completely enumerated stratum.`,
+      params: { column: certainty.column },
+    });
+  }
+}
+
+/**
+ * The codes of a `certainty` column as they are saved: trimmed, without blanks or repeats, in
+ * the order given. Any other role saves none.
+ */
+export function normalizeCertaintyCodes(codes: string[] | undefined | null): string[] {
+  return [...new Set((codes ?? []).map((c) => c.trim()).filter((c) => c !== ''))];
 }
 
 /**
@@ -149,6 +171,18 @@ export interface SourceMetadataEdition {
   coverage: MetadataPlace | null;
   /** The column of the file that is this edition's expansion factor, or `null`. */
   weight: string | null;
+  /**
+   * Which strata of this edition were enumerated completely: the column with the sample role
+   * `certainty` and its codes as they are in the file (after the recoding). A stratum where one
+   * of its records has one of those codes adds nothing to the variance. `null`: none declared
+   * (copies made before 2026-11-23 do not have it).
+   */
+  certainty: EditionCertainty | null;
+}
+
+export interface EditionCertainty {
+  column: string;
+  codes: string[];
 }
 
 /** The harmonized view a resource was made from, and a signature of what defined it. */
@@ -186,6 +220,11 @@ export interface SourceMetadataColumn {
   label?: string;
   /** Who was asked; an empty cell is outside it ("no aplica"). */
   universe?: string;
+  /**
+   * A narrower universe that can be computed: the records whose `column` (another column of the
+   * file, a number) is at least `min`. Records outside it are "no aplica" too.
+   */
+  universeRule?: { column: string; min: number };
   /** Codes and labels, in catalog order (variables of categories only). */
   categories?: SourceMetadataCategory[];
   /** Dichotomous: the code that counts as "yes". */
@@ -238,6 +277,8 @@ export interface MetadataEdition {
     missingCodesAreNull: boolean;
     missingCount?: number;
     role: string | null;
+    /** With `role = certainty`: its codes as they are in the file (after the recoding). */
+    certaintyCodes?: string[];
   }[];
 }
 
@@ -312,6 +353,7 @@ export function buildSourceMetadata(input: MetadataInput): SourceMetadata | null
     total,
     editions: editions.map((e) => {
       const weight = e.columns.find((c) => c.role === 'weight' && inFile.has(c.canon))?.canon ?? null;
+      const certain = e.columns.find((c) => c.role === 'certainty' && inFile.has(c.canon));
       return {
         id: e.id,
         name: e.name,
@@ -320,6 +362,10 @@ export function buildSourceMetadata(input: MetadataInput): SourceMetadata | null
         unit: isUnit(e.unit) ? e.unit : null,
         coverage: e.coverage,
         weight,
+        certainty:
+          certain && (certain.certaintyCodes?.length ?? 0) > 0
+            ? { column: certain.canon, codes: certain.certaintyCodes! }
+            : null,
       };
     }),
     columns: headers.map((name) => {
@@ -337,6 +383,7 @@ export function buildSourceMetadata(input: MetadataInput): SourceMetadata | null
         ...(role ? { role } : {}),
         ...(variable?.label ? { label: variable.label } : {}),
         ...(a?.universe ? { universe: a.universe } : {}),
+        ...(a?.universeRule ? { universeRule: { column: a.universeRule.variable, min: a.universeRule.min } } : {}),
         ...(variable && variable.categories.length > 0 ? { categories: variable.categories } : {}),
         ...(a?.positiveValue ? { positiveValue: a.positiveValue } : {}),
         ...(notApplicableLabel ? { notApplicableLabel } : {}),
@@ -444,6 +491,7 @@ function fromVersion1(value: Record<string, unknown>): SourceMetadata | null {
       unit,
       coverage: null,
       weight,
+      certainty: null,
     })),
     columns,
     origin: null,
@@ -483,6 +531,9 @@ function readColumn(c: unknown): SourceMetadataColumn | null {
     ...text('role'),
     ...text('label'),
     ...text('universe'),
+    ...(isRecord(c.universeRule) && isText(c.universeRule.column) && typeof c.universeRule.min === 'number'
+      ? { universeRule: { column: c.universeRule.column, min: c.universeRule.min } }
+      : {}),
     ...(categories ? { categories } : {}),
     ...text('positiveValue'),
     ...text('notApplicableLabel'),
@@ -506,7 +557,13 @@ function readEdition(e: unknown): SourceMetadataEdition | null {
     unit: isOneOf(ANALYSIS_UNITS, e.unit) ? e.unit : null,
     coverage,
     weight: isText(e.weight) ? e.weight : null,
+    certainty: readCertainty(e.certainty),
   };
+}
+
+function readCertainty(v: unknown): EditionCertainty | null {
+  if (!isRecord(v) || !isText(v.column) || !isStringList(v.codes) || v.codes.length === 0) return null;
+  return { column: v.column, codes: v.codes };
 }
 
 function readOrigin(o: unknown): SourceOrigin | null {

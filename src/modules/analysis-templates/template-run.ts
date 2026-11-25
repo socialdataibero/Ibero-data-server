@@ -133,8 +133,22 @@ function notMissing(column: VariableMetadataColumn, include: boolean): string {
   return include || codes.length === 0 ? '' : ` AND ${code(column)} NOT IN (${codes.map(lit).join(', ')})`;
 }
 
+/** The universe rule of `column` as SQL (`EDAD >= 15`, false without a value), or `null`. */
+function ruleSql(column: VariableMetadataColumn): string | null {
+  const rule = column.universeRule;
+  return rule ? `COALESCE(TRY_CAST(${quoteIdent(rule.column)} AS DOUBLE) >= ${Number(rule.min)}, false)` : null;
+}
+
+/** In the universe of `column`: it was asked (not empty) and, with a rule, the rule holds. */
 function inUniverse(column: VariableMetadataColumn): string {
-  return `${valueSql(column)} IS NOT NULL`;
+  const rule = ruleSql(column);
+  return `${valueSql(column)} IS NOT NULL${rule ? ` AND ${rule}` : ''}`;
+}
+
+/** A group's key: its value, or empty ("no aplica") outside its universe rule. */
+function groupKeySql(column: VariableMetadataColumn): string {
+  const rule = ruleSql(column);
+  return rule ? `CASE WHEN ${rule} THEN ${valueSql(column)} END` : valueSql(column);
 }
 
 /** Label of a code of `column`: its category label, "No aplica" for an empty cell, or the code. */
@@ -160,7 +174,7 @@ interface Plan {
   breakdowns: VariableMetadataColumn[];
   include: boolean;
   missing: MissingChoice | null;
-  design: Pick<RatioQuery, 'weight' | 'stratum' | 'psu'>;
+  design: Pick<RatioQuery, 'weight' | 'stratum' | 'psu' | 'certainty'>;
 }
 
 function resolveInput(
@@ -232,6 +246,15 @@ export function planTemplate(request: TemplateRequest, metadata: VariableMetadat
   const group = resolveInput(spec('group')!, request.group, metadata);
 
   const main = [...conditions, variable, measure].filter((c): c is VariableMetadataColumn => c !== null);
+  for (const c of [...main, group]) {
+    if (c?.universeRule && !metadata.fileColumns.includes(c.universeRule.column)) {
+      bad(
+        'template_universe_variable_missing',
+        `The universe of "${c.label}" depends on "${c.universeRule.column}", which is not in this resource. Save the harmonized view again with that variable.`,
+        { variable: c.name, universeVariable: c.universeRule.column },
+      );
+    }
+  }
   if (group && main.some((c) => origin(c) === origin(group))) {
     bad(
       'template_variable_in_two_roles',
@@ -272,6 +295,11 @@ export function planTemplate(request: TemplateRequest, metadata: VariableMetadat
       weight: sample ? quoteIdent(weight!.name) : null,
       stratum: withDesign ? quoteIdent(stratum!.name) : null,
       psu: withDesign ? quoteIdent(psu!.name) : null,
+      // Strata enumerated completely add nothing to the variance (`standard-error.ts`, rule 7).
+      certainty:
+        withDesign && metadata.certainty
+          ? `CAST(${quoteIdent(metadata.certainty.column)} AS VARCHAR) IN (${metadata.certainty.codes.map(lit).join(', ')})`
+          : null,
     },
   };
 }
@@ -291,9 +319,13 @@ function ratioSets(plan: Plan): RatioSet[] {
 
 /** The keys of a domain are the group (in `byGroup`), the breakdowns of `split` and `extraKeys`. */
 function ratioSetsOf(plan: Plan, split: VariableMetadataColumn[]): RatioSet[] {
-  const groupKey = plan.group ? [valueSql(plan.group)] : [];
+  const groupKey = plan.group ? [groupKeySql(plan.group)] : [];
   const splitKeys = split.map(valueSql);
-  const both = (id: string, q: Omit<RatioQuery, 'keys' | 'weight' | 'stratum' | 'psu'>, extraKeys: string[] = []) => ({
+  const both = (
+    id: string,
+    q: Omit<RatioQuery, 'keys' | 'weight' | 'stratum' | 'psu' | 'certainty'>,
+    extraKeys: string[] = [],
+  ) => ({
     id,
     split,
     byGroup: plan.group ? { ...plan.design, ...q, keys: [...groupKey, ...splitKeys, ...extraKeys] } : null,
@@ -302,7 +334,8 @@ function ratioSetsOf(plan: Plan, split: VariableMetadataColumn[]): RatioSet[] {
 
   if (plan.template.id === 'proportion') {
     return plan.conditions.flatMap((c) => {
-      const y = `${code(c)} = ${lit(c.positiveValue!)}`;
+      const rule = ruleSql(c);
+      const y = `${rule ? `${rule} AND ` : ''}${code(c)} = ${lit(c.positiveValue!)}`;
       const den = `${inUniverse(c)}${notMissing(c, plan.include)}`;
       return [
         both(`own:${c.name}`, { source: 'data', y, x: den, cases: y }),
@@ -340,12 +373,13 @@ function ratioSetsOf(plan: Plan, split: VariableMetadataColumn[]): RatioSet[] {
   ];
 }
 
-/** How many records of `column` have a "not specified" code. */
+/** How many records of `column` (inside its universe rule) have a "not specified" code. */
 function missingCountSql(column: VariableMetadataColumn): string {
   const codes = column.missingCodes ?? [];
+  const rule = ruleSql(column);
   return codes.length === 0
     ? 'SELECT 0'
-    : `SELECT (count(*) FILTER (WHERE ${code(column)} IN (${codes.map(lit).join(', ')})))::INTEGER FROM data`;
+    : `SELECT (count(*) FILTER (WHERE ${code(column)} IN (${codes.map(lit).join(', ')})${rule ? ` AND ${rule}` : ''}))::INTEGER FROM data`;
 }
 
 /** The queries to run for a plan, in order (`AnalysisService.runInternalQueries`). */
@@ -360,6 +394,14 @@ export function planQueries(plan: Plan): { sets: RatioSet[]; queries: PlannedQue
   const counted = plan.template.missingInput ? [...plan.conditions, plan.variable].filter((c) => c !== null) : [];
   for (const c of counted) {
     queries.push({ sql: missingCountSql(c!), read: (rows) => Number(rows[0]?.[0] ?? 0) });
+  }
+  // A mean with a universe rule: the records inside it, to say how many had no value.
+  const meanRule = plan.template.id === 'weighted_mean' ? ruleSql(plan.measure!) : null;
+  if (meanRule) {
+    queries.push({
+      sql: `SELECT (count(*) FILTER (WHERE ${meanRule}))::INTEGER FROM data`,
+      read: (rows) => Number(rows[0]?.[0] ?? 0),
+    });
   }
   return { sets, queries };
 }
@@ -468,7 +510,9 @@ export function assembleResult(plan: Plan, answers: unknown[]): TemplateResult {
     indicator = `${m.label} promedio${m.unit ? ` (${m.unit})` : ''}`;
     const figures = estimates.get('mean')!;
     const whole = figures.find((e) => e.groupCode === null && Object.values(e.desagregaciones).every((v) => v === null))!;
-    meanExcluded = whole.estimate.rows - whole.estimate.cases;
+    // With a universe rule, only the records inside it that have no value are "left out".
+    const inRule = m.universeRule ? (missingCounts[0] ?? whole.estimate.rows) : whole.estimate.rows;
+    meanExcluded = inRule - whole.estimate.cases;
     const build = ({ estimate: e, groupCode, desagregaciones }: Figure): ResultRow => ({
       ...base,
       indicador: indicator,

@@ -51,7 +51,7 @@ import {
 } from '../source-metadata.js';
 import { comparisonStatus } from '../comparison.js';
 import { readCoverage } from '../harmonizer-types.js';
-import { toCatalog } from '../editions/edition-reader.service.js';
+import { toCatalog, toValueMap } from '../editions/edition-reader.service.js';
 import { VariablesService } from '../variables/variables.service.js';
 import { variableCategories } from './metadata-categories.js';
 import {
@@ -84,6 +84,8 @@ export interface ExportEdition {
   columns: ExportColumn[];
   /** Rol de diseño muestral de cada canónica que lo tiene. */
   roles: Map<string, string>;
+  /** De la canónica con rol `certainty`: sus códigos como quedan en el archivo (recodificados). */
+  certaintyCodes: Map<string, string[]>;
 }
 
 /**
@@ -113,6 +115,9 @@ function metadataEdition(
           ? { missingCount: counts.get(c.canon) ?? 0 }
           : {}),
         role: edition.roles.get(c.canon) ?? null,
+        ...(edition.certaintyCodes.has(c.canon)
+          ? { certaintyCodes: edition.certaintyCodes.get(c.canon) }
+          : {}),
       };
     }),
   };
@@ -371,6 +376,14 @@ export class ExportsService {
           m.role ? [[m.canonicalVariable.name, m.role] as const] : [],
         ),
       ),
+      certaintyCodes: new Map(
+        used.flatMap((m) => {
+          if (m.role !== 'certainty' || m.certaintyCodes.length === 0) return [];
+          const recoded = toValueMap(m.valueMap);
+          const codes = [...new Set(m.certaintyCodes.map((c) => recoded.get(c) ?? c))];
+          return [[m.canonicalVariable.name, codes] as const];
+        }),
+      ),
       columns: editionColumns(dataset, used),
     };
   }
@@ -452,9 +465,9 @@ export class ExportsService {
    * The signature of a harmonized view as the harmonizer has it now: a hash of the survey's name
    * and short name, and of the editions of the view (an edition view: that edition; a survey view:
    * every edition that maps one of `variables`) with their files, design, unit, coverage,
-   * dictionary and their mappings of `variables` (codes, recoding, sample role), and of those
-   * canonical variables (description, type, catalog, review, use in analysis). It reads only the
-   * database. `null` when the survey or the edition no longer exists.
+   * dictionary and their mappings of `variables` (codes, recoding, sample role and its certainty
+   * codes), and of those canonical variables (description, type, catalog, review, use in
+   * analysis). It reads only the database. `null` when the survey or the edition no longer exists.
    */
   async originSignature(
     surveyId: string,
@@ -493,7 +506,15 @@ export class ExportsService {
         e.mappings
           .filter((m) => wanted.has(m.canonicalVariable.name))
           .sort((a, b) => (a.sourceColumn < b.sourceColumn ? -1 : a.sourceColumn > b.sourceColumn ? 1 : 0))
-          .map((m) => [m.sourceColumn, m.canonicalVariable.name, m.missingCodes, sortedEntries(m.valueMap), m.role]),
+          .map((m) => [
+            m.sourceColumn,
+            m.canonicalVariable.name,
+            m.missingCodes,
+            sortedEntries(m.valueMap),
+            m.role,
+            // Only when there are some, so resources saved before they existed are not stale.
+            ...(m.certaintyCodes.length > 0 ? [m.certaintyCodes] : []),
+          ]),
       ]),
       canonicals: canonicals.map((c) => [
         c.name,
@@ -507,6 +528,8 @@ export class ExportsService {
         c.geoLevel,
         c.unit,
         c.disaggregation,
+        // Only when there is one, so resources saved before it existed are not stale.
+        ...(c.universeRule !== null ? [c.universeRule] : []),
       ]),
     });
   }

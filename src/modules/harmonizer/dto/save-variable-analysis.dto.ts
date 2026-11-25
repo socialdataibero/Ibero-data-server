@@ -41,6 +41,15 @@ export class DisaggregationDto {
   maxLevel?: string | null;
 }
 
+/** A universe that can be computed: `variable` (a number of the survey) at least `min`. */
+export class UniverseRuleDto {
+  @IsString({ message: 'variable must be a string.' })
+  variable!: string;
+
+  @IsNumber({}, { message: 'min must be a number.' })
+  min!: number;
+}
+
 /**
  * `PUT /harmonizer/surveys/:surveyId/variables/:variableId/analysis`: how the variable is used
  * in analysis. It replaces what was saved; a field left out is cleared. The rules per role are
@@ -54,6 +63,11 @@ export class SaveVariableAnalysisDto {
   @IsOptional()
   @IsString({ message: 'universe must be a string or null.' })
   universe?: string | null;
+
+  @IsOptional()
+  @ValidateNested({ message: 'universeRule must be an object or null.' })
+  @Type(() => UniverseRuleDto)
+  universeRule?: UniverseRuleDto | null;
 
   @IsOptional()
   @IsString({ message: 'positiveValue must be a string or null.' })

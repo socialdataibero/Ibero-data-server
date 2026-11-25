@@ -73,10 +73,21 @@ export interface Disaggregation {
   maxLevel?: GeoLevel;
 }
 
+/**
+ * A universe that can be computed: the records whose value of `variable` (another canonical of
+ * the survey, a number such as EDAD) is at least `min`. A record without that value (an unknown
+ * age) is outside it. The templates apply it on top of "the question was asked".
+ */
+export interface UniverseRule {
+  variable: string;
+  min: number;
+}
+
 /** How a canonical variable is used in analysis. Every field `null` = not described yet. */
 export interface VariableAnalysis {
   role: VariableRole | null;
   universe: string | null;
+  universeRule: UniverseRule | null;
   positiveValue: string | null;
   geoLevel: GeoLevel | null;
   unit: string | null;
@@ -87,6 +98,7 @@ export interface VariableAnalysis {
 export interface VariableAnalysisInput {
   role?: string | null;
   universe?: string | null;
+  universeRule?: { variable: string; min: number } | null;
   positiveValue?: string | null;
   geoLevel?: string | null;
   unit?: string | null;
@@ -165,11 +177,13 @@ const text = (v: string | null | undefined): string | null => {
  * Checks and normalizes what is sent for a variable. Each field must fit the role (a "yes"
  * code only on a dichotomous variable, a level only on a geographic one, cuts only on a
  * measure), the role must fit the confirmed type, and the "yes" code must be one of `known`:
- * the common catalog of the variable or, without one, the values seen in its editions.
+ * the common catalog of the variable or, without one, the values seen in its editions. A
+ * `universeRule` must point to another variable of the survey (`others`) confirmed as a number.
  */
 export function checkAnalysis(
   input: VariableAnalysisInput,
   variable: { name: string; dataType: ValueType | null; known: string[] },
+  others: { name: string; dataType: ValueType | null }[] = [],
 ): VariableAnalysis {
   const roleText = text(input.role ?? null);
   if (roleText !== null && !isRole(roleText)) {
@@ -183,6 +197,7 @@ export function checkAnalysis(
   const out: VariableAnalysis = {
     role,
     universe: text(input.universe),
+    universeRule: null,
     positiveValue: text(input.positiveValue),
     geoLevel: null,
     unit: text(input.unit),
@@ -220,7 +235,17 @@ export function checkAnalysis(
         'Choose a role before setting "disaggregation".',
       );
     }
+    if (input.universeRule) {
+      invalid(
+        'universeRule',
+        'role_required',
+        'Choose a role before setting "universeRule".',
+      );
+    }
     return out;
+  }
+  if (input.universeRule) {
+    out.universeRule = checkUniverseRule(input.universeRule, variable.name, others);
   }
 
   if (!roleAllowsType(role, variable.dataType)) {
@@ -312,6 +337,36 @@ export function checkAnalysis(
   return out;
 }
 
+/** The variable of a universe rule exists, is another one and is a number; `min` is a number. */
+function checkUniverseRule(
+  rule: { variable: string; min: number },
+  self: string,
+  others: { name: string; dataType: ValueType | null }[],
+): UniverseRule {
+  const name = text(rule.variable);
+  if (name === null) {
+    invalid('universeRule.variable', 'required', 'Choose the variable the universe depends on.');
+  }
+  if (name === self) {
+    invalid('universeRule.variable', 'self', 'The universe of a variable cannot depend on itself.');
+  }
+  const other = others.find((o) => o.name === name);
+  if (!other) {
+    invalid('universeRule.variable', 'unknown', `"${name}" is not a variable of this survey.`);
+  }
+  if (other.dataType !== 'integer' && other.dataType !== 'decimal') {
+    invalid(
+      'universeRule.variable',
+      'not_a_number',
+      `"${name}" must be confirmed as a number (integer or decimal) in the mapping to limit a universe.`,
+    );
+  }
+  if (!Number.isFinite(rule.min)) {
+    invalid('universeRule.min', 'not_a_number', 'The minimum must be a number.');
+  }
+  return { variable: name, min: rule.min };
+}
+
 /** Cuts in order, each with a label, `from <= to`, without overlap; only the last may be open. */
 function checkCuts(cuts: AgeCut[]): AgeCut[] {
   const out = cuts.map((c, i) => {
@@ -355,6 +410,7 @@ function checkCuts(cuts: AgeCut[]): AgeCut[] {
 export function readAnalysis(v: {
   role: string | null;
   universe: string | null;
+  universeRule?: unknown;
   positiveValue: string | null;
   geoLevel: string | null;
   unit: string | null;
@@ -368,9 +424,15 @@ export function readAnalysis(v: {
     typeof (d as Disaggregation).summable === 'boolean'
       ? (d as Disaggregation)
       : null;
+  const r = v.universeRule as Partial<UniverseRule> | null | undefined;
+  const universeRule =
+    r && typeof r === 'object' && typeof r.variable === 'string' && typeof r.min === 'number'
+      ? { variable: r.variable, min: r.min }
+      : null;
   return {
     role: isRole(v.role) ? v.role : null,
     universe: v.universe,
+    universeRule,
     positiveValue: v.positiveValue,
     geoLevel: isGeoLevel(v.geoLevel) ? v.geoLevel : null,
     unit: v.unit,

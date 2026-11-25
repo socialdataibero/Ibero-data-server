@@ -23,7 +23,7 @@ const sample: SourceMetadata = {
   unit: 'person',
   unitPlural: 'personas',
   total: null,
-  editions: [{ id: 'ed1', name: 'ENOE 2024', year: 2024, design: 'sample', unit: 'person', coverage: null, weight: 'FAC' }],
+  editions: [{ id: 'ed1', name: 'ENOE 2024', year: 2024, design: 'sample', unit: 'person', coverage: null, weight: 'FAC', certainty: null }],
   columns: [
     { name: 'EDAD', type: 'BIGINT', role: 'measure', missingCodes: ['999'], missingCodesAreNull: true },
     { name: 'FAC', type: 'BIGINT', role: 'weight' },

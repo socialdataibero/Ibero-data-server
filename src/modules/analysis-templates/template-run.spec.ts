@@ -341,6 +341,76 @@ describe('the edition of the analysis', () => {
     expect(templateMetadata({ ...source, design: null, editions: [{ ...source.editions[0], design: null }] })).toBeNull();
   });
 
+  it('the strata of certainty are the edition\'s, and reach the standard error', async () => {
+    const declared = (codes: string[], column = 'CVE_MUN') =>
+      templateMetadata({ ...source, editions: [{ ...source.editions[0], certainty: { column, codes } }] })!;
+    expect(declared(['01001']).certainty).toEqual({ column: 'CVE_MUN', codes: ['01001'] });
+    expect(declared(['01001'], 'NOT_IN_FILE').certainty).toBeNull();
+    expect(metadata.certainty).toBeNull();
+
+    const request: TemplateRequest = { templateId: 'proportion', conditions: ['HLENGUA'], group: 'CVE_MUN' };
+    const plain = await run(request);
+    const withCapital = await runTemplate(request, declared(['01001']), (q, f) => analysis.runInternalQueries(PARQUET, q, f));
+    const row = (rows: ResultRow[], cve: string) => rows.find((r) => r.cve === cve && !r.es_total)!;
+    // The municipality enumerated completely has no sampling error; the others barely change
+    // (with a declaration, a stratum where every weight is 1 is of certainty too).
+    expect(row(plain.rows, '01001').ee).not.toBeNull();
+    expect(row(withCapital.rows, '01001')).toMatchObject({ num: row(plain.rows, '01001').num, ee: null, ee_total: null });
+    expect(se(row(withCapital.rows, '01002').ee)).toBe(se(row(plain.rows, '01002').ee));
+    // The state total loses the variance of the capital's strata.
+    const total = (rows: ResultRow[]) => rows.find((r) => r.es_total)!;
+    expect(total(withCapital.rows).num).toBe(total(plain.rows).num);
+    expect(total(withCapital.rows).ee!).toBeLessThan(total(plain.rows).ee!);
+  });
+
+  describe('a universe that depends on another variable (EDAD >= 15)', () => {
+    // ESCOLARIDAD of the 2000 sample is asked from 5 years; here only 15 and more count.
+    const withRule = (rule: { column: string; min: number } | null) =>
+      templateMetadata({
+        ...source,
+        columns: source.columns.map((c) =>
+          c.name === 'ESCOLARIDAD' ? { ...c, universe: 'población de 15 años y más', ...(rule ? { universeRule: rule } : {}) } : c,
+        ),
+      })!;
+    const runWith = (request: TemplateRequest, meta = withRule({ column: 'EDAD', min: 15 })) =>
+      runTemplate(request, meta, (q, f) => analysis.runInternalQueries(PARQUET, q, f));
+    const adults = async () => {
+      // The same 15+ total with a plain proportion: records with a known age of 15 or more.
+      const r = await analysis.runInternalQueries(
+        PARQUET,
+        [`SELECT SUM(CAST(FACTOR AS DOUBLE)) FILTER (WHERE TRY_CAST(EDAD AS DOUBLE) >= 15 AND ESCOLARIDAD IS NOT NULL AND ESCOLARIDAD <> '9') FROM data`],
+        null,
+      );
+      return Number(r[0][0][0]);
+    };
+
+    it('a distribution only counts the records inside the rule', async () => {
+      const plain = await runWith({ templateId: 'distribution', variable: 'ESCOLARIDAD' }, withRule(null));
+      const ruled = await runWith({ templateId: 'distribution', variable: 'ESCOLARIDAD' });
+      const den = (rows: ResultRow[]) => rows.find((r) => r.es_total)!.den;
+      expect(den(ruled.rows)).toBe(await adults());
+      expect(den(ruled.rows)).toBeLessThan(den(plain.rows));
+      // Every category adds up to the universe.
+      const totals = ruled.rows.filter((r) => r.es_total);
+      expect(totals.reduce((a, r) => a + r.num, 0)).toBe(den(ruled.rows));
+    });
+
+    it('as a group, the records outside the rule are «no aplica»', async () => {
+      const result = await runWith({ templateId: 'proportion', conditions: ['HLENGUA'], group: 'ESCOLARIDAD' });
+      const outside = result.rows.find((r) => r.grupo_codigo === '')!;
+      expect(outside.grupo).toBe('No aplica (menores de 5 años)');
+      const groups = result.rows.filter((r) => !r.es_total);
+      // The groups still add up to the whole: nobody is lost, those under 15 move to «no aplica».
+      expect(groups.reduce((a, r) => a + (r.den_total ?? 0), 0)).toBe(result.rows.find((r) => r.es_total)!.den_total);
+    });
+
+    it('a rule on a column that is not in the file is an error, not a wider universe', async () => {
+      await expect(
+        runWith({ templateId: 'distribution', variable: 'ESCOLARIDAD' }, withRule({ column: 'EDAD_X', min: 15 })),
+      ).rejects.toMatchObject({ response: { code: 'template_universe_variable_missing' } });
+    });
+  });
+
   it('the filter reaches DuckDB: rows outside the edition are not counted', async () => {
     const all = await run({ templateId: 'proportion', conditions: ['HLENGUA'] });
     const men = await runTemplate({ templateId: 'proportion', conditions: ['HLENGUA'] }, { ...metadata, rowFilter: `"SEXO" = '1'` }, (q, f) =>

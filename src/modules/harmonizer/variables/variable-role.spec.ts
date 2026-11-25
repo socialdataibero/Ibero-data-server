@@ -44,6 +44,7 @@ describe('checkAnalysis', () => {
     ).toEqual({
       role: 'dichotomous',
       universe: 'población de 3 años y más',
+      universeRule: null,
       positiveValue: '1',
       geoLevel: null,
       unit: null,
@@ -197,10 +198,43 @@ describe('checkAnalysis', () => {
     });
   });
 
+  it('a universe rule points to another variable of the survey confirmed as a number', () => {
+    const others = [
+      { name: 'EDAD', dataType: 'integer' as const },
+      { name: 'SEXO', dataType: 'text' as const },
+    ];
+    const input = (variable: string, min = 15): VariableAnalysisInput => ({
+      role: 'ordinal',
+      universe: 'población de 15 años y más',
+      universeRule: { variable, min },
+    });
+    expect(checkAnalysis(input(' EDAD '), variable(), others).universeRule).toEqual({ variable: 'EDAD', min: 15 });
+    const problem = (i: VariableAnalysisInput) => {
+      try {
+        checkAnalysis(i, variable(), others);
+      } catch (err) {
+        return ((err as { getResponse(): { params: unknown } }).getResponse()).params;
+      }
+      return null;
+    };
+    expect(problem(input('V'))).toEqual({ field: 'universeRule.variable', problem: 'self' });
+    expect(problem(input('NADA'))).toEqual({ field: 'universeRule.variable', problem: 'unknown' });
+    expect(problem(input('SEXO'))).toEqual({ field: 'universeRule.variable', problem: 'not_a_number' });
+    expect(problem(input(''))).toEqual({ field: 'universeRule.variable', problem: 'required' });
+    expect(problem(input('EDAD', Number.NaN))).toEqual({ field: 'universeRule.min', problem: 'not_a_number' });
+    expect(problem({ role: null, universeRule: { variable: 'EDAD', min: 15 } })).toEqual({
+      field: 'universeRule',
+      problem: 'role_required',
+    });
+    expect(readAnalysis({ role: 'ordinal', universe: null, universeRule: { variable: 'EDAD', min: 15 }, positiveValue: null, geoLevel: null, unit: null, disaggregation: null }).universeRule).toEqual({ variable: 'EDAD', min: 15 });
+    expect(readAnalysis({ role: 'ordinal', universe: null, universeRule: { min: 'x' }, positiveValue: null, geoLevel: null, unit: null, disaggregation: null }).universeRule).toBeNull();
+  });
+
   it('no role clears everything; an unknown role is rejected', () => {
     expect(checkAnalysis({ role: null }, variable())).toEqual({
       role: null,
       universe: null,
+      universeRule: null,
       positiveValue: null,
       geoLevel: null,
       unit: null,
@@ -239,6 +273,7 @@ describe('readAnalysis', () => {
     ).toEqual({
       role: null,
       universe: 'todos',
+      universeRule: null,
       positiveValue: null,
       geoLevel: null,
       unit: null,

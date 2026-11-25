@@ -35,4 +35,13 @@ export class MappingChoiceDto {
   @IsOptional()
   @IsIn(SOURCE_ROLES, { message: `role must be one of: ${SOURCE_ROLES.join(', ')}.` })
   role?: SourceRole | null;
+
+  /**
+   * With `role: "certainty"` only (and then required): the codes of the column, as in the file,
+   * that mark a completely enumerated stratum. Ignored with any other role.
+   */
+  @IsOptional()
+  @IsArray({ message: 'certaintyCodes must be a list.' })
+  @IsString({ each: true, message: 'certaintyCodes can only contain strings.' })
+  certaintyCodes?: string[];
 }

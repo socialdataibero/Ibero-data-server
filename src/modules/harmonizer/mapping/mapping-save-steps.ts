@@ -7,7 +7,7 @@ import {
   type MappingChoiceDto,
 } from '../dto/mapping-choice.dto.js';
 import type { ValueType } from '../harmonized-view.js';
-import type { SourceRole } from '../source-metadata.js';
+import { normalizeCertaintyCodes, type SourceRole } from '../source-metadata.js';
 import { normalizeMissingCodes } from './mapping-choices.js';
 
 /**
@@ -27,6 +27,7 @@ export interface SavedMapping {
   canonicalVariableId: string;
   missingCodes: string[];
   role: string | null;
+  certaintyCodes: string[];
 }
 
 export interface ResolvedColumn {
@@ -34,6 +35,8 @@ export interface ResolvedColumn {
   canonicalId: string | null;
   missingCodes: string[];
   role: SourceRole | null;
+  /** Saved only with `role = certainty`; empty otherwise. */
+  certaintyCodes: string[];
   dataType: ValueType | undefined;
 }
 
@@ -96,6 +99,7 @@ export function resolveChoices(
       canonicalId,
       missingCodes: normalizeMissingCodes(choice?.missingCodes),
       role: choice?.role ?? null,
+      certaintyCodes: choice?.role === 'certainty' ? normalizeCertaintyCodes(choice.certaintyCodes) : [],
       dataType: choice?.dataType,
     });
   }
@@ -140,7 +144,7 @@ export function mappingChanges(
   savedByColumn: Map<string, SavedMapping>,
 ): MappingChanges {
   const changes: MappingChanges = { toUpdate: [], toDelete: [], toInsert: [] };
-  for (const { column, canonicalId, missingCodes, role } of resolved) {
+  for (const { column, canonicalId, missingCodes, role, certaintyCodes } of resolved) {
     const existing = savedByColumn.get(column);
     if (canonicalId === null) {
       if (existing) changes.toDelete.push(existing.id);
@@ -151,6 +155,7 @@ export function mappingChanges(
         canonicalVariableId: canonicalId,
         missingCodes,
         role,
+        certaintyCodes,
       });
     } else if (existing.canonicalVariableId !== canonicalId) {
       changes.toUpdate.push({
@@ -159,14 +164,16 @@ export function mappingChanges(
           canonicalVariableId: canonicalId,
           missingCodes,
           role,
+          certaintyCodes,
           valueMap: {},
         },
       });
     } else if (
       existing.missingCodes.join('\u0000') !== missingCodes.join('\u0000') ||
-      existing.role !== role
+      existing.role !== role ||
+      existing.certaintyCodes.join('\u0000') !== certaintyCodes.join('\u0000')
     ) {
-      changes.toUpdate.push({ id: existing.id, data: { missingCodes, role } });
+      changes.toUpdate.push({ id: existing.id, data: { missingCodes, role, certaintyCodes } });
     }
   }
   return changes;

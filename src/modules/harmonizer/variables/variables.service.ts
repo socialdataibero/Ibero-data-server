@@ -447,8 +447,8 @@ export class VariablesService {
   }
 
   /**
-   * Saves how a variable is used in analysis (role, universe, "yes" code, level, unit,
-   * disaggregation). It replaces what was saved. The rules are in variable-role.ts.
+   * Saves how a variable is used in analysis (role, universe and its rule, "yes" code, level,
+   * unit, disaggregation). It replaces what was saved. The rules are in variable-role.ts.
    */
   async saveAnalysis(
     surveyId: string,
@@ -456,19 +456,33 @@ export class VariablesService {
     dto: SaveVariableAnalysisDto,
   ): Promise<{ id: string; name: string; analysis: VariableAnalysis }> {
     const variable = await this.getCanonicalVariable(surveyId, variableId);
-    const analysis = checkAnalysis(dto, {
-      name: variable.name,
-      dataType: variable.dataType as ValueType | null,
-      known:
-        dto.role === 'dichotomous'
-          ? await this.knownCodes(variable.id, toCatalog(variable.categories))
-          : [],
-    });
+    const others = dto.universeRule
+      ? await this.prisma.harmonizerCanonicalVariable.findMany({
+          where: { surveyId, id: { not: variable.id } },
+          select: { name: true, dataType: true },
+        })
+      : [];
+    const analysis = checkAnalysis(
+      dto,
+      {
+        name: variable.name,
+        dataType: variable.dataType as ValueType | null,
+        known:
+          dto.role === 'dichotomous'
+            ? await this.knownCodes(variable.id, toCatalog(variable.categories))
+            : [],
+      },
+      others.map((o) => ({ name: o.name, dataType: o.dataType as ValueType | null })),
+    );
     const saved = await this.prisma.harmonizerCanonicalVariable.update({
       where: { id: variable.id },
       data: {
         role: analysis.role,
         universe: analysis.universe,
+        universeRule:
+          analysis.universeRule === null
+            ? Prisma.DbNull
+            : (analysis.universeRule as unknown as Prisma.InputJsonObject),
         positiveValue: analysis.positiveValue,
         geoLevel: analysis.geoLevel,
         unit: analysis.unit,
