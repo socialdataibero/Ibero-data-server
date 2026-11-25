@@ -1,3 +1,4 @@
+import { MAX_BREAKDOWNS, origin } from './breakdowns.js';
 import type { VariableMetadata, VariableRole } from './template-metadata.js';
 
 /**
@@ -10,7 +11,7 @@ import type { VariableMetadata, VariableRole } from './template-metadata.js';
 export const TEMPLATE_IDS = ['distribution', 'proportion', 'weighted_mean'] as const;
 export type TemplateId = (typeof TEMPLATE_IDS)[number];
 
-export type InputName = 'variable' | 'conditions' | 'measure' | 'group';
+export type InputName = 'variable' | 'conditions' | 'measure' | 'group' | 'breakdowns';
 export type MissingChoice = 'exclude' | 'include';
 
 export interface InputSpec {
@@ -51,6 +52,17 @@ const group = (help: string): InputSpec => ({
   maxCategories: 50,
 });
 
+/** Splits every figure further; the result has each combination and its «Todos». */
+const breakdowns: InputSpec = {
+  name: 'breakdowns',
+  label: 'Cruzar por (opcional)',
+  help: 'Parte cada cifra por otras variables, por ejemplo sexo y grupos de edad.',
+  roles: ['category', 'ordinal', 'dichotomous'],
+  optional: true,
+  multiple: { min: 0, max: MAX_BREAKDOWNS },
+  maxCategories: 30,
+};
+
 export const TEMPLATES: TemplateDefinition[] = [
   {
     id: 'proportion',
@@ -70,6 +82,7 @@ export const TEMPLATES: TemplateDefinition[] = [
         multiple: { min: 1, max: 6 },
       },
       group('Calcula la proporción en cada grupo, además del total.'),
+      breakdowns,
     ],
     missingInput: 'conditions',
   },
@@ -91,6 +104,7 @@ export const TEMPLATES: TemplateDefinition[] = [
         maxCategories: 30,
       },
       group('Reparte la población dentro de cada grupo, además del total.'),
+      breakdowns,
     ],
     missingInput: 'variable',
   },
@@ -111,6 +125,7 @@ export const TEMPLATES: TemplateDefinition[] = [
         optional: false,
       },
       group('Calcula el promedio en cada grupo, además del total.'),
+      breakdowns,
     ],
     missingInput: null,
   },
@@ -128,6 +143,8 @@ export interface InputOption {
   categoryCount: number | null;
   hasMissingCodes: boolean;
   universe: string | null;
+  /** The column it is read from: the groups of a measure cannot split that same measure. */
+  origin: string;
 }
 
 export interface TemplateListing {
@@ -147,6 +164,7 @@ export interface TemplateListing {
 export function inputOptions(input: InputSpec, metadata: VariableMetadata): InputOption[] {
   return metadata.columns
     .filter((c) => input.roles.includes(c.role))
+    .filter((c) => input.name !== 'breakdowns' || (c.categories?.length ?? 0) > 0)
     .filter((c) => input.maxCategories === undefined || (c.categories?.length ?? 0) <= input.maxCategories)
     .map((c) => ({
       column: c.name,
@@ -155,6 +173,7 @@ export function inputOptions(input: InputSpec, metadata: VariableMetadata): Inpu
       categoryCount: c.categories?.length ?? null,
       hasMissingCodes: (c.missingCodes?.length ?? 0) > 0,
       universe: c.universe ?? null,
+      origin: origin(c),
     }));
 }
 

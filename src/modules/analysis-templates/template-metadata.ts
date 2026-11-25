@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { cutColumn } from './measure-cuts.js';
 import type {
   SourceMetadata,
   SourceMetadataColumn,
@@ -44,6 +45,10 @@ export interface VariableMetadataColumn {
   positiveLabel?: string;
   /** Measure: its unit, e.g. "años". */
   unit?: string;
+  /** SQL that gives its value when it is not a column of the file (`cutColumn`). */
+  expression?: string;
+  /** Groups of a measure: the column they are cut from. */
+  cutFrom?: string;
   /** Geographic: its level as the result's `nivel` column writes it, e.g. "municipio". */
   geoLevel?: string;
 }
@@ -197,7 +202,12 @@ export function templateMetadata(
         : c.role === 'weight'
           ? null
           : (c.role ?? null);
-    if (role) columns.push(column(c, role, edition.id));
+    if (!role) continue;
+    const described = column(c, role, edition.id);
+    columns.push(described);
+    if (role === 'measure' && c.disaggregation?.cuts?.length) {
+      columns.push(cutColumn(described, c.disaggregation.cuts, metadata.columns.map((m) => m.name)));
+    }
   }
   const coverage = edition.coverage ?? metadata.total;
   const hasOrigin = metadata.columns.some((c) => c.name === '_dataset');

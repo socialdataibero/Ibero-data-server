@@ -103,7 +103,13 @@ export class AnalysesController {
           state: recipe.state,
           tables: recipe.tables.map((t) => ({ ...t, downloadUrl: resourceDownloadUrl(t.resourceId) })),
         },
-        { ...context, resourceId: analysis.sourceResourceId, analysisId: analysis.id, analysisTitle: analysis.title },
+        { ...context, resourceId: analysis.sourceResourceId, analysisId: analysis.id,
+          analysisTitle: analysis.title,
+          analysisSlug: analysis.slug,
+          analysisFolder: analysis.folder,
+          analysisVisibility: analysis.visibility,
+          analysisDescription: analysis.description,
+        },
       );
       return { url };
     }

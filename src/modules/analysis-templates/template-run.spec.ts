@@ -143,6 +143,121 @@ describe('weighted mean over the Census 2000 sample', () => {
   });
 });
 
+describe('breakdowns over the Census 2000 sample', () => {
+  const COLUMNS = { sexo: 'SEXO', grupo_edad: 'GRUPO_EDAD', escolaridad: 'ESCOLARIDAD', actividad: 'ACTIVIDAD', ambito: 'AMBITO', habla: 'HLENGUA' } as const;
+  type Name = keyof typeof COLUMNS;
+  /** Codes the expected files name differently from the catalog of the fixture. */
+  const LABEL: Record<string, string> = {
+    'habla|2': 'No habla (resto)',
+    'escolaridad|': 'No aplica',
+  };
+  const labels = (result: Awaited<ReturnType<typeof run>>, row: ResultRow, name: Name) => {
+    const d = result.dimensions.breakdowns.find((b) => b.column === COLUMNS[name]);
+    const value = row.desagregaciones[COLUMNS[name]];
+    return !d || value === null ? 'Todos' : LABEL[`${name}|${value}`] ?? d.categories.find((c) => c.code === value)!.label;
+  };
+  /** Every expected row split by exactly these, at the level `nivel`. */
+  const wanted = (rows: Expected[], names: Name[], nivel: string) =>
+    rows.filter((r) => r.nivel === nivel && DISAGGREGATIONS.every((d) => r[d] === undefined || (names.includes(d as Name) ? r[d] !== 'Todos' : r[d] === 'Todos')));
+
+  const files = {
+    proportion: ['censo2000_ags_proporcion_esperado.csv', { templateId: 'proportion', conditions: ['HLENGUA', 'PERETN'] }],
+    distribution: ['censo2000_ags_distribucion_esperado.csv', { templateId: 'distribution', variable: 'ESCOLARIDAD' }],
+    weighted_mean: ['censo2000_ags_promedio_esperado.csv', { templateId: 'weighted_mean', measure: 'EDAD' }],
+  } as const;
+
+  for (const [file, request] of Object.values(files)) {
+    const all = expected(file);
+    const present = (Object.keys(COLUMNS) as Name[]).filter((n) => all[0][n] !== undefined);
+    const pairs = present.flatMap((a, i) => present.slice(i + 1).map((b) => [a, b]));
+    const cases = [...present.map((n) => [n]), ...pairs].flatMap((names) =>
+      ['entidad', 'municipio'].map((nivel) => ({ names, nivel, rows: wanted(all, names, nivel) })),
+    );
+    for (const { names, nivel, rows } of cases.filter((c) => c.rows.length > 0)) {
+      for (const escenario of new Set(rows.map((r) => r.escenario))) {
+        it(`${request.templateId} by ${names.join(' × ')}, ${nivel}, ${escenario ?? 'only'}`, async () => {
+          const result = await run({
+            ...request,
+            conditions: 'conditions' in request ? [...request.conditions] : undefined,
+            group: nivel === 'municipio' ? 'CVE_MUN' : null,
+            breakdowns: names.map((n) => COLUMNS[n]),
+            missing: escenario === 'incluir' ? 'include' : 'exclude',
+          });
+          const want = rows.filter((r) => r.escenario === escenario);
+          // The breakdown of "habla" keeps "not specified" as a category, as the expected files do.
+          const got = result.rows.filter(
+            (r) => r.es_total === (nivel === 'entidad') && names.every((n) => r.desagregaciones[COLUMNS[n]] !== null),
+          );
+          const key = (r: ResultRow) => [r.criterio ?? '', r.cve, r.corte ?? '', ...names.map((n) => labels(result, r, n))].join('|');
+          const byKey = new Map(got.map((r) => [key(r), r]));
+          expect(got).toHaveLength(want.length);
+          for (const w of want) {
+            const k = [w.criterio ?? '', w.cve, w.corte ?? '', ...names.map((n) => w[n])].join('|');
+            const g = byKey.get(k)!;
+            expect(g, k).toBeDefined();
+            expect([k, g.num, g.den, g.casos, se(g.ee)]).toEqual([k, num(w.num), num(w.den), num(w.casos), expectedSe(w.ee)]);
+            if (w.den_total !== undefined) expect([g.den_total, se(g.ee_total)]).toEqual([num(w.den_total), expectedSe(w.ee_total)]);
+          }
+        });
+      }
+    }
+  }
+
+  it('the parts of each breakdown add up to «Todos»', async () => {
+    const result = await run({ templateId: 'proportion', conditions: ['HLENGUA'], breakdowns: ['SEXO', 'GRUPO_EDAD'] });
+    const at = (sex: string | null, age: 'all' | 'parts') =>
+      result.rows.filter((r) => r.desagregaciones.SEXO === sex && (r.desagregaciones.GRUPO_EDAD === null) === (age === 'all'));
+    for (const sex of [null, '1', '2']) {
+      expect(at(sex, 'parts').reduce((n, r) => n + r.num, 0)).toBe(at(sex, 'all')[0].num);
+      expect(at(sex, 'parts').reduce((n, r) => n + r.den_total!, 0)).toBe(at(sex, 'all')[0].den_total);
+    }
+  });
+
+  it('cuts a measure into the groups declared in the harmonizer, equal to the prepared column', async () => {
+    const cuts = [
+      { from: 0, to: 4, label: '0 a 4 años' },
+      { from: 5, to: 14, label: '5 a 14 años' },
+      { from: 15, to: 29, label: '15 a 29 años' },
+      { from: 30, to: 59, label: '30 a 59 años' },
+      { from: 60, to: null, label: '60 años y más' },
+    ];
+    const withCuts = templateMetadata({
+      ...source,
+      columns: source.columns.map((c) => (c.name === 'EDAD' ? { ...c, disaggregation: { summable: true, cuts } } : c)),
+    })!;
+    const runCuts = (request: TemplateRequest) =>
+      runTemplate(request, withCuts, (q, f) => analysis.runInternalQueries(PARQUET, q, f));
+    const request = { templateId: 'proportion', conditions: ['HLENGUA'], breakdowns: ['SEXO'] };
+    const figures = (r: Awaited<ReturnType<typeof run>>) =>
+      r.rows.map((x) => [x.grupo, x.desagregaciones.SEXO, x.num, x.den, x.casos, se(x.ee)].join('|')).sort();
+    expect(figures(await runCuts({ ...request, group: 'EDAD__grupos' }))).toEqual(
+      figures(await run({ ...request, group: 'GRUPO_EDAD' })),
+    );
+    await expect(
+      runCuts({ templateId: 'weighted_mean', measure: 'EDAD', breakdowns: ['EDAD__grupos'] }),
+    ).rejects.toMatchObject({ response: { code: 'template_variable_in_two_roles' } });
+  });
+
+  it.each([
+    [['SEXO', 'GRUPO_EDAD', 'ACTIVIDAD'], 'template_too_many_breakdowns'],
+    [['EDAD'], 'template_breakdown_unavailable'],
+    [['HLENGUA'], 'template_variable_in_two_roles'],
+    [['CVE_MUN'], 'template_breakdown_unavailable'],
+  ])('rejects %j with %s', async (breakdowns, code) => {
+    await expect(run({ templateId: 'proportion', conditions: ['HLENGUA'], breakdowns })).rejects.toMatchObject({ response: { code } });
+  });
+
+  it('rejects more cells than the limit before running anything', async () => {
+    const many = { ...metadata, columns: metadata.columns.map((c) =>
+      ['SEXO', 'ACTIVIDAD'].includes(c.name) ? { ...c, categories: Array.from({ length: 30 }, (_, i) => ({ code: `${i}`, label: `${i}` })) } : c) };
+    await expect(
+      runTemplate({ templateId: 'proportion', conditions: ['HLENGUA'], group: 'CVE_MUN', breakdowns: ['SEXO', 'ACTIVIDAD'] }, many, () => {
+        throw new Error('must not run');
+      }),
+    ).rejects.toMatchObject({ response: { code: 'template_too_many_cells' } });
+  });
+});
+
 describe('template choices', () => {
   it('offers each input only the variables with a role it accepts', () => {
     const [proportion, distribution, mean] = listTemplates(metadata);

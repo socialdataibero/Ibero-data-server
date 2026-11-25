@@ -6,6 +6,7 @@ import {
   type RatioEstimate,
   type RatioQuery,
 } from '../analysis/standard-error.js';
+import { checkCells, combinations, origin, resolveBreakdowns } from './breakdowns.js';
 import {
   columnOf,
   columnWithRole,
@@ -34,6 +35,8 @@ export interface TemplateRequest {
   conditions?: string[];
   measure?: string;
   group?: string | null;
+  /** Variables that split every figure further; the result has each combination and its «Todos». */
+  breakdowns?: string[];
   missing?: MissingChoice;
   /** The edition of the analysis, when the resource has several (`template_edition_required`). */
   edition?: string | null;
@@ -52,6 +55,8 @@ export interface ResultRow {
   grupo: string | null;
   corte_codigo: string | null;
   corte: string | null;
+  /** Category code of each breakdown (by column); `null` is «Todos» and `''` an empty cell. */
+  desagregaciones: Record<string, string | null>;
   num: number;
   den: number;
   den_total: number | null;
@@ -81,12 +86,14 @@ export interface TemplateResult {
     conditions: string[];
     measure: string | null;
     group: string | null;
+    breakdowns: string[];
     missing: MissingChoice | null;
   };
   /** Which result columns are what, so a chart can be built without reading the template. */
   dimensions: {
     group: { column: 'nombre' | 'grupo'; codeColumn: 'cve' | 'grupo_codigo'; label: string; role: string } | null;
     series: { column: 'criterio' | 'corte'; codeColumn: 'criterio' | 'corte_codigo'; label: string } | null;
+    breakdowns: { column: string; label: string; categories: { code: string; label: string }[] }[];
   };
   value: { kind: 'proportion' | 'mean'; label: string; unit: string | null };
   bases: { id: Base | 'both'; label: string; note: string; description: string }[] | null;
@@ -103,8 +110,11 @@ export interface PlannedQuery {
 }
 
 const lit = (value: string) => `'${value.replace(/'/g, "''")}'`;
-const code = (column: string) => `CAST(${quoteIdent(column)} AS VARCHAR)`;
-const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
+/** SQL of the value of a column: the column itself, or its expression (groups of a measure). */
+const valueSql = (column: VariableMetadataColumn) => column.expression ?? quoteIdent(column.name);
+const code = (column: VariableMetadataColumn) => `CAST(${valueSql(column)} AS VARCHAR)`;
+/** Leaves names in capitals (a variable without a description, e.g. "HLENGUA") as they are. */
+const lowerFirst = (s: string) => (/^.[A-ZÁÉÍÓÚÑ0-9_]/.test(s) ? s : s.charAt(0).toLowerCase() + s.slice(1));
 const upperFirst = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const count = (n: number) => new Intl.NumberFormat('es-MX').format(n);
 
@@ -120,7 +130,7 @@ function bad(code: string, message: string, params?: Record<string, unknown>): n
 /** `col NOT IN (missing codes)`, or nothing when there are none or they are included. */
 function notMissing(column: VariableMetadataColumn, include: boolean): string {
   const codes = column.missingCodes ?? [];
-  return include || codes.length === 0 ? '' : ` AND ${code(column.name)} NOT IN (${codes.map(lit).join(', ')})`;
+  return include || codes.length === 0 ? '' : ` AND ${code(column)} NOT IN (${codes.map(lit).join(', ')})`;
 }
 
 /** The universe rule of `column` as SQL (`EDAD >= 15`, false without a value), or `null`. */
@@ -132,13 +142,13 @@ function ruleSql(column: VariableMetadataColumn): string | null {
 /** In the universe of `column`: it was asked (not empty) and, with a rule, the rule holds. */
 function inUniverse(column: VariableMetadataColumn): string {
   const rule = ruleSql(column);
-  return `${quoteIdent(column.name)} IS NOT NULL${rule ? ` AND ${rule}` : ''}`;
+  return `${valueSql(column)} IS NOT NULL${rule ? ` AND ${rule}` : ''}`;
 }
 
 /** A group's key: its value, or empty ("no aplica") outside its universe rule. */
 function groupKeySql(column: VariableMetadataColumn): string {
   const rule = ruleSql(column);
-  return rule ? `CASE WHEN ${rule} THEN ${quoteIdent(column.name)} END` : quoteIdent(column.name);
+  return rule ? `CASE WHEN ${rule} THEN ${valueSql(column)} END` : valueSql(column);
 }
 
 /** Label of a code of `column`: its category label, "No aplica" for an empty cell, or the code. */
@@ -161,6 +171,7 @@ interface Plan {
   conditions: VariableMetadataColumn[];
   measure: VariableMetadataColumn | null;
   group: VariableMetadataColumn | null;
+  breakdowns: VariableMetadataColumn[];
   include: boolean;
   missing: MissingChoice | null;
   design: Pick<RatioQuery, 'weight' | 'stratum' | 'psu' | 'certainty'>;
@@ -244,13 +255,21 @@ export function planTemplate(request: TemplateRequest, metadata: VariableMetadat
       );
     }
   }
-  if (group && main.some((c) => c.name === group.name)) {
+  if (group && main.some((c) => origin(c) === origin(group))) {
     bad(
       'template_variable_in_two_roles',
       `"${group.label}" is already being measured and cannot also split the result.`,
       { variable: group.name },
     );
   }
+
+  const breakdowns = resolveBreakdowns(
+    request.breakdowns ?? [],
+    spec('breakdowns')!.roles,
+    metadata,
+    group ? [...main, group] : main,
+  );
+  checkCells(group, breakdowns, variable);
 
   const weight = columnWithRole(metadata, 'weight');
   const stratum = columnWithRole(metadata, 'stratum');
@@ -269,6 +288,7 @@ export function planTemplate(request: TemplateRequest, metadata: VariableMetadat
     conditions,
     measure,
     group,
+    breakdowns,
     include: missing === 'include',
     missing,
     design: {
@@ -278,7 +298,7 @@ export function planTemplate(request: TemplateRequest, metadata: VariableMetadat
       // Strata enumerated completely add nothing to the variance (`standard-error.ts`, rule 7).
       certainty:
         withDesign && metadata.certainty
-          ? `${code(metadata.certainty.column)} IN (${metadata.certainty.codes.map(lit).join(', ')})`
+          ? `CAST(${quoteIdent(metadata.certainty.column)} AS VARCHAR) IN (${metadata.certainty.codes.map(lit).join(', ')})`
           : null,
     },
   };
@@ -287,26 +307,35 @@ export function planTemplate(request: TemplateRequest, metadata: VariableMetadat
 /** The ratio queries of a plan, each with the domain sets it needs (by group, and the total). */
 interface RatioSet {
   id: string;
+  /** The breakdowns it is split by; the others are «Todos». */
+  split: VariableMetadataColumn[];
   byGroup: RatioQuery | null;
   total: RatioQuery;
 }
 
 function ratioSets(plan: Plan): RatioSet[] {
+  return combinations(plan.breakdowns).flatMap((split) => ratioSetsOf(plan, split));
+}
+
+/** The keys of a domain are the group (in `byGroup`), the breakdowns of `split` and `extraKeys`. */
+function ratioSetsOf(plan: Plan, split: VariableMetadataColumn[]): RatioSet[] {
   const groupKey = plan.group ? [groupKeySql(plan.group)] : [];
+  const splitKeys = split.map(valueSql);
   const both = (
     id: string,
     q: Omit<RatioQuery, 'keys' | 'weight' | 'stratum' | 'psu' | 'certainty'>,
     extraKeys: string[] = [],
   ) => ({
     id,
-    byGroup: plan.group ? { ...plan.design, ...q, keys: [...groupKey, ...extraKeys] } : null,
-    total: { ...plan.design, ...q, keys: extraKeys },
+    split,
+    byGroup: plan.group ? { ...plan.design, ...q, keys: [...groupKey, ...splitKeys, ...extraKeys] } : null,
+    total: { ...plan.design, ...q, keys: [...splitKeys, ...extraKeys] },
   });
 
   if (plan.template.id === 'proportion') {
     return plan.conditions.flatMap((c) => {
       const rule = ruleSql(c);
-      const y = `${rule ? `${rule} AND ` : ''}${code(c.name)} = ${lit(c.positiveValue!)}`;
+      const y = `${rule ? `${rule} AND ` : ''}${code(c)} = ${lit(c.positiveValue!)}`;
       const den = `${inUniverse(c)}${notMissing(c, plan.include)}`;
       return [
         both(`own:${c.name}`, { source: 'data', y, x: den, cases: y }),
@@ -329,12 +358,12 @@ function ratioSets(plan: Plan): RatioSet[] {
   // Distribution: every row once per category of the variable, so each category is a domain key.
   const v = plan.variable!;
   const den = `${inUniverse(v)}${notMissing(v, plan.include)}`;
-  const y = `${den} AND ${code(v.name)} = _c._cat`;
+  const y = `${den} AND ${code(v)} = _c._cat`;
   return [
     both(
       'distribution',
       {
-        source: `data CROSS JOIN (SELECT DISTINCT ${code(v.name)} AS _cat FROM data WHERE ${den}) AS _c`,
+        source: `data CROSS JOIN (SELECT DISTINCT ${code(v)} AS _cat FROM data WHERE ${den}) AS _c`,
         y,
         x: den,
         cases: y,
@@ -350,7 +379,7 @@ function missingCountSql(column: VariableMetadataColumn): string {
   const rule = ruleSql(column);
   return codes.length === 0
     ? 'SELECT 0'
-    : `SELECT (count(*) FILTER (WHERE ${code(column.name)} IN (${codes.map(lit).join(', ')})${rule ? ` AND ${rule}` : ''}))::INTEGER FROM data`;
+    : `SELECT (count(*) FILTER (WHERE ${code(column)} IN (${codes.map(lit).join(', ')})${rule ? ` AND ${rule}` : ''}))::INTEGER FROM data`;
 }
 
 /** The queries to run for a plan, in order (`AnalysisService.runInternalQueries`). */
@@ -377,18 +406,44 @@ export function planQueries(plan: Plan): { sets: RatioSet[]; queries: PlannedQue
   return { sets, queries };
 }
 
+/** One estimate with what its domain keys mean. */
+interface Figure {
+  estimate: RatioEstimate;
+  groupCode: string | null;
+  desagregaciones: Record<string, string | null>;
+  /** The key after the breakdowns: the category of a distribution. */
+  category: string;
+}
+
+function figure(plan: Plan, split: VariableMetadataColumn[], estimate: RatioEstimate, grouped: boolean): Figure {
+  const start = grouped ? 1 : 0;
+  return {
+    estimate,
+    groupCode: grouped ? estimate.keys[0] : null,
+    desagregaciones: Object.fromEntries(
+      plan.breakdowns.map((c) => {
+        const i = split.indexOf(c);
+        return [c.name, i < 0 ? null : estimate.keys[start + i]];
+      }),
+    ),
+    category: estimate.keys[start + split.length] ?? '',
+  };
+}
+
 const cv = (se: number | null, value: number) => (se === null || value === 0 ? null : se / value);
 
 /** Turns the answers of `planQueries(plan)` (in the same order) into the result. */
 export function assembleResult(plan: Plan, answers: unknown[]): TemplateResult {
   const { metadata, group, template } = plan;
   const { sets } = planQueries(plan);
-  const estimates = new Map<string, { byGroup: RatioEstimate[]; total: RatioEstimate[] }>();
+  const estimates = new Map<string, Figure[]>();
   let i = 0;
   for (const set of sets) {
     const byGroup = set.byGroup ? (answers[i++] as RatioEstimate[]) : [];
     const total = answers[i++] as RatioEstimate[];
-    estimates.set(set.id, { byGroup, total });
+    const figures = estimates.get(set.id) ?? [];
+    figures.push(...byGroup.map((e) => figure(plan, set.split, e, true)), ...total.map((e) => figure(plan, set.split, e, false)));
+    estimates.set(set.id, figures);
   }
   const missingCounts = answers.slice(i) as number[];
 
@@ -406,6 +461,18 @@ export function assembleResult(plan: Plan, answers: unknown[]): TemplateResult {
   const base = { fuente: metadata.source, edicion: metadata.edition };
   const groupOrder = (row: ResultRow) =>
     row.es_total ? 2e9 : group ? orderOf(group, geographic ? row.cve : (row.grupo_codigo ?? '')) : 0;
+  // «Todos» first, then the categories in catalog order.
+  const breakdownOrder = (a: ResultRow, b: ResultRow) => {
+    for (const c of plan.breakdowns) {
+      const at = (r: ResultRow) => {
+        const value = r.desagregaciones[c.name];
+        return value === null ? -1 : orderOf(c, value);
+      };
+      if (at(a) !== at(b)) return at(a) - at(b);
+    }
+    return 0;
+  };
+  const byRow = (a: ResultRow, b: ResultRow) => groupOrder(a) - groupOrder(b) || breakdownOrder(a, b);
 
   let rows: ResultRow[] = [];
   let indicator: string;
@@ -417,7 +484,7 @@ export function assembleResult(plan: Plan, answers: unknown[]): TemplateResult {
       const own = estimates.get(`own:${c.name}`)!;
       const total = estimates.get(`total:${c.name}`)!;
       const criterio = `${c.positiveLabel ?? c.label}, ${c.universe ?? 'toda la población'}`;
-      const build = (o: RatioEstimate, t: RatioEstimate | undefined, groupCode: string | null): ResultRow => ({
+      const build = ({ estimate: o, groupCode, desagregaciones }: Figure, t: RatioEstimate | undefined): ResultRow => ({
         ...base,
         indicador: indicator,
         criterio,
@@ -425,6 +492,7 @@ export function assembleResult(plan: Plan, answers: unknown[]): TemplateResult {
         ...groupColumns(groupCode),
         corte_codigo: null,
         corte: null,
+        desagregaciones,
         num: o.y,
         den: o.x,
         den_total: t?.x ?? null,
@@ -433,21 +501,19 @@ export function assembleResult(plan: Plan, answers: unknown[]): TemplateResult {
         casos: o.cases,
         es_total: groupCode === null,
       });
-      const totalsByKey = new Map(total.byGroup.map((t) => [t.keys[0], t]));
-      const part = [
-        ...own.byGroup.map((o) => build(o, totalsByKey.get(o.keys[0]), o.keys[0])),
-        build(own.total[0], total.total[0], null),
-      ];
-      rows.push(...part.sort((a, b) => groupOrder(a) - groupOrder(b)));
+      const keyOf = (e: Figure) => JSON.stringify([e.groupCode, Object.values(e.desagregaciones)]);
+      const totalsByKey = new Map(total.map((t) => [keyOf(t), t.estimate]));
+      rows.push(...own.map((o) => build(o, totalsByKey.get(keyOf(o)))).sort(byRow));
     }
   } else if (template.id === 'weighted_mean') {
     const m = plan.measure!;
     indicator = `${m.label} promedio${m.unit ? ` (${m.unit})` : ''}`;
-    const { byGroup, total } = estimates.get('mean')!;
+    const figures = estimates.get('mean')!;
+    const whole = figures.find((e) => e.groupCode === null && Object.values(e.desagregaciones).every((v) => v === null))!;
     // With a universe rule, only the records inside it that have no value are "left out".
-    const inRule = plan.measure!.universeRule ? (missingCounts[0] ?? total[0].rows) : total[0].rows;
-    meanExcluded = inRule - total[0].cases;
-    const build = (e: RatioEstimate, groupCode: string | null): ResultRow => ({
+    const inRule = m.universeRule ? (missingCounts[0] ?? whole.estimate.rows) : whole.estimate.rows;
+    meanExcluded = inRule - whole.estimate.cases;
+    const build = ({ estimate: e, groupCode, desagregaciones }: Figure): ResultRow => ({
       ...base,
       indicador: indicator,
       criterio: null,
@@ -455,6 +521,7 @@ export function assembleResult(plan: Plan, answers: unknown[]): TemplateResult {
       ...groupColumns(groupCode),
       corte_codigo: null,
       corte: null,
+      desagregaciones,
       num: e.y,
       den: e.x,
       den_total: null,
@@ -463,14 +530,11 @@ export function assembleResult(plan: Plan, answers: unknown[]): TemplateResult {
       casos: e.cases,
       es_total: groupCode === null,
     });
-    rows = [...byGroup.map((e) => build(e, e.keys[0])), build(total[0], null)].sort(
-      (a, b) => groupOrder(a) - groupOrder(b),
-    );
+    rows = figures.map(build).sort(byRow);
   } else {
     const v = plan.variable!;
     indicator = `${v.label}, ${v.universe ?? 'toda la población'}`;
-    const { byGroup, total } = estimates.get('distribution')!;
-    const build = (e: RatioEstimate, groupCode: string | null, category: string): ResultRow => ({
+    const build = ({ estimate: e, groupCode, desagregaciones, category }: Figure): ResultRow => ({
       ...base,
       indicador: indicator,
       criterio: null,
@@ -478,6 +542,7 @@ export function assembleResult(plan: Plan, answers: unknown[]): TemplateResult {
       ...groupColumns(groupCode),
       corte_codigo: category,
       corte: labelOf(v, category),
+      desagregaciones,
       num: e.y,
       den: e.x,
       den_total: null,
@@ -486,10 +551,9 @@ export function assembleResult(plan: Plan, answers: unknown[]): TemplateResult {
       casos: e.cases,
       es_total: groupCode === null,
     });
-    rows = [
-      ...byGroup.map((e) => build(e, e.keys[0], e.keys[1])),
-      ...total.map((e) => build(e, null, e.keys[0])),
-    ]
+    rows = estimates
+      .get('distribution')!
+      .map(build)
       // A group with nobody in the universe of the variable has no distribution.
       .filter((r) => r.den > 0)
       .sort(
@@ -497,6 +561,7 @@ export function assembleResult(plan: Plan, answers: unknown[]): TemplateResult {
           groupOrder(a) - groupOrder(b) ||
           a.cve.localeCompare(b.cve) ||
           (a.grupo_codigo ?? '').localeCompare(b.grupo_codigo ?? '') ||
+          breakdownOrder(a, b) ||
           orderOf(v, a.corte_codigo!) - orderOf(v, b.corte_codigo!),
       );
   }
@@ -510,6 +575,7 @@ export function assembleResult(plan: Plan, answers: unknown[]): TemplateResult {
       conditions: plan.conditions.map((c) => c.name),
       measure: plan.measure?.name ?? null,
       group: group?.name ?? null,
+      breakdowns: plan.breakdowns.map((c) => c.name),
       missing: plan.missing,
     },
     dimensions: {
@@ -527,6 +593,14 @@ export function assembleResult(plan: Plan, answers: unknown[]): TemplateResult {
           : template.id === 'distribution'
             ? { column: 'corte', codeColumn: 'corte_codigo', label: plan.variable!.label }
             : null,
+      breakdowns: plan.breakdowns.map((c) => ({
+        column: c.name,
+        label: c.label,
+        categories: [...new Set(rows.map((r) => r.desagregaciones[c.name]))]
+          .filter((value) => value !== null)
+          .sort((a, b) => orderOf(c, a) - orderOf(c, b))
+          .map((value) => ({ code: value, label: labelOf(c, value) })),
+      })),
     },
     value:
       template.id === 'weighted_mean'
@@ -582,7 +656,8 @@ function texts(
   const { metadata, group, template } = plan;
   const people = metadata.unitPlural;
   const inEach = group ? ` en cada ${lowerFirst(group.label)}` : '';
-  const byGroup = group ? ` por ${lowerFirst(group.label)}` : '';
+  const crossed = plan.breakdowns.map((c) => lowerFirst(c.label)).join(' y ');
+  const byGroup = `${group ? ` por ${lowerFirst(group.label)}` : ''}${crossed ? `, según ${crossed}` : ''}`;
   const sample = metadata.design === 'sample';
 
   if (template.id === 'proportion') {

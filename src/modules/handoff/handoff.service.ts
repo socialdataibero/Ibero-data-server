@@ -14,6 +14,10 @@ export interface IberoContext {
   resourceName?: string;
   analysisId?: string;
   analysisTitle?: string;
+  analysisSlug?: string;
+  analysisFolder?: string;
+  analysisVisibility?: string;
+  analysisDescription?: string | null;
   publishToken?: string;
   /** False for users who may open vistrace but not save back to Ibero Data (no publishToken then). */
   canPublish: boolean;
@@ -119,7 +123,7 @@ export class HandoffService {
 
   createDownloadToken(user: AuthenticatedUser): string {
     return this.jwtService.sign(
-      { sub: user.id, email: user.email, isSysadmin: user.isSysadmin } satisfies JwtPayload,
+      { sub: user.id, email: user.email, isSysadmin: user.isSysadmin, ver: user.tokenVersion } satisfies JwtPayload,
       { expiresIn: DOWNLOAD_TOKEN_TTL },
     );
   }
@@ -154,6 +158,7 @@ export class HandoffService {
         sub: user.id,
         email: user.email,
         isSysadmin: user.isSysadmin,
+        ver: user.tokenVersion,
         purpose: PUBLISH_PURPOSE,
         organizationId: ibero.organizationId,
         datasetId: ibero.datasetId,
