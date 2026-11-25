@@ -21,6 +21,13 @@
  *   5. A ratio of 0 or 1 (Y = 0 or Y = X) has a standard error of exactly 0. That is not perfect
  *      precision: its coefficient of variation is undefined and the figure must be flagged.
  *   6. A domain with X = 0 (nobody in the universe) has no ratio and no error (`NULL`).
+ *   7. Only when the source declares which strata were enumerated completely (`certainty`, e.g.
+ *      the municipalities interviewed in full with the long questionnaire): such a stratum adds 0
+ *      to the variance, whatever its number of PSUs, because nothing in it was sampled. It is one
+ *      where a record has one of the declared codes, or where every record has a weight of 1.
+ *      Without a declaration no stratum is of certainty (the 2000 cases of the proposal).
+ *   8. With that declaration, a domain whose whole denominator comes from certainty strata has no
+ *      sampling error to report: `NULL`, as in a census.
  *
  * Without a stratum and a PSU (a census, or a sample that does not declare them) the error is
  * `NULL`, never 0: there is no sampling error to report.
@@ -42,6 +49,11 @@ export interface RatioQuery {
   x: string;
   /** Rows counted in `cases`, the real records behind the estimate (boolean SQL). */
   cases: string;
+  /**
+   * With a stratum and a PSU: whether a row says its stratum was enumerated completely (boolean
+   * SQL, rules 7 and 8), or `null` when the source declares no such column.
+   */
+  certainty?: string | null;
 }
 
 /** One output row of `ratioEstimatesSql`, in column order. */
@@ -94,8 +106,8 @@ export function ratioEstimatesSql(query: RatioQuery): string {
   const totals = `SELECT ${kList}, SUM(_w * COALESCE(_yv, 0)) AS _Y, SUM(_w * COALESCE(_xv, 0)) AS _X,
       (count(*) FILTER (WHERE _cv))::INTEGER AS _cases, count(*)::INTEGER AS _rows
     FROM b GROUP BY ${kList}`;
-  const finalSe = (variance: string) =>
-    `CASE WHEN t._X = 0 THEN NULL WHEN t._Y = 0 OR t._Y = t._X THEN 0.0 ELSE sqrt(greatest(${variance}, 0)) END`;
+  const finalSe = (variance: string, sampledX?: string) =>
+    `CASE WHEN t._X = 0 THEN NULL${sampledX ? ` WHEN ${sampledX} = 0 THEN NULL` : ''} WHEN t._Y = 0 OR t._Y = t._X THEN 0.0 ELSE sqrt(greatest(${variance}, 0)) END`;
 
   if (!design) {
     return `WITH b AS (SELECT ${base.join(', ')} FROM ${query.source}),
@@ -104,9 +116,19 @@ SELECT ${kList}, _Y AS _y, _X AS _x, _cases, _rows, CAST(NULL AS DOUBLE) AS _se
 FROM t ORDER BY ${kList}`;
   }
 
-  return `WITH b AS (SELECT ${base.join(', ')} FROM ${query.source}),
-  t AS (${totals}),
-  nh AS (SELECT _h, count(DISTINCT _u)::DOUBLE AS _nh FROM b GROUP BY _h),
+  // Rule 7: with a declaration, a stratum is of certainty when a record says so or when every
+  // weight is 1.
+  const certain = query.certainty ? `bool_or(_cert)${query.weight ? ' OR bool_and(_w = 1)' : ''}` : 'false';
+  // Rule 8: the part of the denominator that comes from sampled strata.
+  const designTotals = `SELECT ${k.map((c) => `b.${c}`).join(', ')}, SUM(b._w * COALESCE(b._yv, 0)) AS _Y,
+      SUM(b._w * COALESCE(b._xv, 0)) AS _X,
+      SUM(CASE WHEN COALESCE(nh._certain, false) THEN 0 ELSE b._w * COALESCE(b._xv, 0) END) AS _Xs,
+      (count(*) FILTER (WHERE b._cv))::INTEGER AS _cases, count(*)::INTEGER AS _rows
+    FROM b LEFT JOIN nh ON b._h IS NOT DISTINCT FROM nh._h GROUP BY ${k.map((c) => `b.${c}`).join(', ')}`;
+
+  return `WITH b AS (SELECT ${base.join(', ')}${query.certainty ? `, COALESCE((${query.certainty}), false) AS _cert` : ''} FROM ${query.source}),
+  nh AS (SELECT _h, count(DISTINCT _u)::DOUBLE AS _nh, (${certain}) AS _certain FROM b GROUP BY _h),
+  t AS (${designTotals}),
   z AS (
     SELECT ${k.map((c) => `b.${c}`).join(', ')}, b._h, b._u,
       SUM(CASE WHEN t._X > 0
@@ -116,16 +138,16 @@ FROM t ORDER BY ${kList}`;
     GROUP BY ${k.map((c) => `b.${c}`).join(', ')}, b._h, b._u
   ),
   s AS (
-    SELECT ${k.map((c) => `z.${c}`).join(', ')}, z._h, nh._nh, SUM(z._z) AS _s1, SUM(z._z * z._z) AS _s2
+    SELECT ${k.map((c) => `z.${c}`).join(', ')}, z._h, nh._nh, nh._certain, SUM(z._z) AS _s1, SUM(z._z * z._z) AS _s2
     FROM z JOIN nh ON z._h = nh._h
-    GROUP BY ${k.map((c) => `z.${c}`).join(', ')}, z._h, nh._nh
+    GROUP BY ${k.map((c) => `z.${c}`).join(', ')}, z._h, nh._nh, nh._certain
   ),
   v AS (
     SELECT ${kList},
-      SUM(CASE WHEN _nh > 1 THEN _nh / (_nh - 1) * (_s2 - _s1 * _s1 / _nh) ELSE _s2 END) AS _var
+      SUM(CASE WHEN _certain THEN 0 WHEN _nh > 1 THEN _nh / (_nh - 1) * (_s2 - _s1 * _s1 / _nh) ELSE _s2 END) AS _var
     FROM s GROUP BY ${kList}
   )
-SELECT ${k.map((c) => `t.${c}`).join(', ')}, t._Y AS _y, t._X AS _x, t._cases, t._rows, ${finalSe('v._var')} AS _se
+SELECT ${k.map((c) => `t.${c}`).join(', ')}, t._Y AS _y, t._X AS _x, t._cases, t._rows, ${finalSe('v._var', query.certainty ? 't._Xs' : undefined)} AS _se
 FROM t LEFT JOIN v ON ${k.map((c) => `t.${c} = v.${c}`).join(' AND ')}
 ORDER BY ${k.map((c) => `t.${c}`).join(', ')}`;
 }

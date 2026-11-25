@@ -6,6 +6,7 @@ import { MappingChoiceDto } from './dto/mapping-choice.dto.js';
 import { createHarmonizerServices } from './harmonizer.testing.js';
 import {
   assertSourceRoles,
+  normalizeCertaintyCodes,
   buildSourceMetadata,
   parseSourceMetadata,
   missingSourceInfo,
@@ -90,9 +91,9 @@ describe('upload: source design and unit', () => {
 describe('mapping: role values', () => {
   it('accepts weight, stratum, psu and null; rejects others', async () => {
     const choice = (role: unknown) => plainToInstance(MappingChoiceDto, { column: 'A', choice: '', role });
-    for (const role of ['weight', 'stratum', 'psu', null, undefined])
+    for (const role of ['weight', 'stratum', 'psu', 'certainty', null, undefined])
       expect(await details(choice(role))).toEqual([]);
-    expect(await details(choice('factor'))).toEqual(['role must be one of: weight, stratum, psu.']);
+    expect(await details(choice('factor'))).toEqual(['role must be one of: weight, stratum, psu, certainty.']);
   });
 });
 
@@ -119,6 +120,18 @@ describe('assertSourceRoles', () => {
     expect(
       thrown(() => assertSourceRoles('sample', [col('F1', 'weight'), col('F2', 'weight')])),
     ).toMatchObject({ code: 'source_role_repeated', params: { role: 'weight', columns: ['F1', 'F2'] } });
+  });
+
+  it('a certainty column needs the codes of a completely enumerated stratum', () => {
+    const cert = (codes?: string[]): RoleChoice => ({ column: 'COB', mapped: true, role: 'certainty', certaintyCodes: codes });
+    for (const codes of [undefined, [], [' ', '']]) {
+      expect(thrown(() => assertSourceRoles('sample', [col('FAC', 'weight'), cert(codes)]))).toMatchObject({
+        code: 'certainty_codes_required',
+        params: { column: 'COB' },
+      });
+    }
+    expect(thrown(() => assertSourceRoles('sample', [col('FAC', 'weight'), cert(['1'])]))).toBeNull();
+    expect(normalizeCertaintyCodes([' 1', '1', '', '3 '])).toEqual(['1', '3']);
   });
 
   it('a role on an unmapped column fails', () => {
@@ -219,17 +232,17 @@ describe('saveMapping with roles', () => {
   it('a saved role that changes is updated', async () => {
     const { service, prisma } = makeService('sample');
     prisma.harmonizerMapping.findMany.mockResolvedValueOnce([
-      { id: 'm-fac', sourceColumn: 'FAC', canonicalVariableId: 'v-fac', missingCodes: [], role: null, valueMap: {} },
-      { id: 'm-est', sourceColumn: 'EST', canonicalVariableId: 'v-est', missingCodes: [], role: 'weight', valueMap: {} },
+      { id: 'm-fac', sourceColumn: 'FAC', canonicalVariableId: 'v-fac', missingCodes: [], role: null, certaintyCodes: [], valueMap: {} },
+      { id: 'm-est', sourceColumn: 'EST', canonicalVariableId: 'v-est', missingCodes: [], role: 'weight', certaintyCodes: [], valueMap: {} },
     ]);
     await service.saveMapping('d1', { columns: columns({ FAC: 'weight', EST: 'stratum' }) });
     expect(prisma.harmonizerMapping.update).toHaveBeenCalledWith({
       where: { id: 'm-fac' },
-      data: { missingCodes: [], role: 'weight' },
+      data: { missingCodes: [], role: 'weight', certaintyCodes: [] },
     });
     expect(prisma.harmonizerMapping.update).toHaveBeenCalledWith({
       where: { id: 'm-est' },
-      data: { missingCodes: [], role: 'stratum' },
+      data: { missingCodes: [], role: 'stratum', certaintyCodes: [] },
     });
   });
 });
@@ -264,6 +277,7 @@ describe('buildSourceMetadata', () => {
   const analysis = (a: Partial<VariableAnalysis>): VariableAnalysis => ({
     role: null,
     universe: null,
+    universeRule: null,
     positiveValue: null,
     geoLevel: null,
     unit: null,
@@ -291,7 +305,7 @@ describe('buildSourceMetadata', () => {
       unit: 'person',
       unitPlural: 'personas',
       total: ags,
-      editions: [{ id: 'e1', name: 'Edición e1', year: 2001, design: 'sample', unit: 'person', coverage: ags, weight: 'FAC' }],
+      editions: [{ id: 'e1', name: 'Edición e1', year: 2001, design: 'sample', unit: 'person', coverage: ags, weight: 'FAC', certainty: null }],
       columns: [
         { name: 'EDAD', type: 'BIGINT', missingCodes: ['999'], missingCodesAreNull: true, missingCount: { e1: 12 } },
         { name: 'FAC', type: 'DOUBLE', role: 'weight' },
@@ -299,6 +313,30 @@ describe('buildSourceMetadata', () => {
       ],
       origin,
     });
+  });
+
+  it('an edition says which strata were enumerated completely, with the codes as in the file', () => {
+    const cob = { ...col('COB', [], 'certainty'), certaintyCodes: ['C'] };
+    const meta = build([edition('e1', [col('FAC', [], 'weight'), cob]), edition('e2', [col('FAC', [], 'weight')])], ['FAC', 'COB']);
+    expect(meta?.editions.map((e) => e.certainty)).toEqual([{ column: 'COB', codes: ['C'] }, null]);
+    // A role only some editions give is not the column's role.
+    expect(meta?.columns.find((c) => c.name === 'COB')?.role).toBeUndefined();
+    const one = build([edition('e1', [col('FAC', [], 'weight'), cob])], ['FAC', 'COB']);
+    expect(one?.columns.find((c) => c.name === 'COB')?.role).toBe('certainty');
+    // Not in the file (left out of the view): no certainty.
+    expect(build([edition('e1', [col('FAC', [], 'weight'), cob])], ['FAC'])?.editions[0].certainty).toBeNull();
+    expect(parseSourceMetadata(structuredClone(one))?.editions[0].certainty).toEqual({ column: 'COB', codes: ['C'] });
+  });
+
+  it('a universe rule travels with the column, as a column of the file', () => {
+    const variables = new Map<string, MetadataVariable>([
+      ['HLI', { ...empty, analysis: analysis({ role: 'ordinal', universe: 'población de 15 años y más', universeRule: { variable: 'EDAD', min: 15 } }) }],
+    ]);
+    const meta = build([edition('e1', [col('FAC', [], 'weight'), col('HLI'), col('EDAD')])], ['FAC', 'HLI', 'EDAD'], variables);
+    const hli = meta?.columns.find((c) => c.name === 'HLI');
+    expect(hli?.universeRule).toEqual({ column: 'EDAD', min: 15 });
+    expect(parseSourceMetadata(structuredClone(meta))?.columns.find((c) => c.name === 'HLI')?.universeRule).toEqual({ column: 'EDAD', min: 15 });
+    expect(meta?.columns.find((c) => c.name === 'EDAD')?.universeRule).toBeUndefined();
   });
 
   it('describes each variable: role, label, universe, categories, "yes" code, groups and code review', () => {
@@ -453,7 +491,7 @@ describe('parseSourceMetadata', () => {
     unitPlural: 'personas',
     total: { level: 'state', code: '01', label: 'Aguascalientes' },
     editions: [
-      { id: 'e1', name: 'Muestra 2000', year: 2000, design: 'sample', unit: 'person', coverage: { level: 'state', code: '01', label: 'Aguascalientes' }, weight: 'FAC' },
+      { id: 'e1', name: 'Muestra 2000', year: 2000, design: 'sample', unit: 'person', coverage: { level: 'state', code: '01', label: 'Aguascalientes' }, weight: 'FAC', certainty: null },
     ],
     columns: [
       { name: 'EDAD', type: 'BIGINT', role: 'measure', label: 'Edad', unit: 'años', disaggregation: { summable: true, cuts: [{ from: 0, to: null, label: 'Todas' }] }, missingCodes: ['999'], missingCodesAreNull: true, missingCount: { e1: 7 } },
@@ -505,7 +543,7 @@ describe('parseSourceMetadata', () => {
         { name: 'FAC', type: 'DOUBLE', role: 'weight' },
       ],
     };
-    const edition = (id: string) => ({ id, name: null, year: null, design: 'sample', unit: 'person', coverage: null, weight: 'FAC' });
+    const edition = (id: string) => ({ id, name: null, year: null, design: 'sample', unit: 'person', coverage: null, weight: 'FAC', certainty: null });
     expect(parseSourceMetadata(v1)).toEqual({
       version: 2,
       title: null,

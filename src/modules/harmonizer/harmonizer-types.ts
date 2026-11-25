@@ -101,6 +101,8 @@ export interface MappingColumn {
   missingCodes: string[];
   // Rol de diseño muestral guardado; null = ninguno.
   role: SourceRole | null;
+  // Con rol `certainty`: los códigos que marcan un estrato de enumeración completa.
+  certaintyCodes: string[];
   // Tipo que sugieren los valores de esta edición, con sus códigos guardados.
   inferredType: ValueType;
   values: ColumnValues;

@@ -65,6 +65,7 @@ async function setup() {
     sourceColumn,
     missingCodes,
     role,
+    certaintyCodes: [] as string[],
     valueMap: {},
     datasetId: 'ed1',
     dataset: edition,
@@ -135,7 +136,7 @@ const expected = {
   unit: 'person',
   unitPlural: 'personas',
   total: nacional,
-  editions: [{ id: 'ed1', name: 'ENOE 2024 T1', year: 2024, design: 'sample', unit: 'person', coverage: nacional, weight: 'FAC' }],
+  editions: [{ id: 'ed1', name: 'ENOE 2024 T1', year: 2024, design: 'sample', unit: 'person', coverage: nacional, weight: 'FAC', certainty: null }],
   columns: [
     { name: 'FOLIO', type: 'BIGINT' },
     // One cell had 999 before it became NULL (D13).

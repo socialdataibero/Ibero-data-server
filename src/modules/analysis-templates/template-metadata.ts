@@ -35,6 +35,8 @@ export interface VariableMetadataColumn {
   missingCount?: number;
   /** Who was asked, e.g. "población de 5 años y más". An empty cell is outside it ("no aplica"). */
   universe?: string;
+  /** The records whose `column` (a number of the file) is at least `min`; the others are outside. */
+  universeRule?: { column: string; min: number };
   /** Label of an empty cell when the variable is a group, e.g. "No aplica (menores de 12 años)". */
   notApplicableLabel?: string;
   /** Dichotomous: the code that counts as "yes", and how to say it. */
@@ -66,9 +68,16 @@ export interface VariableMetadata {
   /** The place the edition covers, for the total row: level, code and name. */
   total: { level: string; code: string; label: string };
   columns: VariableMetadataColumn[];
+  /** Every column of the file, described or not (a universe rule may point to any of them). */
+  fileColumns: string[];
   /** The edition the analysis is about, and the other editions of the file. */
   editionInfo: TemplateEdition;
   editions: TemplateEdition[];
+  /**
+   * Which strata of the edition were enumerated completely: a column of the file and its codes
+   * (`editions[].certainty` of the source metadata), or `null` when the edition declares none.
+   */
+  certainty: { column: string; codes: string[] } | null;
   /**
    * SQL condition that keeps the rows of that edition (`_dataset` and `_year` of a survey view),
    * or `null` when the file has one edition.
@@ -151,6 +160,7 @@ function column(
       ? { missingCount: c.missingCount[editionId] ?? 0 }
       : {}),
     ...(c.universe ? { universe: c.universe } : {}),
+    ...(c.universeRule ? { universeRule: c.universeRule } : {}),
     ...(c.notApplicableLabel ? { notApplicableLabel: c.notApplicableLabel } : {}),
     ...(c.positiveValue ? { positiveValue: c.positiveValue } : {}),
     ...(positive ? { positiveLabel: positive } : {}),
@@ -163,8 +173,8 @@ function column(
  * What the templates read about one edition of a resource (see `VariableMetadata`), or `null` when
  * the resource has no source metadata or the edition has no design or unit (editions uploaded
  * before they were asked). Only columns with a role are described. The expansion factor is the
- * edition's (`editions[].weight`), so a survey whose editions have different factors still works
- * one edition at a time. A file without the place it covers gets "Total" as its total row.
+ * edition's (`editions[].weight`), and so are its strata of certainty (`editions[].certainty`), so
+ * a survey whose editions have different factors still works one edition at a time. A file without the place it covers gets "Total" as its total row.
  */
 export function templateMetadata(
   metadata: SourceMetadata | null,
@@ -206,8 +216,13 @@ export function templateMetadata(
       ? { level: LEVEL_TEXT[coverage.level] ?? coverage.level, code: coverage.code, label: coverage.label }
       : { level: 'total', code: '', label: 'Total' },
     columns,
+    fileColumns: metadata.columns.map((c) => c.name),
     editionInfo: editionOf(edition),
     editions: metadata.editions.map(editionOf),
+    certainty:
+      edition.certainty && metadata.columns.some((c) => c.name === edition.certainty!.column)
+        ? { column: edition.certainty.column, codes: edition.certainty.codes }
+        : null,
     rowFilter,
   };
 }

@@ -292,6 +292,9 @@ model HarmonizerCanonicalVariable {
   /// Who was asked, e.g. "población de 3 años y más". The rule is always "the question was
   /// asked": an empty cell is outside it.
   universe          String?
+  /// A narrower universe that can be computed: `{ variable, min }`, the records whose value of
+  /// another variable of the survey (a number, such as EDAD) is at least `min`. `null` = none.
+  universeRule      Json?
   /// Dichotomous: the code that counts as "yes".
   positiveValue     String?
   /// Geographic: its territorial level (`geoLevel` of `variable-role.ts`).
@@ -324,8 +327,12 @@ model HarmonizerMapping {
   /// Se aplica después de los códigos de no especificado.
   valueMap            Json     @default("{}")
   /// Sample design role of this column: `weight` (expansion factor), `stratum` or `psu`
-  /// (primary sampling unit). Only in sample editions, at most one column per role.
+  /// (primary sampling unit), or `certainty` (says which strata were enumerated completely).
+  /// Only in sample editions, at most one column per role.
   role                String?
+  /// With `role = certainty` only: the codes of this column (as in the file, before the
+  /// recoding) that mark a completely enumerated stratum. Empty for every other role.
+  certaintyCodes      String[] @default([])
 
   dataset           HarmonizerDataset           @relation(fields: [datasetId], references: [id], onDelete: Cascade)
   canonicalVariable HarmonizerCanonicalVariable @relation(fields: [canonicalVariableId], references: [id], onDelete: Cascade)

@@ -12,12 +12,14 @@ const fixture = (name: string) =>
   fileURLToPath(new URL(`../../../test/fixtures/templates/${name}`, import.meta.url));
 
 async function run(csv: string, queries: RatioQuery[]) {
+  return runOn(`SELECT * FROM read_csv('${fixture(csv)}', all_varchar = true)`, queries);
+}
+
+async function runOn(view: string, queries: RatioQuery[]) {
   const instance = await DuckDBInstance.create(':memory:');
   const connection = await instance.connect();
   try {
-    await connection.run(
-      `CREATE VIEW data AS SELECT * FROM read_csv('${fixture(csv)}', all_varchar = true)`,
-    );
+    await connection.run(`CREATE VIEW data AS ${view}`);
     const out = [];
     for (const q of queries) {
       const rows = (await connection.runAndReadAll(ratioEstimatesSql(q))).getRowsJson() as unknown[][];
@@ -99,6 +101,49 @@ describe('ratioEstimatesSql', () => {
       { ...design, keys: ['ENT'], y: `HLI = '1'`, x: `ENT = '01'`, cases: `HLI = '1'` },
     ]);
     expect(rows.find((r) => r.keys[0] === '02')).toMatchObject({ x: 0, se: null });
+  });
+
+  describe('strata enumerated completely (certainty)', () => {
+    // Stratum A is sampled (2 PSUs of weight 10); B is declared complete (COB = 1, weights 1 and 2);
+    // C is not declared but every weight is 1. DOM puts A apart from B and C. By hand: Y = 14,
+    // X = 46; in A the two PSUs differ by 10/46 in z, in B and in C by 1/46. Hence the error is
+    // 10/46 with only A, and √(10² + 1 + 1) / 46 when every stratum counts.
+    const rows: [string, string, number, string, string, string][] = [
+      ['A', 'a1', 10, '1', '2', 'm'], ['A', 'a1', 10, '0', '2', 'm'], ['A', 'a2', 10, '0', '2', 'm'], ['A', 'a2', 10, '0', '2', 'm'],
+      ['B', 'b1', 2, '1', '1', 'c'], ['B', 'b2', 1, '1', '1', 'c'], ['B', 'b2', 1, '0', '1', 'c'],
+      ['C', 'c1', 1, '0', '2', 'c'], ['C', 'c2', 1, '1', '2', 'c'],
+    ];
+    const view = `SELECT * FROM (VALUES ${rows
+      .map((r) => `(${r.map((v) => (typeof v === 'number' ? v : `'${v}'`)).join(', ')})`)
+      .join(', ')}) AS t(EST, UPM, FAC, Y, COB, DOM)`;
+    const query = (keys: string[], certainty: string | null): RatioQuery => ({
+      source: 'data',
+      keys,
+      weight: 'FAC',
+      stratum: 'EST',
+      psu: 'UPM',
+      y: `Y = '1'`,
+      x: 'true',
+      cases: `Y = '1'`,
+      certainty,
+    });
+
+    it('a declared stratum, and one where every weight is 1, add nothing to the variance', async () => {
+      const [declared, undeclared] = await runOn(view, [query([], `COB = '1'`), query([], null)]);
+      expect(declared[0]).toMatchObject({ y: 14, x: 46 });
+      expect(declared[0].se!.toFixed(6)).toBe((10 / 46).toFixed(6));
+      // Without a declaration nothing is of certainty, not even C (the 2000 cases of the proposal).
+      expect(undeclared[0].se!.toFixed(6)).toBe((Math.sqrt(102) / 46).toFixed(6));
+    });
+
+    it('a domain whose whole denominator is in certainty strata has no error, not 0', async () => {
+      const [declared, undeclared] = await runOn(view, [query(['DOM'], `COB = '1'`), query(['DOM'], null)]);
+      expect(declared.map((e) => [e.keys[0], e.y, e.x, e.se === null ? null : e.se.toFixed(6)])).toEqual([
+        ['c', 4, 6, null],
+        ['m', 10, 40, '0.250000'],
+      ]);
+      expect(undeclared.find((e) => e.keys[0] === 'c')!.se).not.toBeNull();
+    });
   });
 
   it('refuses a stratum without a PSU', () => {

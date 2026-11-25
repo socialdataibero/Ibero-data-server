@@ -131,7 +131,7 @@ describe('the resource in the API: source metadata (SDI-138)', () => {
     unit: 'person',
     unitPlural: 'personas',
     total: null,
-    editions: [{ id: 'ed1', name: null, year: null, design: 'sample', unit: 'person', coverage: null, weight: 'FAC' }],
+    editions: [{ id: 'ed1', name: null, year: null, design: 'sample', unit: 'person', coverage: null, weight: 'FAC', certainty: null }],
     columns: [
       { name: 'EDAD', type: 'BIGINT', missingCodes: ['999'], missingCodesAreNull: true },
       { name: 'FAC', type: 'BIGINT', role: 'weight' },

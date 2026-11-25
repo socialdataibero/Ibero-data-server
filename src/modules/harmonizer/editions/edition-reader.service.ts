@@ -22,6 +22,8 @@ export interface EditionMapping {
   missingCodes: string[];
   valueMap: Prisma.JsonValue;
   role: string | null;
+  /** With `role = certainty`: the codes (before the recoding) of a completely enumerated stratum. */
+  certaintyCodes: string[];
   /** `role` is the canonical's role in analysis (category, measure…), not the sample one. */
   canonicalVariable: { name: string; role: string | null };
 }

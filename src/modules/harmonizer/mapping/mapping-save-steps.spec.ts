@@ -31,6 +31,7 @@ const resolved = (
   canonicalId,
   missingCodes: [],
   role: null,
+  certaintyCodes: [],
   dataType: undefined,
   ...extra,
 });
@@ -178,6 +179,7 @@ describe('mappingChanges', () => {
     canonicalVariableId,
     missingCodes: [],
     role: null,
+    certaintyCodes: [],
     ...extra,
   });
 
@@ -205,6 +207,7 @@ describe('mappingChanges', () => {
           canonicalVariableId: 'c1',
           missingCodes: ['9'],
           role: null,
+          certaintyCodes: [],
         },
       ],
     });
@@ -223,6 +226,7 @@ describe('mappingChanges', () => {
           canonicalVariableId: 'c2',
           missingCodes: [],
           role: 'weight',
+          certaintyCodes: [],
           valueMap: {},
         },
       },
@@ -244,10 +248,10 @@ describe('mappingChanges', () => {
       ]),
     );
     expect(out.toUpdate).toEqual([
-      { id: 'm1', data: { missingCodes: ['9', '8'], role: null } },
-      { id: 'm2', data: { missingCodes: [], role: 'psu' } },
+      { id: 'm1', data: { missingCodes: ['9', '8'], role: null, certaintyCodes: [] } },
+      { id: 'm2', data: { missingCodes: [], role: 'psu', certaintyCodes: [] } },
       // Same codes in another order are a change: the order is kept as entered.
-      { id: 'm3', data: { missingCodes: ['8', '9'], role: null } },
+      { id: 'm3', data: { missingCodes: ['8', '9'], role: null, certaintyCodes: [] } },
     ]);
   });
 });

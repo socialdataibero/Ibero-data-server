@@ -130,6 +130,7 @@ export class MappingService {
           canonicalName: m.canonicalVariable.name,
           missingCodes: m.missingCodes,
           role: m.role,
+          certaintyCodes: m.certaintyCodes,
         })),
     };
   }
@@ -205,6 +206,9 @@ export class MappingService {
     );
     const savedRoleByColumn = new Map(
       saved.map((m) => [m.sourceColumn, m.role as SourceRole | null]),
+    );
+    const savedCertaintyByColumn = new Map(
+      saved.map((m) => [m.sourceColumn, m.certaintyCodes]),
     );
     const historicalByColumn = new Map<string, string>();
     for (const m of historical) {
@@ -282,6 +286,7 @@ export class MappingService {
         name,
         missingCodes: [] as string[],
         role: null as SourceRole | null,
+        certaintyCodes: [] as string[],
         inferredType,
         values,
         codebook,
@@ -295,6 +300,7 @@ export class MappingService {
           suggestionSource: null,
           missingCodes: savedCodesByColumn.get(name) ?? [],
           role: savedRoleByColumn.get(name) ?? null,
+          certaintyCodes: savedCertaintyByColumn.get(name) ?? [],
         };
       }
       const suggested = suggestion(name, info);
@@ -366,6 +372,7 @@ export class MappingService {
           column,
           mapped: !!choice && isMappedChoice(choice),
           role: choice?.role,
+          certaintyCodes: choice?.certaintyCodes,
         };
       }),
     );

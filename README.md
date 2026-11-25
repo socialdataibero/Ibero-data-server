@@ -304,7 +304,8 @@ A resource saved from the harmonizer keeps what was declared about its source an
   "total": { "level": "state", "code": "01", "label": "Aguascalientes" },
   "editions": [
     { "id": "2914422d-…", "name": "Muestra 2000", "year": 2000, "design": "sample", "unit": "person",
-      "coverage": { "level": "state", "code": "01", "label": "Aguascalientes" }, "weight": "FACTOR" }
+      "coverage": { "level": "state", "code": "01", "label": "Aguascalientes" }, "weight": "FACTOR",
+      "certainty": null }
   ],
   "columns": [
     { "name": "EDAD", "type": "BIGINT", "role": "measure", "label": "Edad", "unit": "años",
@@ -325,12 +326,14 @@ Root:
 
 - `title` is the survey's name and `source` its short name ([Surveys](#surveys), `shortName`, `null` when not given).
 - `design`, `unit` and `total` are those of the editions when they all share them; otherwise `null` (each edition keeps its own). `total` is the edition's `coverage` ([Upload](#upload)), the place of the total row of an analysis. `unitPlural` is the unit in plural for texts (`personas`, `viviendas`, `hogares`), `null` with `unit`.
-- `editions` lists the editions the data comes from, in the order they are stacked: `{ id, name, year, design, unit, coverage, weight }`, where `weight` is the column of the file that is that edition's expansion factor (`null` for a census, or when the factor is not among the file's columns). So a survey whose editions have different designs, units or factors is still described: before version 2 it had no metadata at all.
+- `editions` lists the editions the data comes from, in the order they are stacked: `{ id, name, year, design, unit, coverage, weight, certainty }`, where `weight` is the column of the file that is that edition's expansion factor (`null` for a census, or when the factor is not among the file's columns). So a survey whose editions have different designs, units or factors is still described: before version 2 it had no metadata at all.
+- `certainty` says which strata of the edition were enumerated completely: `{ column, codes }`, the column with the sample role `certainty` ([Source design](#source-design)) and its codes as they are in the file, that is, after the recoding of the mapping (`{ "column": "COBERTURA", "codes": ["1"] }`). `null` when the edition declares none or the column is not in the file. Copies made before 2026-11-23 do not have it and read as `null`; it is added to the signature only when there are codes, so those copies are not marked stale.
 
 Per column, every property but `name` and `type` (the same as `columns`) is left out when it has no value:
 
-- `role`: the column's [sample design role](#source-design) (`weight`, `stratum`, `psu`) when the source is a sample and every edition gives it that role; otherwise its [use in analysis](#use-in-analysis) (`category`, `ordinal`, `dichotomous`, `geographic`, `label`, `temporal`, `measure`, `socioeconomic_stratum`, `key`, `identifier`, `free_text`).
+- `role`: the column's [sample design role](#source-design) (`weight`, `stratum`, `psu`, `certainty`) when the source is a sample and every edition gives it that role; otherwise its [use in analysis](#use-in-analysis) (`category`, `ordinal`, `dichotomous`, `geographic`, `label`, `temporal`, `measure`, `socioeconomic_stratum`, `key`, `identifier`, `free_text`).
 - `label` (the canonical's description), `universe`, `positiveValue`, `unit`, `geoLevel` and `disaggregation` (`{ summable, cuts?, maxLevel? }`) come from [Use in analysis](#use-in-analysis); its `notApplicableLabel` is a property of the column.
+- `universeRule` is the variable's `universeRule` as columns of the file: `{ column, min }` (`{ "column": "EDAD", "min": 15 }`). It is added to the signature only when there is one, so copies saved before it existed are not marked stale.
 - `categories`, only for `category`, `ordinal`, `dichotomous`, `geographic` and `socioeconomic_stratum`: `[{ code, label, kind }]`, `kind` `missing` for the codes in `missingCodes` and `value` otherwise, `label` `null` when nothing names it. With a common catalog ([Recoding](#recoding)), its codes in its order, then the kept "not specified" codes that are not in it. Without one, the categories of the editions' dictionaries (values and "not specified"), from the newest edition, each code written as it is in that edition's data (a dictionary `01` is `1` when the data has `1`) and after its recoding; then the codes of the data that no dictionary names, unless an edition has more than 200 distinct values (its stored profile is cut there).
 - `codeReview`, in survey views only: the state of the variable's codes between editions when it was saved (`single`, `ok`, `warning` or `reviewed`, see [Codes between editions](#codes-between-editions)).
 - `missingCodes` are the column's "not specified" codes, and `missingCodesAreNull` says what the file does with them (the rule of [Harmonized views](#harmonized-views)):
@@ -458,7 +461,9 @@ How each figure is computed (`w` is the expansion factor, 1 in a census):
 - **Proportion.** `num` = Σ w of the rows with the condition's `positiveValue`. `den` = Σ w of the rows in the universe (not empty), without its `missingCodes` when they are excluded. `den_total` = Σ w of every row of the group: the same for every condition, and the "not specified" choice does not change it. `casos` = records with the condition.
 - **Distribution.** For each category: `num` = Σ w of its rows; `den` = Σ w of the rows in the universe of the variable (without its `missingCodes` when they are excluded), so the categories of a group add up to `den`. A group with nobody in the universe has no rows.
 - **Weighted mean.** `num` = Σ w × value and `den` = Σ w, over the rows with a value that is not a missing code. `casos` = those records.
+- **Universe rule.** A variable with `universeRule` (`{ column, min }`, from [Use in analysis](#use-in-analysis)) has a narrower universe: the rows in it are also those whose `column` is at least `min`; a row without that value is outside. It applies to the `den` and the `num` of a proportion's own universe (`den_total` stays every row), to the `den` of a distribution and to the rows of a mean. When the variable is the group, the rows outside it go to its «no aplica» group (`notApplicableLabel`) instead of their category, so the groups still add up to the whole. The counts of "not specified" in the texts are taken inside it too. A rule whose column is not in the resource returns `400 template_universe_variable_missing` (`params: { variable, universeVariable }`), never a wider universe. Case: `censo2020_nacional/` (schooling and grade for 15 years and more).
 - **Standard error** (`ee`, and `ee_total` with `den_total`): Taylor linearization of the ratio `num / den` with the ultimate cluster estimator, by domain, over every row of the file, with the centering rule for strata with one PSU (`analysis/standard-error.ts`, which lists the rules). `0` when the ratio is 0 or 1, `null` when `den` is 0 and when the source is a census or does not declare a `stratum` and a `psu`.
+  - **Strata enumerated completely.** When the edition declares them (`editions[].certainty`, from the sample role `certainty`), a stratum where a record has one of its codes, or where every record has a weight of 1, adds nothing to the variance, whatever its number of PSUs. A domain whose whole `den` (or `den_total`, for `ee_total`) comes from such strata has `ee` `null`, as in a census: there is no sampling error to report. Without a declaration no stratum is treated so, not even one with every weight 1 (the 2000 validation cases of the proposal are computed that way). Case: `censo2020_nacional/` (national 2020 sample, 786 municipalities interviewed in full).
 - Each template returns one row per group (when there is one) and a total row (`es_total: true`) computed over the whole file, never by adding up the groups.
 
 Checked against the real validation case of the proposal (Census 2000 sample of Aguascalientes, 87,507 records): `template-run.spec.ts` compares every municipality and the entity, in both "not specified" choices, with the files computed separately in Polars (`test/fixtures/templates/`, whose metadata is version 2 as the harmonizer writes it). For example, the entity's speakers of an indigenous language, excluding "not specified": `num` 1,793, `den` 821,364, `den_total` 940,778, `ee` 0.000424, 148 records. The same figures come out of the resource that `demo-plantillas/armonizar.mjs` (workspace) builds through the harmonizer: upload, mapping, catalogs, use in analysis and "use in a dataset", with no hand-written metadata.
@@ -670,10 +675,12 @@ In a `sample` edition the mapping can give a column a sample design role (`role`
 | `weight` | Expansion factor: how many units of the population the record stands for. Required in sample editions. |
 | `stratum` | Stratum of the sample design. Optional. |
 | `psu` | Primary sampling unit (UPM). Optional. |
+| `certainty` | Says which strata were enumerated completely, for example the municipalities of the 2020 census interviewed in full with the long questionnaire (`COBERTURA = 1`). It needs `certaintyCodes`: the codes of the column, as in the file and before the recoding, that mark such a stratum. Optional. |
 
 - Saving the mapping of a `sample` edition with no column marked `weight` returns `400 sample_weight_required`.
 - Each role can be in at most one column (`400 source_role_repeated`, `params: { role, columns }`). A column has at most one role.
 - A role needs a mapped column, because unmapped columns are not in the harmonized view (`400 source_role_unmapped`, `params: { column, role }`).
+- A `certainty` column without codes (`certaintyCodes` missing, empty or only blanks) returns `400 certainty_codes_required`, `params: { column }`. The codes are saved trimmed, without repeats; with any other role they are ignored and saved as `[]`. What the templates do with them: [Analysis templates](#analysis-templates), standard error.
 - `census` editions, and editions without a design, take no roles (`400 source_role_not_allowed`, `params: { column, role, design }`).
 - These checks run before anything is saved. The role belongs to the mapping: unmapping the column discards it.
 
@@ -727,7 +734,7 @@ dBase and FoxPro tables (`.dbf`), as INEGI distributes its census microdata, are
 
 ### Mapping
 
-`GET .../mapping` returns each column with `selectedCanonicalId`, `suggested`, `suggestionSource`, `missingCodes` (the saved missing-value codes; `[]` for unsaved columns, suggestions never fill it), `role` (the saved [sample design role](#source-design) or `null`) and `inferredType` (see [Variable types](#variable-types)). `canonicalVariables` lists the survey's canonicals as `{ id, name, dataType }`, where `dataType` is the confirmed type or `null`. For each column, the first of these that applies is used:
+`GET .../mapping` returns each column with `selectedCanonicalId`, `suggested`, `suggestionSource`, `missingCodes` (the saved missing-value codes; `[]` for unsaved columns, suggestions never fill it), `role` (the saved [sample design role](#source-design) or `null`), `certaintyCodes` (its saved codes with the role `certainty`, `[]` otherwise) and `inferredType` (see [Variable types](#variable-types)). `canonicalVariables` lists the survey's canonicals as `{ id, name, dataType }`, where `dataType` is the confirmed type or `null`. For each column, the first of these that applies is used:
 
 1. **Saved**: the mapping already saved for this edition. No suggestion is shown.
 2. **History** (`suggestionSource: "history"`): a column with exactly the same name was mapped in another edition of the same survey.
@@ -754,9 +761,9 @@ The response also has:
 
 Suggestions are preselected in the response but are not saved until the client sends `PUT`.
 
-`GET .../mapping/saved` returns `{ dataset, columns }`, where each column is `{ column, canonicalId, canonicalName, missingCodes, role }`, in header order. It does not read the edition's file.
+`GET .../mapping/saved` returns `{ dataset, columns }`, where each column is `{ column, canonicalId, canonicalName, missingCodes, role, certaintyCodes }`, in header order. It does not read the edition's file.
 
-`PUT .../mapping` takes `{ columns: [{ column, choice, newName?, dataType?, missingCodes?, role? }] }` (`role`: see [Source design](#source-design)):
+`PUT .../mapping` takes `{ columns: [{ column, choice, newName?, dataType?, missingCodes?, role?, certaintyCodes? }] }` (`role` and `certaintyCodes`: see [Source design](#source-design)):
 
 | `choice` | Effect |
 | --- | --- |
@@ -786,7 +793,7 @@ A canonical name is a column of the harmonized view and of the exported Parquet,
 
 The rules apply when a canonical is created (`__new__` in `PUT .../mapping`) and when it is renamed. Names created before the rules are kept and still work; `GET .../variables` marks them with `nameValid: false` so they can be renamed.
 
-`GET /harmonizer/surveys/:surveyId/variables` returns `{ survey: { id, name }, items }`. Each item is `{ id, name, description, dataType, categories, analysis, sampleRole, suggestedRole, comparison, nameValid, usages }` (see [Use in analysis](#use-in-analysis) for `analysis` and `suggestedRole`; `sampleRole` is the sample design role, `weight`, `stratum` or `psu`, that a mapping gives the variable, or `null`), ordered by name, and `usages` lists `{ datasetId, datasetName, year, column }` for each edition that maps it (`[]` when none does).
+`GET /harmonizer/surveys/:surveyId/variables` returns `{ survey: { id, name }, items }`. Each item is `{ id, name, description, dataType, categories, analysis, sampleRole, suggestedRole, comparison, nameValid, usages }` (see [Use in analysis](#use-in-analysis) for `analysis` and `suggestedRole`; `sampleRole` is the sample design role, `weight`, `stratum`, `psu` or `certainty`, that a mapping gives the variable, or `null`), ordered by name, and `usages` lists `{ datasetId, datasetName, year, column }` for each edition that maps it (`[]` when none does).
 
 `PATCH .../variables/:variableId` takes `{ name }`:
 
@@ -801,7 +808,7 @@ For these three endpoints, an unknown survey returns `404 survey_not_found` and 
 
 ### Use in analysis
 
-Each canonical variable says how analyses (the templates) may use it. It belongs to the variable, not to an edition: the "yes" of a yes/no question is the same every year. The sample design roles (`weight`, `stratum`, `psu`) are not here: they stay in the mapping of each edition (see [Source design](#source-design)) and win over these. The label of the variable for charts and notes is its `description`.
+Each canonical variable says how analyses (the templates) may use it. It belongs to the variable, not to an edition: the "yes" of a yes/no question is the same every year. The sample design roles (`weight`, `stratum`, `psu`, `certainty`) are not here: they stay in the mapping of each edition (see [Source design](#source-design)) and win over these. The label of the variable for charts and notes is its `description`.
 
 `PUT /harmonizer/surveys/:surveyId/variables/:variableId/analysis` (same permission as the other variable changes) takes:
 
@@ -809,18 +816,19 @@ Each canonical variable says how analyses (the templates) may use it. It belongs
 | --- | --- |
 | `role` | One of `category` (groups without order), `ordinal` (groups with an order), `dichotomous` (yes/no), `geographic` (territorial key), `label` (name next to a key), `temporal` (year or period), `measure` (quantity), `socioeconomic_stratum`, `key` (to join tables), `identifier` (record id), `free_text`. `null` clears everything. |
 | `universe` | Who was asked, e.g. "población de 3 años y más". The rule is always "the question was asked": an empty cell is outside it. |
+| `universeRule` | Optional, a narrower universe that can be computed: `{ variable, min }`, the records whose value of `variable` (another canonical of the survey, confirmed as `integer` or `decimal`) is at least `min`, e.g. `{ "variable": "EDAD", "min": 15 }` for a schooling asked from 3 years and analysed for 15 and more. A record without that value (an unknown age) is outside it. The templates apply it on top of the empty cell (see [Analysis templates](#analysis-templates-demo)). |
 | `positiveValue` | `dichotomous` only, required: the code that counts as "yes". |
 | `geoLevel` | `geographic` only, required: `country`, `state`, `municipality`, `locality`, `ageb` or `block`. |
 | `unit` | `measure` only, optional: e.g. "años". |
 | `disaggregation` | Optional, for splitting a result by it: `{ summable, cuts?, notApplicableLabel?, maxLevel? }`. `summable` says whether its groups add up to the whole. `cuts` (`measure` only) are the groups it is cut into, `[{ from, to, label }]` with inclusive bounds and `to: null` for an open last group ("65 años y más"). `notApplicableLabel` names an empty cell ("No aplica (menores de 12 años)"). `maxLevel` (`geographic` only) is the most detailed level the source is representative at. Not allowed for `label`, `key`, `identifier` and `free_text`. |
 
 - It replaces what was saved: a field left out is cleared. Texts are trimmed and an empty one counts as not given.
-- A field that does not go with the role, or a missing required one, returns `400 variable_analysis_invalid` with `params: { field, problem }` (`problem`: `not_for_role`, `required`, `role_required`, `unknown`, or for a group `label_required`, `bounds`, `overlap`, `open_not_last`, `not_a_number`). The groups must be in order and must not overlap.
+- A field that does not go with the role, or a missing required one, returns `400 variable_analysis_invalid` with `params: { field, problem }` (`problem`: `not_for_role`, `required`, `role_required`, `unknown`, for `universeRule.variable` also `self` and `not_a_number`, or for a group `label_required`, `bounds`, `overlap`, `open_not_last`, `not_a_number`). The groups must be in order and must not overlap.
 - The role must fit the confirmed type of the variable: a `measure` needs `integer` or `decimal`; a role of codes (`category`, `ordinal`, `dichotomous`, `geographic`, `socioeconomic_stratum`, `key`, `identifier`) needs `text` or no confirmed type. Otherwise `409 variable_role_type_mismatch` with `params: { variable, role, dataType }`. The type is never changed silently. Saving a mapping that confirms a type against the role (`PUT .../mapping`) returns the same error and saves nothing.
 - `positiveValue` must be one of the variable's codes: those of its common catalog or, without one, the values seen in its editions (their stored value profiles, without their "not specified" codes and after their recoding). Otherwise `400 variable_positive_value_unknown` with `params: { value, known }` (up to 20 codes).
 - It returns `{ id, name, analysis }`.
 
-In `GET .../variables` and in the `variable` of `GET .../comparison`, `analysis` is `{ role, universe, positiveValue, geoLevel, unit, disaggregation }` (every field `null` when not described) and `suggestedRole` is the role the data suggest, for the user to confirm, or `null`. It comes from the dictionary of the first edition (by year, then upload) that describes a column mapped to the variable: a catalog (such as the states') is `geographic`, two coded values `dichotomous`, more `category`, a range of values `measure`. Without a dictionary, from the common catalog (two codes `dichotomous`, more `category`) or a confirmed numeric type (`measure`). The `variable` of `GET .../comparison` also has `knownCodes`, the codes `positiveValue` may take.
+In `GET .../variables` and in the `variable` of `GET .../comparison`, `analysis` is `{ role, universe, universeRule, positiveValue, geoLevel, unit, disaggregation }` (every field `null` when not described) and `suggestedRole` is the role the data suggest, for the user to confirm, or `null`. It comes from the dictionary of the first edition (by year, then upload) that describes a column mapped to the variable: a catalog (such as the states') is `geographic`, two coded values `dichotomous`, more `category`, a range of values `measure`. Without a dictionary, from the common catalog (two codes `dichotomous`, more `category`) or a confirmed numeric type (`measure`). The `variable` of `GET .../comparison` also has `knownCodes`, the codes `positiveValue` may take.
 
 A variable of codes keeps its codes in the downloads: when its type is not confirmed, its Parquet column is `VARCHAR` instead of the inferred type, so a municipality `001` is not downloaded as `1` (see [Harmonized views](#harmonized-views)). It also keeps its "not specified" codes in the views and downloads, while a measure turns them into `null`, so changing the role changes the view right away (see **Missing values** in [Harmonized views](#harmonized-views)).
 
