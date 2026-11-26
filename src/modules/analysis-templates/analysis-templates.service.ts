@@ -5,12 +5,15 @@ import { ResourcesService } from '../datasets/resources.service.js';
 import { templateMetadata } from './template-metadata.js';
 import { listTemplates } from './template-catalog.js';
 import { runTemplate, type TemplateRequest } from './template-run.js';
+import { templateTable } from './template-table.js';
+import { AnalysesService, type TemplateAnalysisMeta } from '../analyses/analyses.service.js';
 
 @Injectable()
 export class AnalysisTemplatesService {
   constructor(
     private readonly resources: ResourcesService,
     private readonly analysis: AnalysisService,
+    private readonly analyses: AnalysesService,
   ) {}
 
   /**
@@ -41,6 +44,24 @@ export class AnalysisTemplatesService {
     const path = await this.resources.resolveFilePath(datasetId, resourceId);
     return runTemplate(request, metadata, (queries, filter) =>
       this.analysis.runInternalQueries(path, queries, filter),
+    );
+  }
+
+  /** Runs a template again on the server and saves its result as an analysis of the dataset. */
+  async publish(
+    datasetId: string,
+    resourceId: string,
+    request: TemplateRequest,
+    meta: Omit<TemplateAnalysisMeta, 'sourceResourceId'>,
+    userId: string,
+  ) {
+    const result = await this.preview(datasetId, resourceId, request);
+    return this.analyses.createFromTemplate(
+      datasetId,
+      { ...meta, sourceResourceId: resourceId },
+      { templateId: result.template.id, version: result.template.version, request },
+      templateTable(result),
+      userId,
     );
   }
 }

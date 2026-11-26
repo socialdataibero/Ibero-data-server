@@ -117,7 +117,9 @@ export class AnalysesController {
     const sourceResource = await this.resourcesService.findOne(datasetId, analysis.sourceResourceId);
     const resultDownloadUrl = `${base}/organizations/${organizationId}/datasets/${datasetId}/analyses/${analysisId}/download`;
 
-    const recipe = stepsToInternal(analysis.recipe as { op: string; params?: Record<string, unknown> }[]);
+    // A template analysis keeps its template request, not steps: vistrace gets only its result.
+    const steps = analysis.origin === 'TEMPLATE' ? [] : analysis.recipe;
+    const recipe = stepsToInternal(steps as { op: string; params?: Record<string, unknown> }[]);
     const vistraceRecipe = toVistraceRecipe(recipe);
 
     const joinResources = await Promise.all(

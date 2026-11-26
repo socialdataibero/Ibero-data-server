@@ -49,6 +49,7 @@ enum AnalysisStatus {
 enum AnalysisOrigin {
   IBERO
   VISTRACE
+  TEMPLATE
 }
 
 model User {

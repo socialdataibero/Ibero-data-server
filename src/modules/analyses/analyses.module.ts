@@ -12,5 +12,6 @@ import { AnalysesVistraceController } from './analyses-vistrace.controller.js';
   imports: [AuthModule, AnalysisModule, DatasetsModule, HandoffModule],
   controllers: [AnalysesVistraceController, AnalysesController, AnalysesDownloadController],
   providers: [AnalysesService],
+  exports: [AnalysesService],
 })
 export class AnalysesModule {}

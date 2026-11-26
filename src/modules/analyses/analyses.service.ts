@@ -6,7 +6,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { LocalStorageService } from '../storage/local-storage.service.js';
 import { AnalysisService, type NamedSource } from '../analysis/analysis.service.js';
 import { stepsToInternal, roundRows, type Recipe, type Step } from '../analysis/recipe.js';
-import type { ColumnInfo } from '../analysis/analysis.service.js';
+import type { ColumnInfo, ParquetColumnType } from '../analysis/analysis.service.js';
 import type { PreviewAnalysisDto } from './dto/preview-analysis.dto.js';
 import type { CreateAnalysisDto } from './dto/create-analysis.dto.js';
 import type { SaveVistraceAnalysisDto } from './dto/save-vistrace-analysis.dto.js';
@@ -16,6 +16,15 @@ export interface VistraceRecipe {
   resultNodeId: string;
   state: Record<string, unknown>;
   tables: { tableName: string; resourceId: string }[];
+}
+
+export interface TemplateAnalysisMeta {
+  sourceResourceId: string;
+  title: string;
+  slug: string;
+  folder: string;
+  description?: string;
+  visibility?: 'PUBLIC' | 'PRIVATE';
 }
 
 const TABLE_NAME_RE = /^[a-zA-Z0-9_]{1,60}$/;
@@ -204,12 +213,17 @@ export class AnalysesService {
     }
   }
 
-  private async persistUploadedResult(analysisId: string, buffer: Buffer): Promise<Analysis> {
+  private persistUploadedResult(analysisId: string, buffer: Buffer): Promise<Analysis> {
+    return this.persistResult(analysisId, (path) => writeFile(path, buffer));
+  }
+
+  /** Writes the result parquet with `write` and marks the analysis DONE, or FAILED with the error. */
+  private async persistResult(analysisId: string, write: (path: string) => Promise<void>): Promise<Analysis> {
     try {
       const resultKey = `analyses/${analysisId}.parquet`;
       const resultPath = this.storage.resolvePath(resultKey);
       await this.storage.ensureDir(resultKey);
-      await writeFile(resultPath, buffer);
+      await write(resultPath);
 
       const resultSchema = await this.analysisService.describeSchema(resultPath);
       const countResult = await this.analysisService.runQuery(resultPath, 'SELECT COUNT(*) AS n FROM data');
@@ -226,7 +240,7 @@ export class AnalysesService {
         },
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error while saving the vistrace result.';
+      const message = err instanceof Error ? err.message : 'Unknown error while saving the analysis result.';
       await this.prisma.analysis.update({
         where: { id: analysisId },
         data: { status: 'FAILED', errorMessage: message },
@@ -297,6 +311,39 @@ export class AnalysesService {
       },
     });
     return this.persistUploadedResult(analysisId, buffer);
+  }
+
+  /**
+   * Saves an already computed template result as an analysis: `recipe` keeps the template
+   * request, so it can be traced back, and the result is `table` written as Parquet.
+   */
+  async createFromTemplate(
+    datasetId: string,
+    meta: TemplateAnalysisMeta,
+    request: object,
+    table: { columns: string[]; rows: Record<string, unknown>[]; types: Record<string, ParquetColumnType> },
+    userId: string,
+  ) {
+    await this.assertSlugAvailable(meta.slug);
+    await this.getResourceForDataset(datasetId, meta.sourceResourceId);
+    const analysis = await this.prisma.analysis.create({
+      data: {
+        datasetId,
+        sourceResourceId: meta.sourceResourceId,
+        title: meta.title,
+        slug: meta.slug,
+        folder: meta.folder,
+        description: meta.description,
+        visibility: meta.visibility,
+        recipe: request,
+        origin: 'TEMPLATE',
+        status: 'RUNNING',
+        createdById: userId,
+      },
+    });
+    return this.persistResult(analysis.id, (path) =>
+      this.analysisService.writeRowsToParquet(table.columns, table.rows, path, table.types),
+    );
   }
 
   private async writeAndPersist(analysisId: string, resource: Resource, recipe: Recipe, joinSources: NamedSource[]) {
@@ -375,6 +422,12 @@ export class AnalysesService {
 
   async update(datasetId: string, analysisId: string, dto: CreateAnalysisDto) {
     const existing = await this.findOne(datasetId, analysisId);
+    if (existing.origin === 'TEMPLATE') {
+      throw new BadRequestException({
+        code: 'analysis_from_template',
+        message: 'This analysis was published from a template; publish it again from the template instead.',
+      });
+    }
     if (existing.origin === 'VISTRACE') {
       throw new BadRequestException({
         code: 'analysis_from_vistrace',

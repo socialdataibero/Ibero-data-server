@@ -6,6 +6,9 @@ import { DatasetAccessGuard } from '../../shared/guards/dataset-access.guard.js'
 import { OrgRoles } from '../../shared/decorators/org-roles.decorator.js';
 import { AnalysisTemplatesService } from './analysis-templates.service.js';
 import { PreviewTemplateDto } from './dto/preview-template.dto.js';
+import { PublishTemplateDto } from './dto/publish-template.dto.js';
+import { CurrentUser } from '../../shared/decorators/current-user.decorator.js';
+import type { AuthenticatedUser } from '../auth/jwt-payload.interface.js';
 
 /** Analysis templates (demo): what can be computed with a resource, and computing it. */
 @Controller('organizations/:organizationId/datasets/:datasetId')
@@ -29,5 +32,17 @@ export class AnalysisTemplatesController {
   preview(@Param('datasetId') datasetId: string, @Body() dto: PreviewTemplateDto) {
     const { resourceId, ...request } = dto;
     return this.templates.preview(datasetId, resourceId, request);
+  }
+
+  /** Publishes a template result as an analysis of the dataset. */
+  @Post('analyses/templates')
+  @OrgRoles(OrgRole.ADMIN, OrgRole.EDITOR)
+  publish(
+    @Param('datasetId') datasetId: string,
+    @Body() dto: PublishTemplateDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    const { resourceId, title, slug, folder, description, visibility, ...request } = dto;
+    return this.templates.publish(datasetId, resourceId, request, { title, slug, folder, description, visibility }, user.id);
   }
 }
