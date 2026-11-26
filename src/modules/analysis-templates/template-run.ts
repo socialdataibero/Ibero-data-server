@@ -6,7 +6,7 @@ import {
   type RatioEstimate,
   type RatioQuery,
 } from '../analysis/standard-error.js';
-import { checkCells, combinations, origin, resolveBreakdowns } from './breakdowns.js';
+import { checkBreakdownCategories, checkCellCount, checkCells, combinations, origin, resolveBreakdowns } from './breakdowns.js';
 import {
   columnOf,
   columnWithRole,
@@ -53,6 +53,7 @@ export interface ResultRow {
   nombre: string;
   grupo_codigo: string | null;
   grupo: string | null;
+  /** Distribution category code or proportion condition variable, independent of its label. */
   corte_codigo: string | null;
   corte: string | null;
   /** Category code of each breakdown (by column); `null` is «Todos» and `''` an empty cell. */
@@ -246,7 +247,13 @@ export function planTemplate(request: TemplateRequest, metadata: VariableMetadat
   const group = resolveInput(spec('group')!, request.group, metadata);
 
   const main = [...conditions, variable, measure].filter((c): c is VariableMetadataColumn => c !== null);
-  for (const c of [...main, group]) {
+  const breakdowns = resolveBreakdowns(
+    request.breakdowns ?? [],
+    spec('breakdowns')!.roles,
+    metadata,
+    group ? [...main, group] : main,
+  );
+  for (const c of [...main, group, ...breakdowns]) {
     if (c?.universeRule && !metadata.fileColumns.includes(c.universeRule.column)) {
       bad(
         'template_universe_variable_missing',
@@ -263,12 +270,6 @@ export function planTemplate(request: TemplateRequest, metadata: VariableMetadat
     );
   }
 
-  const breakdowns = resolveBreakdowns(
-    request.breakdowns ?? [],
-    spec('breakdowns')!.roles,
-    metadata,
-    group ? [...main, group] : main,
-  );
   checkCells(group, breakdowns, variable);
 
   const weight = columnWithRole(metadata, 'weight');
@@ -320,7 +321,7 @@ function ratioSets(plan: Plan): RatioSet[] {
 /** The keys of a domain are the group (in `byGroup`), the breakdowns of `split` and `extraKeys`. */
 function ratioSetsOf(plan: Plan, split: VariableMetadataColumn[]): RatioSet[] {
   const groupKey = plan.group ? [groupKeySql(plan.group)] : [];
-  const splitKeys = split.map(valueSql);
+  const splitKeys = split.map(groupKeySql);
   const both = (
     id: string,
     q: Omit<RatioQuery, 'keys' | 'weight' | 'stratum' | 'psu' | 'certainty'>,
@@ -430,20 +431,30 @@ function figure(plan: Plan, split: VariableMetadataColumn[], estimate: RatioEsti
   };
 }
 
-const cv = (se: number | null, value: number) => (se === null || value === 0 ? null : se / value);
+const cv = (se: number | null, value: number) =>
+  se === null ? null : value === 0 ? (se > 0 ? Infinity : null) : se / Math.abs(value);
 
 /** Turns the answers of `planQueries(plan)` (in the same order) into the result. */
 export function assembleResult(plan: Plan, answers: unknown[]): TemplateResult {
   const { metadata, group, template } = plan;
   const { sets } = planQueries(plan);
   const estimates = new Map<string, Figure[]>();
+  let missingDesign = false;
   let i = 0;
   for (const set of sets) {
     const byGroup = set.byGroup ? (answers[i++] as RatioEstimate[]) : [];
     const total = answers[i++] as RatioEstimate[];
     const figures = estimates.get(set.id) ?? [];
     figures.push(...byGroup.map((e) => figure(plan, set.split, e, true)), ...total.map((e) => figure(plan, set.split, e, false)));
+    missingDesign ||= [...byGroup, ...total].some((e) => e.missingDesign);
+    if (plan.breakdowns.length > 0) checkCellCount(figures.length);
     estimates.set(set.id, figures);
+  }
+  for (const c of plan.breakdowns) {
+    const codes = new Set([...estimates.values()].flatMap((figures) => figures.map((f) => f.desagregaciones[c.name])));
+    codes.delete(null);
+    codes.delete('');
+    checkBreakdownCategories(c, codes.size);
   }
   const missingCounts = answers.slice(i) as number[];
 
@@ -483,14 +494,20 @@ export function assembleResult(plan: Plan, answers: unknown[]): TemplateResult {
     for (const c of plan.conditions) {
       const own = estimates.get(`own:${c.name}`)!;
       const total = estimates.get(`total:${c.name}`)!;
-      const criterio = `${c.positiveLabel ?? c.label}, ${c.universe ?? 'toda la población'}`;
+      const positive = c.positiveLabel ?? c.label;
+      // Preserve established labels unless another condition makes the wording ambiguous.
+      const ambiguous = metadata.columns.some((other) => other.name !== c.name && other.role === c.role &&
+        (other.positiveLabel ?? other.label) === positive);
+      const sameLabel = ambiguous && metadata.columns.some((other) => other.name !== c.name && other.label === c.label);
+      const label = `${c.label}${sameLabel ? ` (${c.name})` : ''}`;
+      const criterio = `${ambiguous ? `${label}: ${positive}` : positive}, ${c.universe ?? 'toda la población'}`;
       const build = ({ estimate: o, groupCode, desagregaciones }: Figure, t: RatioEstimate | undefined): ResultRow => ({
         ...base,
         indicador: indicator,
         criterio,
         ...place(groupCode),
         ...groupColumns(groupCode),
-        corte_codigo: null,
+        corte_codigo: c.name,
         corte: null,
         desagregaciones,
         num: o.y,
@@ -509,10 +526,10 @@ export function assembleResult(plan: Plan, answers: unknown[]): TemplateResult {
     const m = plan.measure!;
     indicator = `${m.label} promedio${m.unit ? ` (${m.unit})` : ''}`;
     const figures = estimates.get('mean')!;
-    const whole = figures.find((e) => e.groupCode === null && Object.values(e.desagregaciones).every((v) => v === null))!;
+    const whole = figures.find((e) => e.groupCode === null && Object.values(e.desagregaciones).every((v) => v === null));
     // With a universe rule, only the records inside it that have no value are "left out".
-    const inRule = m.universeRule ? (missingCounts[0] ?? whole.estimate.rows) : whole.estimate.rows;
-    meanExcluded = inRule - whole.estimate.cases;
+    const inRule = m.universeRule ? (missingCounts[0] ?? whole?.estimate.rows ?? 0) : (whole?.estimate.rows ?? 0);
+    meanExcluded = inRule - (whole?.estimate.cases ?? 0);
     const build = ({ estimate: e, groupCode, desagregaciones }: Figure): ResultRow => ({
       ...base,
       indicador: indicator,
@@ -589,7 +606,7 @@ export function assembleResult(plan: Plan, answers: unknown[]): TemplateResult {
         : null,
       series:
         template.id === 'proportion'
-          ? { column: 'criterio', codeColumn: 'criterio', label: 'Condición' }
+          ? { column: 'criterio', codeColumn: 'corte_codigo', label: 'Condición' }
           : template.id === 'distribution'
             ? { column: 'corte', codeColumn: 'corte_codigo', label: plan.variable!.label }
             : null,
@@ -608,7 +625,7 @@ export function assembleResult(plan: Plan, answers: unknown[]): TemplateResult {
         : { kind: 'proportion', label: 'Porcentaje', unit: null },
     bases: template.id === 'proportion' ? proportionBases(plan) : null,
     texts: texts(plan, indicator, missingCounts, meanExcluded),
-    warnings: warnings(plan, rows),
+    warnings: warnings(plan, rows, missingDesign),
     charts: charts(plan),
     rows,
   };
@@ -713,13 +730,13 @@ function texts(
   };
 }
 
-function warnings(plan: Plan, rows: ResultRow[]): TemplateWarning[] {
+function warnings(plan: Plan, rows: ResultRow[], missingDesign: boolean): TemplateWarning[] {
   const out: TemplateWarning[] = [];
   const { metadata, template } = plan;
   const sample = metadata.design === 'sample';
   if (!sample) {
     out.push({ code: 'census_source', message: 'Fuente censal: las cifras no tienen error de muestreo.' });
-  } else if (plan.design.stratum === null) {
+  } else if (plan.design.stratum === null || missingDesign) {
     out.push({
       code: 'precision_not_available',
       message: 'La fuente no declara estrato y UPM: no se puede calcular la precisión de las cifras.',
@@ -731,7 +748,8 @@ function warnings(plan: Plan, rows: ResultRow[]): TemplateWarning[] {
     rows.some((r) => {
       const { se, value } = pick(r);
       const c = value === null ? null : cv(se, value);
-      return c !== null && c > LOW_PRECISION_CV && value !== 0 && value !== 1;
+      return c !== null && c > LOW_PRECISION_CV &&
+        (template.id === 'weighted_mean' || (value !== 0 && value !== 1));
     });
 
   if (template.id === 'proportion') {

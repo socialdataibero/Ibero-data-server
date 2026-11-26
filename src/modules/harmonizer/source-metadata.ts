@@ -171,6 +171,11 @@ export interface SourceMetadataEdition {
   coverage: MetadataPlace | null;
   /** The column of the file that is this edition's expansion factor, or `null`. */
   weight: string | null;
+  /** Edition overrides when stratum/PSU roles are not shared by the whole resource. */
+  stratum?: string | null;
+  psu?: string | null;
+  /** Retained missing codes by column when the edition differs from the resource's union. */
+  missingCodes?: Record<string, string[]>;
   /**
    * Which strata of this edition were enumerated completely: the column with the sample role
    * `certainty` and its codes as they are in the file (after the recoding). A stratum where one
@@ -354,6 +359,15 @@ export function buildSourceMetadata(input: MetadataInput): SourceMetadata | null
     editions: editions.map((e) => {
       const weight = e.columns.find((c) => c.role === 'weight' && inFile.has(c.canon))?.canon ?? null;
       const certain = e.columns.find((c) => c.role === 'certainty' && inFile.has(c.canon));
+      const roles = Object.fromEntries(['stratum', 'psu'].flatMap((role) => {
+        const own = e.columns.find((c) => c.role === role && inFile.has(c.canon))?.canon ?? null;
+        const shared = headers.find((name) => sampleRoleOf(name) === role) ?? null;
+        return own === shared ? [] : [[role, own]];
+      }));
+      const missingCodes = Object.fromEntries(e.columns
+        .filter((c) => !c.missingCodesAreNull && inFile.has(c.canon) &&
+          columnsOf(c.canon).some((f) => f.column.missingCodes.some((code) => !c.missingCodes.includes(code))))
+        .map((c) => [c.canon, c.missingCodes]));
       return {
         id: e.id,
         name: e.name,
@@ -362,6 +376,8 @@ export function buildSourceMetadata(input: MetadataInput): SourceMetadata | null
         unit: isUnit(e.unit) ? e.unit : null,
         coverage: e.coverage,
         weight,
+        ...roles,
+        ...(Object.keys(missingCodes).length > 0 ? { missingCodes } : {}),
         certainty:
           certain && (certain.certaintyCodes?.length ?? 0) > 0
             ? { column: certain.canon, codes: certain.certaintyCodes! }
@@ -549,6 +565,8 @@ function readEdition(e: unknown): SourceMetadataEdition | null {
   if (!isRecord(e) || !isText(e.id)) return null;
   const coverage = readPlace(e.coverage ?? null);
   if (coverage === undefined) return null;
+  if (e.missingCodes !== undefined &&
+    (!isRecord(e.missingCodes) || !Object.values(e.missingCodes).every(isStringList))) return null;
   return {
     id: e.id,
     name: isText(e.name) ? e.name : null,
@@ -557,6 +575,9 @@ function readEdition(e: unknown): SourceMetadataEdition | null {
     unit: isOneOf(ANALYSIS_UNITS, e.unit) ? e.unit : null,
     coverage,
     weight: isText(e.weight) ? e.weight : null,
+    ...(e.stratum === null || isText(e.stratum) ? { stratum: e.stratum } : {}),
+    ...(e.psu === null || isText(e.psu) ? { psu: e.psu } : {}),
+    ...(e.missingCodes !== undefined ? { missingCodes: e.missingCodes as Record<string, string[]> } : {}),
     certainty: readCertainty(e.certainty),
   };
 }

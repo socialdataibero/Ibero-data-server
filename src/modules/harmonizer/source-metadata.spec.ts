@@ -457,6 +457,24 @@ describe('buildSourceMetadata', () => {
     ]);
   });
 
+  it('round-trips edition overrides for retained codes, including an edition without missing codes', () => {
+    const meta = build([
+      edition('e1', [kept('MESRET', [])]),
+      edition('e2', [kept('MESRET', ['99'])]),
+    ], ['MESRET'])!;
+    expect(meta.editions[0].missingCodes).toEqual({ MESRET: [] });
+    expect(parseSourceMetadata(structuredClone(meta))).toEqual(meta);
+  });
+
+  it('round-trips edition design roles when the resource mixes census and sample editions', () => {
+    const meta = build([
+      edition('e1', [col('FAC'), col('EST'), col('UPM')], 'census'),
+      edition('e2', [col('FAC', [], 'weight'), col('EST', [], 'stratum'), col('UPM', [], 'psu')]),
+    ], ['FAC', 'EST', 'UPM'])!;
+    expect(meta.editions[1]).toMatchObject({ stratum: 'EST', psu: 'UPM' });
+    expect(parseSourceMetadata(structuredClone(meta))).toEqual(meta);
+  });
+
   it('editions that differ in design, unit, coverage or factor: root null, each edition its own', () => {
     const headers = ['_dataset', '_year', '_row', 'FAC', 'FAC2', 'EST'];
     const other = { level: 'state' as const, code: '02', label: 'Baja California' };

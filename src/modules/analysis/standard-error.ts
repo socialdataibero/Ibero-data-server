@@ -18,8 +18,7 @@
  *   4. A stratum with a single PSU has no variance of its own. Centering rule: the PSU is compared
  *      with the overall mean of the z, which is 0 for a ratio, so it adds z² (`adjust` in R's
  *      `survey`, `singleunit(centered)` in Stata).
- *   5. A ratio of 0 or 1 (Y = 0 or Y = X) has a standard error of exactly 0. That is not perfect
- *      precision: its coefficient of variation is undefined and the figure must be flagged.
+ *   5. Extreme proportions have zero linearized variance; means of 0 or 1 can still vary.
  *   6. A domain with X = 0 (nobody in the universe) has no ratio and no error (`NULL`).
  *   7. Only when the source declares which strata were enumerated completely (`certainty`, e.g.
  *      the municipalities interviewed in full with the long questionnaire): such a stratum adds 0
@@ -68,6 +67,8 @@ export interface RatioEstimate {
   /** Rows of the domain, whatever their y and x. */
   rows: number;
   se: number | null;
+  /** Missing identifiers invalidate the design, including PSUs outside a domain. */
+  missingDesign?: boolean;
 }
 
 /** Number of key columns `ratioEstimatesSql` returns for `query`. */
@@ -77,7 +78,8 @@ function keyExprs(query: RatioQuery): string[] {
 
 /**
  * The SELECT for `query`. Its columns are `_k0 … _kN` (text, `''` when the value is missing),
- * `_y`, `_x` (DOUBLE), `_cases`, `_rows` (INTEGER) and `_se` (DOUBLE or `NULL`), ordered by the keys.
+ * `_y`, `_x` (DOUBLE), `_cases`, `_rows` (INTEGER), `_se` (DOUBLE or `NULL`), and, with a design,
+ * `_missing_design` (BOOLEAN), ordered by the keys.
  * Read its rows with `readRatioEstimates`.
  */
 export function ratioEstimatesSql(query: RatioQuery): string {
@@ -107,7 +109,7 @@ export function ratioEstimatesSql(query: RatioQuery): string {
       (count(*) FILTER (WHERE _cv))::INTEGER AS _cases, count(*)::INTEGER AS _rows
     FROM b GROUP BY ${kList}`;
   const finalSe = (variance: string, sampledX?: string) =>
-    `CASE WHEN t._X = 0 THEN NULL${sampledX ? ` WHEN ${sampledX} = 0 THEN NULL` : ''} WHEN t._Y = 0 OR t._Y = t._X THEN 0.0 ELSE sqrt(greatest(${variance}, 0)) END`;
+    `CASE WHEN t._X = 0 OR d._missing_design OR ${variance} IS NULL THEN NULL${sampledX ? ` WHEN ${sampledX} = 0 THEN NULL` : ''} ELSE sqrt(greatest(${variance}, 0)) END`;
 
   if (!design) {
     return `WITH b AS (SELECT ${base.join(', ')} FROM ${query.source}),
@@ -127,6 +129,7 @@ FROM t ORDER BY ${kList}`;
     FROM b LEFT JOIN nh ON b._h IS NOT DISTINCT FROM nh._h GROUP BY ${k.map((c) => `b.${c}`).join(', ')}`;
 
   return `WITH b AS (SELECT ${base.join(', ')}${query.certainty ? `, COALESCE((${query.certainty}), false) AS _cert` : ''} FROM ${query.source}),
+  d AS (SELECT EXISTS(SELECT 1 FROM b WHERE _h IS NULL OR _u IS NULL) AS _missing_design),
   nh AS (SELECT _h, count(DISTINCT _u)::DOUBLE AS _nh, (${certain}) AS _certain FROM b GROUP BY _h),
   t AS (${designTotals}),
   z AS (
@@ -147,8 +150,8 @@ FROM t ORDER BY ${kList}`;
       SUM(CASE WHEN _certain THEN 0 WHEN _nh > 1 THEN _nh / (_nh - 1) * (_s2 - _s1 * _s1 / _nh) ELSE _s2 END) AS _var
     FROM s GROUP BY ${kList}
   )
-SELECT ${k.map((c) => `t.${c}`).join(', ')}, t._Y AS _y, t._X AS _x, t._cases, t._rows, ${finalSe('v._var', query.certainty ? 't._Xs' : undefined)} AS _se
-FROM t LEFT JOIN v ON ${k.map((c) => `t.${c} = v.${c}`).join(' AND ')}
+SELECT ${k.map((c) => `t.${c}`).join(', ')}, t._Y AS _y, t._X AS _x, t._cases, t._rows, ${finalSe('v._var', query.certainty ? 't._Xs' : undefined)} AS _se, d._missing_design
+FROM t CROSS JOIN d LEFT JOIN v ON ${k.map((c) => `t.${c} = v.${c}`).join(' AND ')}
 ORDER BY ${k.map((c) => `t.${c}`).join(', ')}`;
 }
 
@@ -162,5 +165,6 @@ export function readRatioEstimates(query: RatioQuery, rows: unknown[][]): RatioE
     cases: Number(row[n + 2]),
     rows: Number(row[n + 3]),
     se: row[n + 4] === null || row[n + 4] === undefined ? null : Number(row[n + 4]),
+    ...(row[n + 5] === true ? { missingDesign: true } : {}),
   }));
 }

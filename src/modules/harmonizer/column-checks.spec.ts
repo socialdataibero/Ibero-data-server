@@ -177,6 +177,7 @@ describe('column-checks: DuckDB gives what the JavaScript rules give', () => {
     });
   });
 
+  // This case executes 2,400 DuckDB queries and can exceed the default five-second timeout.
   it('values that do not fit, in order of appearance, with codes and recoding', async () => {
     const maps: (Map<string, string> | undefined)[] = [
       undefined,
@@ -205,7 +206,7 @@ describe('column-checks: DuckDB gives what the JavaScript rules give', () => {
       );
       expect(readNotFitting(results[i]), `${column} ${JSON.stringify(check)}`).toEqual(expected);
     });
-  });
+  }, 20_000);
 
   it('suggested type of the exported values (codes and recoding), alone and put together', async () => {
     const maps = [

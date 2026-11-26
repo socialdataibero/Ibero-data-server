@@ -3,6 +3,7 @@ import { cutColumn } from './measure-cuts.js';
 import type {
   SourceMetadata,
   SourceMetadataColumn,
+  SourceMetadataEdition,
 } from '../harmonizer/source-metadata.js';
 
 /**
@@ -149,20 +150,21 @@ function chooseEdition(
 function column(
   c: SourceMetadataColumn,
   role: string,
-  editionId: string,
+  edition: SourceMetadataEdition,
 ): VariableMetadataColumn {
   const categories = c.categories?.map((k) => ({ code: k.code, label: k.label ?? k.code }));
   const positive = c.positiveValue
     ? c.categories?.find((k) => k.code === c.positiveValue)?.label
     : undefined;
+  const missingCodes = c.missingCodesAreNull ? [] : (edition.missingCodes?.[c.name] ?? c.missingCodes);
   return {
     name: c.name,
     role,
     label: c.label ?? c.name,
     ...(categories && categories.length > 0 ? { categories } : {}),
-    ...(c.missingCodes?.length ? { missingCodes: c.missingCodes } : {}),
+    ...(missingCodes?.length ? { missingCodes } : {}),
     ...(c.missingCodesAreNull && c.missingCount
-      ? { missingCount: c.missingCount[editionId] ?? 0 }
+      ? { missingCount: c.missingCount[edition.id] ?? 0 }
       : {}),
     ...(c.universe ? { universe: c.universe } : {}),
     ...(c.universeRule ? { universeRule: c.universeRule } : {}),
@@ -194,19 +196,26 @@ export function templateMetadata(
   if (!design || !unit) return null;
 
   const columns: VariableMetadataColumn[] = [];
+  const stratum = edition.stratum !== undefined ? edition.stratum : metadata.columns.find((c) => c.role === 'stratum')?.name;
+  const psu = edition.psu !== undefined ? edition.psu : metadata.columns.find((c) => c.role === 'psu')?.name;
   for (const c of metadata.columns) {
     if (c.name.startsWith('_')) continue;
     const role =
       edition.weight === c.name
         ? 'weight'
-        : c.role === 'weight'
-          ? null
-          : (c.role ?? null);
+        : stratum === c.name
+          ? 'stratum'
+          : psu === c.name
+            ? 'psu'
+            : ['weight', 'stratum', 'psu'].includes(c.role ?? '') ? null : (c.role ?? null);
     if (!role) continue;
-    const described = column(c, role, edition.id);
+    const described = column(c, role, edition);
     columns.push(described);
     if (role === 'measure' && c.disaggregation?.cuts?.length) {
-      columns.push(cutColumn(described, c.disaggregation.cuts, metadata.columns.map((m) => m.name)));
+      columns.push({
+        ...cutColumn(described, c.disaggregation.cuts, metadata.columns.map((m) => m.name)),
+        ...(described.universeRule ? { universeRule: described.universeRule } : {}),
+      });
     }
   }
   const coverage = edition.coverage ?? metadata.total;

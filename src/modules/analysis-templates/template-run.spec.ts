@@ -1,11 +1,12 @@
 import { readFileSync } from 'node:fs';
+import { DuckDBInstance } from '@duckdb/node-api';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'csv-parse/sync';
 import { describe, expect, it } from 'vitest';
 import { AnalysisService } from '../analysis/analysis.service.js';
 import { parseSourceMetadata, type SourceMetadata } from '../harmonizer/source-metadata.js';
 import { listTemplates } from './template-catalog.js';
-import { templateMetadata } from './template-metadata.js';
+import { templateMetadata, type VariableMetadata } from './template-metadata.js';
 import { runTemplate, type ResultRow, type TemplateRequest } from './template-run.js';
 
 /**
@@ -26,6 +27,64 @@ const metadata = templateMetadata(source)!;
 const analysis = new AnalysisService({ threads: '2' });
 const run = (request: TemplateRequest) =>
   runTemplate(request, metadata, (queries, filter) => analysis.runInternalQueries(PARQUET, queries, filter));
+
+async function runSynthetic(view: string, request: TemplateRequest, meta = metadata) {
+  const instance = await DuckDBInstance.create(':memory:');
+  const connection = await instance.connect();
+  try {
+    await connection.run(`CREATE VIEW data AS ${view}`);
+    return await runTemplate(request, meta, async (queries) => {
+      const answers: unknown[][][] = [];
+      for (const sql of queries) answers.push((await connection.runAndReadAll(sql)).getRowsJson() as unknown[][]);
+      return answers;
+    });
+  } finally {
+    connection.closeSync();
+    instance.closeSync();
+  }
+}
+
+describe('review fixes at the result boundary', () => {
+  const request: TemplateRequest = { templateId: 'weighted_mean', measure: 'EDAD' };
+
+  it.each([
+    ['NULL::VARCHAR', "'p2'"],
+    ["'S'", 'NULL::VARCHAR'],
+    ['NULL::VARCHAR', 'NULL::VARCHAR'],
+  ])('missing design values (%s, %s) retain estimates and warn about unavailable precision', async (stratum, psu) => {
+    const result = await runSynthetic(`SELECT * FROM (VALUES (2, 1, 'S', 'p1'), (6, 1, ${stratum}, ${psu})) AS t(EDAD, FACTOR, ESTRATO, UPM)`, request);
+    expect(result.rows[0]).toMatchObject({ num: 8, den: 2, ee: null });
+    expect(result.warnings.map((w) => w.code)).toContain('precision_not_available');
+  });
+
+  it.each([[-1, 1], [0, 2]])('a mean of %s and %s with nonzero error warns about low precision', async (a, b) => {
+    const result = await runSynthetic(`SELECT * FROM (VALUES (${a}, 1, 'S', 'p1'), (${b}, 1, 'S', 'p2')) AS t(EDAD, FACTOR, ESTRATO, UPM)`, request);
+    expect(result.rows[0].ee).toBeCloseTo(1, 12);
+    expect(result.warnings.map((w) => w.code)).toContain('low_precision');
+  });
+
+  const incomplete: VariableMetadata = {
+    ...metadata,
+    design: 'census',
+    columns: [...metadata.columns, ...['G', 'A', 'B'].map((name) => ({
+      name, label: name, role: 'category', categories: [{ code: '0', label: 'Zero' }],
+    }))],
+    fileColumns: [...metadata.fileColumns, 'G', 'A', 'B'],
+  };
+
+  it('rejects actual breakdown cardinality above 30 when the catalog omits observed codes', async () => {
+    await expect(runSynthetic('SELECT 2 AS EDAD, CAST(i AS VARCHAR) AS A FROM range(31) AS t(i)', {
+      ...request, breakdowns: ['A'],
+    }, incomplete)).rejects.toMatchObject({ response: { code: 'template_too_many_categories' } });
+  });
+
+  it('rejects actual cells above 10,000 when the catalogs underestimate the result', async () => {
+    await expect(runSynthetic(`SELECT 2 AS EDAD, CAST(g AS VARCHAR) AS G, CAST(a AS VARCHAR) AS A, CAST(b AS VARCHAR) AS B
+      FROM range(10) AS gs(g) CROSS JOIN range(30) AS aa(a) CROSS JOIN range(30) AS bb(b)`, {
+      ...request, group: 'G', breakdowns: ['A', 'B'],
+    }, incomplete)).rejects.toMatchObject({ response: { code: 'template_too_many_cells' } });
+  });
+});
 
 type Expected = Record<string, string>;
 const expected = (name: string): Expected[] =>
